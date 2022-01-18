@@ -1035,6 +1035,16 @@ public class DynamicConfigTest extends HazelcastTestSupport {
         }
 
         @Override
+        public void init(Properties properties, String ringBufferName) {
+
+        }
+
+        @Override
+        public void destroy() {
+
+        }
+
+        @Override
         public int hashCode() {
             return 33;
         }

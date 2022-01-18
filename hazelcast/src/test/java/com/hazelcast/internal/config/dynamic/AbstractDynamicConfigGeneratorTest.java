@@ -1062,6 +1062,16 @@ public abstract class AbstractDynamicConfigGeneratorTest extends HazelcastTestSu
         public long getLargestSequence() {
             return 0;
         }
+
+        @Override
+        public void init(Properties properties, String ringBufferName) {
+
+        }
+
+        @Override
+        public void destroy() {
+
+        }
     }
 
     private static class TestRingbufferStoreFactory implements RingbufferStoreFactory<Object> {

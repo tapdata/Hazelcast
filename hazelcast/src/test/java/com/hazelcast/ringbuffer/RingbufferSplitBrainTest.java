@@ -40,11 +40,7 @@ import org.junit.runners.Parameterized.Parameter;
 import org.junit.runners.Parameterized.Parameters;
 import org.junit.runners.Parameterized.UseParametersRunnerFactory;
 
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Iterator;
-import java.util.LinkedList;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentMap;
@@ -403,6 +399,16 @@ public class RingbufferSplitBrainTest extends SplitBrainTestSupport {
                 maxSeq = Math.max(seq, maxSeq);
             }
             return maxSeq;
+        }
+
+        @Override
+        public void init(Properties properties, String ringBufferName) {
+
+        }
+
+        @Override
+        public void destroy() {
+
         }
 
         @SuppressWarnings("SameParameterValue")

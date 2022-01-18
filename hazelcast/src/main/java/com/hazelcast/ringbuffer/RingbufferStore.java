@@ -18,6 +18,8 @@ package com.hazelcast.ringbuffer;
 
 import com.hazelcast.core.IFunction;
 
+import java.util.Properties;
+
 /**
  * Ringbuffer store makes a ring buffer backed by a central data store; such as database, disk, etc.
  *
@@ -74,4 +76,7 @@ public interface RingbufferStore<T> {
      * @return the largest sequence of the data in the data store
      */
     long getLargestSequence();
+
+    void init(Properties properties, String ringBufferName);
+    void destroy();
 }

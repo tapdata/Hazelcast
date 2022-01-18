@@ -35,6 +35,7 @@ import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
 import java.io.File;
+import java.util.Properties;
 import java.util.Random;
 
 import static com.hazelcast.internal.nio.IOUtil.deleteQuietly;
@@ -104,6 +105,16 @@ public class StoreLatencyPluginRingbufferIntegrationTest extends HazelcastTestSu
             public long getLargestSequence() {
                 randomSleep();
                 return 100;
+            }
+
+            @Override
+            public void init(Properties properties, String ringBufferName) {
+
+            }
+
+            @Override
+            public void destroy() {
+
             }
 
             private void randomSleep() {

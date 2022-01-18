@@ -22,6 +22,8 @@ import com.hazelcast.internal.diagnostics.StoreLatencyPlugin;
 import com.hazelcast.internal.diagnostics.StoreLatencyPlugin.LatencyProbe;
 import com.hazelcast.internal.services.ObjectNamespace;
 
+import java.util.Properties;
+
 /**
  * A {@link RingbufferStore} that decorates an RingbufferStore with latency tracking instrumentation.
  *
@@ -83,5 +85,15 @@ class LatencyTrackingRingbufferStore<T> implements RingbufferStore<T> {
         } finally {
             getLargestSequenceProbe.recordValue(Timer.nanosElapsed(startNanos));
         }
+    }
+
+    @Override
+    public void init(Properties properties, String ringBufferName) {
+
+    }
+
+    @Override
+    public void destroy() {
+
     }
 }

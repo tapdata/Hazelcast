@@ -18,6 +18,8 @@ package com.hazelcast.spring;
 
 import com.hazelcast.ringbuffer.RingbufferStore;
 
+import java.util.Properties;
+
 public class DummyRingbufferStore implements RingbufferStore {
 
     @Override
@@ -37,5 +39,15 @@ public class DummyRingbufferStore implements RingbufferStore {
     @Override
     public long getLargestSequence() {
         return 0;
+    }
+
+    @Override
+    public void init(Properties properties, String ringBufferName) {
+
+    }
+
+    @Override
+    public void destroy() {
+
     }
 }

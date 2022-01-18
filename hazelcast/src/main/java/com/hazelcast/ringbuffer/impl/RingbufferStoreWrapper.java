@@ -31,6 +31,7 @@ import com.hazelcast.spi.impl.NodeEngineImpl;
 import com.hazelcast.internal.serialization.SerializationService;
 
 import java.util.Arrays;
+import java.util.Properties;
 
 import static com.hazelcast.config.InMemoryFormat.BINARY;
 import static com.hazelcast.config.InMemoryFormat.NATIVE;
@@ -93,6 +94,7 @@ public final class RingbufferStoreWrapper implements RingbufferStore<Data> {
             storeWrapper.enabled = storeConfig.isEnabled();
             storeWrapper.inMemoryFormat = inMemoryFormat;
             storeWrapper.store = ringbufferStore;
+            storeWrapper.store.init(storeConfig.getProperties(), namespace.getServiceName());
         }
         return storeWrapper;
     }
@@ -215,5 +217,15 @@ public final class RingbufferStoreWrapper implements RingbufferStore<Data> {
     @Override
     public long getLargestSequence() {
         return store.getLargestSequence();
+    }
+
+    @Override
+    public void init(Properties properties, String ringBufferName) {
+
+    }
+
+    @Override
+    public void destroy() {
+
     }
 }
