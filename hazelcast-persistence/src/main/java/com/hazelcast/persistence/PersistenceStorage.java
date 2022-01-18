@@ -17,87 +17,105 @@ public class PersistenceStorage {
     private String ringBufferCollection = "ringBuffer";
     private Integer ringBufferInMemSize = 1;
 
-    public void setStorageMode(StorageMode storageMode) {
+    public PersistenceStorage setStorageMode(StorageMode storageMode) {
         this.setImapStorageMode(storageMode);
         this.setRingBufferStorageMode(storageMode);
+        return this;
     }
 
-    public void setImapStorageMode(StorageMode storageMode) {
+    public PersistenceStorage setImapStorageMode(StorageMode storageMode) {
         this.imapStorageMode = storageMode;
+        return this;
     }
 
-    public void setRingBufferStorageMode(StorageMode storageMode) {
+    public PersistenceStorage setRingBufferStorageMode(StorageMode storageMode) {
         this.ringBufferStorageMode = storageMode;
+        return this;
     }
 
-    public void setRocksDBPath(String rocksDBPath) {
+    public PersistenceStorage setRocksDBPath(String rocksDBPath) {
         this.setImapRocksDBPath(rocksDBPath);
         this.setRingBufferRocksDBPath(rocksDBPath);
+        return this;
     }
 
-    public void setImapRocksDBPath(String rocksDBPath) {
+    public PersistenceStorage setImapRocksDBPath(String rocksDBPath) {
         this.imapRocksDBPath = rocksDBPath;
+        return this;
     }
 
-    public void setRingBufferRocksDBPath(String rocksDBPath) {
+    public PersistenceStorage setRingBufferRocksDBPath(String rocksDBPath) {
         this.ringBufferRocksDBPath = rocksDBPath;
+        return this;
     }
 
-    public void setMongoUri(String mongoUri) {
+    public PersistenceStorage setMongoUri(String mongoUri) {
         this.setImapMongoUri(mongoUri);
         this.setRingBufferMongoUri(mongoUri);
+        return this;
     }
 
-    public void setImapMongoUri(String mongoUri) {
+    public PersistenceStorage setImapMongoUri(String mongoUri) {
         this.imapMongoUri = mongoUri;
+        return this;
     }
 
-    public void setRingBufferMongoUri(String mongoUri) {
+    public PersistenceStorage setRingBufferMongoUri(String mongoUri) {
         this.ringBufferMongoUri = mongoUri;
+        return this;
     }
 
-    public void setDB(String db) {
+    public PersistenceStorage setDB(String db) {
         this.setImapDB(db);
         this.setRingBufferDB(db);
+        return this;
     }
 
-    public void setImapDB(String db) {
+    public PersistenceStorage setImapDB(String db) {
         this.imapDB = db;
+        return this;
     }
 
-    public void setRingBufferDB(String db) {
+    public PersistenceStorage setRingBufferDB(String db) {
         this.ringBufferDB = db;
+        return this;
     }
 
-    public void setCollection(String collection) {
+    public PersistenceStorage setCollection(String collection) {
         this.setImapCollection(collection);
         this.setRingBufferCollection((collection));
+        return this;
     }
 
-    public void setImapCollection(String imapCollection) {
+    public PersistenceStorage setImapCollection(String imapCollection) {
         this.imapCollection = imapCollection;
+        return this;
     }
 
-    public void setRingBufferCollection(String ringBufferCollection) {
+    public PersistenceStorage setRingBufferCollection(String ringBufferCollection) {
         this.ringBufferCollection = ringBufferCollection;
+        return this;
     }
 
-    public void setInMemSize(Integer inMemSize) {
+    public PersistenceStorage setInMemSize(Integer inMemSize) {
         this.setImapInMemSize(inMemSize);
         this.setRingBufferInMemSize(inMemSize);
+        return this;
     }
 
-    public void setImapInMemSize(Integer imapInMemSize) {
+    public PersistenceStorage setImapInMemSize(Integer imapInMemSize) {
         this.imapInMemSize = imapInMemSize;
+        return this;
     }
 
-    public void setRingBufferInMemSize(Integer ringBufferInMemSize) {
+    public PersistenceStorage setRingBufferInMemSize(Integer ringBufferInMemSize) {
         this.ringBufferInMemSize = ringBufferInMemSize;
+        return this;
     }
 
-    private void initMapStoreConfig(Config c) {
+    private PersistenceStorage initMapStoreConfig(Config c) {
         if (this.imapStorageMode == StorageMode.Mem) {
-            return;
+            return this;
         }
         MapConfig mapCfg = new MapConfig();
         mapCfg.setName("default");
@@ -121,11 +139,12 @@ public class PersistenceStorage {
         mapStoreCfg.setEnabled(true);
         mapCfg.setMapStoreConfig(mapStoreCfg);
         c.addMapConfig(mapCfg);
+        return this;
     }
 
-    private void initRingBufferConfig(Config c) {
+    private PersistenceStorage initRingBufferConfig(Config c) {
         if (this.ringBufferStorageMode == StorageMode.Mem) {
-            return;
+            return this;
         }
 
         RingbufferConfig ringbufferConfig = new RingbufferConfig();
@@ -146,11 +165,13 @@ public class PersistenceStorage {
         ringbufferStoreConfig.setEnabled(true);
         ringbufferConfig.setRingbufferStoreConfig(ringbufferStoreConfig);
         c.addRingBufferConfig(ringbufferConfig);
+        return this;
     }
 
 
-    public void initHZConfig(Config c) {
+    public PersistenceStorage initHZConfig(Config c) {
         this.initMapStoreConfig(c);
         this.initRingBufferConfig(c);
+        return this;
     }
 }
