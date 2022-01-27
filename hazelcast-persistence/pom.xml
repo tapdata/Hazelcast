@@ -3,7 +3,7 @@
     xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <name>hazelcast-persistence</name>
-    <version>5.1-BETA-1-SNAPSHOT</version>
+    <version>5.1-BETA-x-SNAPSHOT</version>
     <groupId>com.hazelcast</groupId>
     <artifactId>hazelcast-persistence</artifactId>
     <packaging>jar</packaging>
@@ -43,6 +43,28 @@
       </plugins>
     </build>
 
+    <repositories>
+        <repository>
+            <id>tapdata-tapdata-maven</id>
+            <name>maven</name>
+            <url>https://tapdata-maven.pkg.coding.net/repository/tapdata/maven/</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
+        </repository>
+    </repositories>
+
+    <distributionManagement>
+        <repository>
+            <id>tapdata-tapdata-maven</id>
+            <name>User Porject Release</name>
+            <url>https://tapdata-maven.pkg.coding.net/repository/tapdata/maven/</url>
+        </repository>
+    </distributionManagement>
+
     <dependencies>
         <dependency>
             <groupId>org.mongodb</groupId>
@@ -62,7 +84,7 @@
         <dependency>
             <groupId>com.hazelcast</groupId>
             <artifactId>hazelcast</artifactId>
-            <version>5.1-BETA-1-SNAPSHOT</version>
+            <version>5.1-BETA-x-SNAPSHOT</version>
         </dependency>
     </dependencies>
 </project>

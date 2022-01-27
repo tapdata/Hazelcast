@@ -54,3 +54,9 @@ HazelcastInstance hz = Hazelcast.newHazelcastInstance(c);
 <version>5.1-BETA-x-SNAPSHOT</version>
 </dependency>
 ```
+
+## 上传该项目
+```shell
+cd hazelcast-persistence
+mvn clean deploy
+```
