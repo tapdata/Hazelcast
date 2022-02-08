@@ -60,7 +60,7 @@
     <distributionManagement>
         <repository>
             <id>tapdata-tapdata-maven</id>
-            <name>User Porject Release</name>
+            <name>Tapdata Maven Repository</name>
             <url>https://tapdata-maven.pkg.coding.net/repository/tapdata/maven/</url>
         </repository>
     </distributionManagement>
