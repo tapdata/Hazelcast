@@ -14,7 +14,7 @@
 ```
 1. 最简单使用, 设置 RocksDB 引擎
 Config c = new Config();
-PersistenceStorage persistenceStorage = new PersistenceStorage();
+PersistenceStorage persistenceStorage = PersistenceStorage.getInstance();
 persistenceStorage.setStorageMode(StorageMode.RocksDB);
 persistenceStorage.initHZConfig(c);
 
@@ -22,7 +22,7 @@ HazelcastInstance hz = Hazelcast.newHazelcastInstance(c);
 
 2. 最简单使用, 设置 MongoDB 引擎
 Config c = new Config();
-PersistenceStorage persistenceStorage = new PersistenceStorage();
+PersistenceStorage persistenceStorage = PersistenceStorage.getInstance();
 persistenceStorage.setStorageMode(StorageMode.MongoDB);
 persistenceStorage.initHZConfig(c);
 
@@ -30,7 +30,7 @@ HazelcastInstance hz = Hazelcast.newHazelcastInstance(c);
 
 3. 设置 TTL
 Config c = new Config();
-PersistenceStorage persistenceStorage = new PersistenceStorage();
+PersistenceStorage persistenceStorage = PersistenceStorage.getInstance();
 persistenceStorage.setStorageMode(StorageMode.MongoDB);
 persistenceStorage.initHZConfig(c);
 
@@ -42,7 +42,7 @@ persistenceStorage.setRingBufferTTL(rb, 5); // TTL 为 5s
 
 3. 完整接口为:
 Config c = new Config();
-PersistenceStorage persistenceStorage = new PersistenceStorage();
+PersistenceStorage persistenceStorage = PersistenceStorage.getInstance();
 persistenceStorage
     .setStorageMode(StorageMode.MongoDB) // 设置存储引擎, 支持 MongoDB, RocksDB, Mem
     .setDB("cache") // 在存储引擎为 MongoDB 时有效, 设置数据库
@@ -53,6 +53,9 @@ persistenceStorage
 // 其中每个设置, 可以针对 imap 与 ringbuffer 单独设置
 persistenceStorage.initHZConfig(c);
 HazelcastInstance hz = Hazelcast.newHazelcastInstance(c);
+
+Ringbuffer<Document> rb = hz.getRingbuffer("ringBufferCache");
+persistenceStorage.setRingBufferTTL(rb, 5); // TTL 为 5s
 ```
 
 ## 注意
@@ -65,6 +68,13 @@ HazelcastInstance hz = Hazelcast.newHazelcastInstance(c);
 <dependency>
 <groupId>com.hazelcast</groupId>
 <artifactId>hazelcast</artifactId>
-<version>5.1-BETA-x-SNAPSHOT</version>
+<version>5.1-BETA-1-SNAPSHOT</version>
 </dependency>
+```
+=======
+
+## 上传该项目
+```shell
+cd hazelcast-persistence
+mvn clean deploy
 ```

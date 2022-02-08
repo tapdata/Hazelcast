@@ -254,7 +254,7 @@ public class PersistenceStorage {
                         }
                         long _ts = 0;
                         try {
-                            _ts = (Integer) rb.readOne(s).get("_ts");
+                            _ts = rb.readOne(s).getLong("_ts");
                         } catch (Exception e) {
                             break;
                         }

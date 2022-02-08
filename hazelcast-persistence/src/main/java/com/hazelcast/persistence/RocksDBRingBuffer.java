@@ -1,9 +1,18 @@
 package com.hazelcast.persistence;
 
 import com.hazelcast.ringbuffer.RingbufferStore;
+import org.bson.BsonBinaryReader;
+import org.bson.BsonBinaryWriter;
+import org.bson.codecs.Codec;
+import org.bson.codecs.DecoderContext;
+import org.bson.codecs.DocumentCodec;
+import org.bson.codecs.EncoderContext;
+import org.bson.io.BasicOutputBuffer;
 import org.rocksdb.*;
 import org.bson.Document;
 
+import java.io.ByteArrayOutputStream;
+import java.nio.ByteBuffer;
 import java.util.Properties;
 
 public class RocksDBRingBuffer implements RingbufferStore<Document> {
@@ -16,6 +25,7 @@ public class RocksDBRingBuffer implements RingbufferStore<Document> {
     private Long smallestSequence = 0L;
     private final String largestSequenceKey = "largestSequence";
     private final String smallestSequenceKey = "smallestSequence";
+    private static Codec<Document> DOCUMENT_CODEC = new DocumentCodec();
     static {
         RocksDB.loadLibrary();
     }
@@ -42,9 +52,13 @@ public class RocksDBRingBuffer implements RingbufferStore<Document> {
 
     @Override
     public void store(long sequence, Document value) {
+        value = value.append("_ts", System.currentTimeMillis()/1000);
         String key = sign + sequence;
+        BasicOutputBuffer outputBuffer = new BasicOutputBuffer();
+        BsonBinaryWriter writer = new BsonBinaryWriter(outputBuffer);
+        DOCUMENT_CODEC.encode(writer, value, EncoderContext.builder().isEncodingCollectibleDocument(true).build());
         try {
-            rocksDB.put(key.getBytes(), value.append("_ts", System.currentTimeMillis()/1000).toJson().getBytes());
+            rocksDB.put(key.getBytes(), outputBuffer.toByteArray());
         } catch (RocksDBException e) {
             throw new RuntimeException(e.getMessage());
         }
@@ -77,7 +91,8 @@ public class RocksDBRingBuffer implements RingbufferStore<Document> {
             if (s == null) {
                 return null;
             }
-            doc = Document.parse(new String(s));
+            BsonBinaryReader bsonReader = new BsonBinaryReader(ByteBuffer.wrap(s));
+            doc = DOCUMENT_CODEC.decode(bsonReader, DecoderContext.builder().build());
         } catch (RocksDBException e) {
             throw new RuntimeException(e.getMessage());
         } catch (RuntimeException e) {

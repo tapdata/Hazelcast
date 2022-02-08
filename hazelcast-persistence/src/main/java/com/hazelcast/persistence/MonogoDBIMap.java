@@ -13,7 +13,7 @@ import org.bson.conversions.Bson;
 
 import java.util.*;
 
-public class MonogoDBIMap implements MapStore<String, Document>, MapLoaderLifecycleSupport {
+public class MonogoDBIMap implements MapStore<String, Object>, MapLoaderLifecycleSupport {
     private MongoClient mongoClient;
     private MongoCollection<Document> cacheCollection;
     private final Long autoCreateIndexDocumentLimit = 5000000L;
@@ -65,15 +65,18 @@ public class MonogoDBIMap implements MapStore<String, Document>, MapLoaderLifecy
         this.mongoClient.close();
     }
 
-    public synchronized void store(String key, Document value) {
+    public synchronized void store(String key, Object value) {
+        if (!(value instanceof Document)) {
+            return;
+        }
         Document query = sign().append("key", key).append("ts", new Date());
         Document doc = new Document(query).append("value", value);
         ReplaceOptions options = new ReplaceOptions().upsert(true);
         cacheCollection.replaceOne(query, doc, options);
     }
 
-    public synchronized void storeAll(Map<String, Document> map) {
-        for (Map.Entry<String, Document> entry : map.entrySet()) {
+    public synchronized void storeAll(Map<String, Object> map) {
+        for (Map.Entry<String, Object> entry : map.entrySet()) {
             store(entry.getKey(), entry.getValue());
         }
     }
@@ -97,8 +100,8 @@ public class MonogoDBIMap implements MapStore<String, Document>, MapLoaderLifecy
         return (Document) doc.get("value");
     }
 
-    public synchronized Map<String, Document> loadAll(Collection<String> keys) {
-        Map<String, Document> result = new HashMap<>();
+    public synchronized Map<String, Object> loadAll(Collection<String> keys) {
+        Map<String, Object> result = new HashMap<>();
         for (String key : keys) {
             result.put(key, load(key));
         }

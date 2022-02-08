@@ -14,7 +14,7 @@ public class Application {
         Config c = new Config();
         PersistenceStorage persistenceStorage = PersistenceStorage.getInstance();
         persistenceStorage
-                .setStorageMode(StorageMode.RocksDB) // 设置存储引擎, 支持 MongoDB, RocksDB, Mem
+                .setStorageMode(StorageMode.MongoDB) // 设置存储引擎, 支持 MongoDB, RocksDB, Mem
                 .setDB("cache") // 在存储引擎为 MongoDB 时有效, 设置数据库
                 .setCollection("collection") // 在存储引擎为 MongoDB 时有效, 设置数据集合
                 .setMongoUri("mongodb://127.0.0.1") // 在存储引擎为 MongoDB 时有效, 设置 mongodb uri
@@ -51,7 +51,13 @@ public class Application {
         System.out.println(rb.readOne(0));
         System.out.println(rb.readOne(5));
 
-        Thread.sleep(5000);
+        Thread.sleep(2000);
+        System.out.println(rb.headSequence());
+        System.out.println(rb.tailSequence());
+        System.out.println(rb.readOne(0));
+        System.out.println(rb.readOne(5));
+
+        Thread.sleep(3000);
         System.out.println(rb.headSequence());
         System.out.println(rb.tailSequence());
         System.out.println(rb.readOne(0));
