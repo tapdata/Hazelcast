@@ -12,8 +12,10 @@ public class RocksDBRingBuffer implements RingbufferStore<Document> {
     private String ringBufferName;
     private static final String keySplit = "__0x1__";
     private String sign;
-    private Long largestSequence = 0L;
+    private Long largestSequence = -1L;
+    private Long smallestSequence = 0L;
     private final String largestSequenceKey = "largestSequence";
+    private final String smallestSequenceKey = "smallestSequence";
     static {
         RocksDB.loadLibrary();
     }
@@ -25,14 +27,12 @@ public class RocksDBRingBuffer implements RingbufferStore<Document> {
         if (dbPath == null) {
             dbPath = defaultDBPath;
         }
-        final Options options = new Options().setCreateIfMissing(true);
-        try {
-            this.rocksDB = RocksDB.open(options, dbPath);
-        } catch (RocksDBException e) {
-            throw new RuntimeException(e.getMessage());
-        }
+        this.rocksDB = RocksDBInstance.getInstance(dbPath);
         this.ringBufferName = ringBufferName;
         this.sign = ringBufferName + keySplit;
+        this.largestSequence = this._getLargestSequence();
+        this.smallestSequence = this._getSmallestSequence();
+
     }
 
     @Override
@@ -44,7 +44,7 @@ public class RocksDBRingBuffer implements RingbufferStore<Document> {
     public void store(long sequence, Document value) {
         String key = sign + sequence;
         try {
-            rocksDB.put(key.getBytes(), value.toJson().getBytes());
+            rocksDB.put(key.getBytes(), value.append("_ts", System.currentTimeMillis()/1000).toJson().getBytes());
         } catch (RocksDBException e) {
             throw new RuntimeException(e.getMessage());
         }
@@ -88,7 +88,30 @@ public class RocksDBRingBuffer implements RingbufferStore<Document> {
 
     @Override
     public long getLargestSequence() {
+        return largestSequence;
+    }
+
+    public long _getLargestSequence() {
         String key = sign + largestSequenceKey;
+        try {
+            byte[] s = rocksDB.get(key.getBytes());
+            if (s == null) {
+                return -1L;
+            }
+            String l = new String(s);
+            return Long.parseLong(l);
+        } catch (RocksDBException e) {
+            throw new RuntimeException(e.getMessage());
+        }
+    }
+
+    @Override
+    public long getSmallestSequence() {
+        return this._getSmallestSequence();
+    }
+
+    public long _getSmallestSequence() {
+        String key = sign + smallestSequenceKey;
         try {
             byte[] s = rocksDB.get(key.getBytes());
             if (s == null) {

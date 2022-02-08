@@ -8,6 +8,8 @@
 1. RocksDB
 2. MongoDB
 
+支持 TTL
+
 ## 示例代码
 ```
 1. 最简单使用, 设置 RocksDB 引擎
@@ -25,6 +27,18 @@ persistenceStorage.setStorageMode(StorageMode.MongoDB);
 persistenceStorage.initHZConfig(c);
 
 HazelcastInstance hz = Hazelcast.newHazelcastInstance(c);
+
+3. 设置 TTL
+Config c = new Config();
+PersistenceStorage persistenceStorage = new PersistenceStorage();
+persistenceStorage.setStorageMode(StorageMode.MongoDB);
+persistenceStorage.initHZConfig(c);
+
+HazelcastInstance hz = Hazelcast.newHazelcastInstance(c);
+
+Ringbuffer<Document> rb = hz.getRingbuffer("ringBufferCache");
+persistenceStorage.setRingBufferTTL(rb, 5); // TTL 为 5s
+
 
 3. 完整接口为:
 Config c = new Config();

@@ -3,6 +3,8 @@ package com.hazelcast.persistence;
 import com.hazelcast.ringbuffer.RingbufferStore;
 import com.mongodb.MongoClient;
 import com.mongodb.MongoClientURI;
+import static com.mongodb.client.model.Sorts.*;
+import static com.mongodb.client.model.Filters.*;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.ReplaceOptions;
 import org.bson.Document;
@@ -19,8 +21,8 @@ public class MongoDBRingBuffer implements RingbufferStore<Document> {
     private final String defaultMongoDB = "cache";
     private final String defaultMongoCollection = "ringBuffer";
     private String ringBufferName;
-    private Long largestSequence = 0L;
-    private final String largestSequenceKey = "largestSequence";
+    private Long largestSequence = -1L;
+    private Long smallestSequence = 0L;
     private Document sign;
 
     private Document sign() {
@@ -56,6 +58,9 @@ public class MongoDBRingBuffer implements RingbufferStore<Document> {
         cacheCollection.createIndex(keyIndex);
         this.ringBufferName = s;
         sign = new Document("ringBuffer", this.ringBufferName);
+
+        this.largestSequence = this._getLargestSequence();
+        this.smallestSequence = this._getSmallestSequence();
     }
 
     @Override
@@ -65,18 +70,14 @@ public class MongoDBRingBuffer implements RingbufferStore<Document> {
 
     @Override
     public void store(long sequence, Document value) {
-        String key = String.format("%d", sequence);
-        Document query = sign().append("key", key);
-        Document doc = new Document(query).append("value", value);
+        Document query = sign().append("key", sequence);
+        Document doc = new Document(query).append("value", value.append("_ts", System.currentTimeMillis()/1000));
         ReplaceOptions options = new ReplaceOptions().upsert(true);
         cacheCollection.replaceOne(query, doc, options);
         if (sequence <= largestSequence) {
             return;
         }
-        largestSequence = sequence;
-        query = sign().append("key", largestSequenceKey);
-        doc = new Document(query).append("value", largestSequence);
-        cacheCollection.replaceOne(query, doc, options);
+        this.largestSequence = sequence;
     }
 
     @Override
@@ -89,8 +90,7 @@ public class MongoDBRingBuffer implements RingbufferStore<Document> {
 
     @Override
     public Document load(long sequence) {
-        String key = String.format("%d", sequence);
-        Document query = sign().append("key", key);
+        Document query = sign().append("key", sequence);
         Document doc = cacheCollection.find(query).first();
         if (doc == null) {
             return null;
@@ -100,11 +100,29 @@ public class MongoDBRingBuffer implements RingbufferStore<Document> {
 
     @Override
     public long getLargestSequence() {
-        Document query = sign().append("key", largestSequenceKey);
-        Document doc = cacheCollection.find(query).first();
+        return this.largestSequence;
+    }
+
+    public long _getLargestSequence() {
+        Document query = sign();
+        Document doc = cacheCollection.find(query).sort(descending("key")).first();
+        if (doc == null) {
+            return -1;
+        }
+        return doc.getLong("key");
+    }
+
+    @Override
+    public long getSmallestSequence() {
+        return this._getSmallestSequence();
+    }
+
+    public long _getSmallestSequence() {
+        Document query = sign();
+        Document doc = cacheCollection.find(query).sort(ascending("key")).first();
         if (doc == null) {
             return 0;
         }
-        return doc.getLong("value");
+        return doc.getLong("key");
     }
 }

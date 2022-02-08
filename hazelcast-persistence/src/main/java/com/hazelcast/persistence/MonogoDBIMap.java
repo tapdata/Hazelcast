@@ -11,10 +11,7 @@ import org.bson.Document;
 import com.mongodb.client.model.Indexes;
 import org.bson.conversions.Bson;
 
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Properties;
+import java.util.*;
 
 public class MonogoDBIMap implements MapStore<String, Document>, MapLoaderLifecycleSupport {
     private MongoClient mongoClient;
@@ -57,6 +54,8 @@ public class MonogoDBIMap implements MapStore<String, Document>, MapLoaderLifecy
         }
         Bson keyIndex = Indexes.ascending("key", "imap");
         cacheCollection.createIndex(keyIndex);
+        Bson tsIndex = Indexes.ascending("key", "ts");
+        cacheCollection.createIndex(tsIndex);
         this.imapName = s;
         sign = new Document("imap", this.imapName);
     }
@@ -67,7 +66,7 @@ public class MonogoDBIMap implements MapStore<String, Document>, MapLoaderLifecy
     }
 
     public synchronized void store(String key, Document value) {
-        Document query = sign().append("key", key);
+        Document query = sign().append("key", key).append("ts", new Date());
         Document doc = new Document(query).append("value", value);
         ReplaceOptions options = new ReplaceOptions().upsert(true);
         cacheCollection.replaceOne(query, doc, options);

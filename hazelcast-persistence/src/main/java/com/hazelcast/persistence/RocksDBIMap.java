@@ -8,7 +8,7 @@ import org.bson.Document;
 
 import java.util.*;
 
-public class RocksdbIMap implements MapStore<String, Document>, MapLoaderLifecycleSupport {
+public class RocksDBIMap implements MapStore<String, Document>, MapLoaderLifecycleSupport {
     private static final String defaultDBPath   = "./imap-cache-data/";
     private static final String keySplit = "__0x0__";
     private String imapName;
@@ -17,7 +17,7 @@ public class RocksdbIMap implements MapStore<String, Document>, MapLoaderLifecyc
     static {
         RocksDB.loadLibrary();
     }
-    public RocksdbIMap() {
+    public RocksDBIMap() {
     }
 
     public synchronized void delete(String key) {
@@ -85,12 +85,7 @@ public class RocksdbIMap implements MapStore<String, Document>, MapLoaderLifecyc
         if (dbPath == null) {
             dbPath = defaultDBPath;
         }
-        final Options options = new Options().setCreateIfMissing(true);
-        try {
-            this.rocksDB = RocksDB.open(options, dbPath);
-        } catch (RocksDBException e) {
-            throw new RuntimeException(e.getMessage());
-        }
+        this.rocksDB = RocksDBInstance.getInstance(dbPath);
         this.imapName = imapName;
         this.sign = imapName + keySplit;
     }

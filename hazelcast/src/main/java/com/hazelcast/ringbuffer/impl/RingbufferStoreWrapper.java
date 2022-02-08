@@ -94,7 +94,7 @@ public final class RingbufferStoreWrapper implements RingbufferStore<Data> {
             storeWrapper.enabled = storeConfig.isEnabled();
             storeWrapper.inMemoryFormat = inMemoryFormat;
             storeWrapper.store = ringbufferStore;
-            storeWrapper.store.init(storeConfig.getProperties(), namespace.getServiceName());
+            storeWrapper.store.init(storeConfig.getProperties(), namespace.getObjectName());
         }
         return storeWrapper;
     }
@@ -220,8 +220,12 @@ public final class RingbufferStoreWrapper implements RingbufferStore<Data> {
     }
 
     @Override
-    public void init(Properties properties, String ringBufferName) {
+    public long getSmallestSequence() {
+        return store.getSmallestSequence();
+    }
 
+    @Override
+    public void init(Properties properties, String ringBufferName) {
     }
 
     @Override

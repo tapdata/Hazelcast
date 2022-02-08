@@ -1,6 +1,19 @@
 package com.hazelcast.persistence;
 
 import com.hazelcast.config.*;
+import com.hazelcast.core.Hazelcast;
+import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.ringbuffer.Ringbuffer;
+import com.mongodb.MongoClient;
+import com.mongodb.MongoClientURI;
+import com.mongodb.client.MongoCollection;
+import org.bson.Document;
+import org.rocksdb.Options;
+import org.rocksdb.RocksDB;
+import org.rocksdb.RocksDBException;
+
+import javax.print.Doc;
+import java.nio.charset.StandardCharsets;
 
 public class PersistenceStorage {
     private StorageMode imapStorageMode = StorageMode.RocksDB;
@@ -16,6 +29,15 @@ public class PersistenceStorage {
     private String ringBufferDB = "cache";
     private String ringBufferCollection = "ringBuffer";
     private Integer ringBufferInMemSize = 1;
+
+    private static PersistenceStorage persistenceStorageInstance = null;
+    private PersistenceStorage() {}
+    public static synchronized PersistenceStorage getInstance() {
+        if (persistenceStorageInstance == null) {
+            persistenceStorageInstance = new PersistenceStorage();
+        }
+        return persistenceStorageInstance;
+    }
 
     public PersistenceStorage setStorageMode(StorageMode storageMode) {
         this.setImapStorageMode(storageMode);
@@ -128,7 +150,7 @@ public class PersistenceStorage {
                         .setProperty("mongo.collection", this.imapCollection);
                 break;
             case RocksDB:
-                mapStoreCfg.setClassName(RocksdbIMap.class.getName())
+                mapStoreCfg.setClassName(RocksDBIMap.class.getName())
                         .setProperty("rocksdb.dbPath", this.imapRocksDBPath);
         }
         EvictionConfig evictionConfig = new EvictionConfig()
@@ -148,7 +170,7 @@ public class PersistenceStorage {
         }
 
         RingbufferConfig ringbufferConfig = new RingbufferConfig();
-        ringbufferConfig.setName("default");
+        ringbufferConfig.setName("default").setCapacity(this.ringBufferInMemSize);
         RingbufferStoreConfig ringbufferStoreConfig = new RingbufferStoreConfig();
         switch (this.ringBufferStorageMode) {
             case MongoDB:
@@ -172,6 +194,89 @@ public class PersistenceStorage {
     public PersistenceStorage initHZConfig(Config c) {
         this.initMapStoreConfig(c);
         this.initRingBufferConfig(c);
+        return this;
+    }
+
+    public PersistenceStorage setImapTTL(String imapName, long ttlSeconds) {
+        new Thread(() -> {
+            long sleepSeconds = 60;
+            if (ttlSeconds < 60) {
+                sleepSeconds = ttlSeconds;
+            }
+            if (sleepSeconds < 10) {
+                sleepSeconds = 10;
+            }
+            while (true) {
+                try {
+                    Thread.sleep(sleepSeconds * 1000);
+                } catch (Exception e) {
+                }
+            }
+        }).start();
+        return this;
+    }
+
+    public PersistenceStorage setRingBufferTTL(Ringbuffer<Document> rb, long ttlSeconds) {
+        if (this.ringBufferStorageMode == StorageMode.Mem) {
+            return this;
+        }
+        new Thread(() -> {
+            long sleepSeconds = 60;
+            if (ttlSeconds < 60) {
+                sleepSeconds = ttlSeconds;
+            }
+            if (sleepSeconds < 10) {
+                sleepSeconds = 10;
+            }
+            sleepSeconds = 1;
+            RocksDB rocksDB = null;
+            MongoCollection<Document> cacheCollection = null;
+            String keySplit = "__0x1__";
+            String sign = rb.getName() + keySplit;
+            if (this.ringBufferStorageMode == StorageMode.RocksDB) {
+                rocksDB = RocksDBInstance.getInstance(this.ringBufferRocksDBPath);
+            }
+            if (this.ringBufferStorageMode == StorageMode.MongoDB) {
+                MongoClient mongoClient = new MongoClient(new MongoClientURI(this.ringBufferMongoUri));
+                cacheCollection = mongoClient.getDatabase(this.ringBufferDB).getCollection(this.ringBufferCollection);
+            }
+            while (true) {
+                try {
+                    Thread.sleep(sleepSeconds * 1000);
+                    if (rb.tailSequence() == -1) {
+                        continue;
+                    }
+                    long s = rb.headSequence() - 1;
+                    while (true) {
+                        s++;
+                        if (s >= rb.tailSequence()) {
+                            break;
+                        }
+                        long _ts = 0;
+                        try {
+                            _ts = (Integer) rb.readOne(s).get("_ts");
+                        } catch (Exception e) {
+                            break;
+                        }
+                        if (System.currentTimeMillis() - _ts * 1000 < ttlSeconds * 1000) {
+                            break;
+                        }
+                        if (this.ringBufferStorageMode == StorageMode.RocksDB) {
+                            try {
+                                rocksDB.delete((sign + s).getBytes(StandardCharsets.UTF_8));
+                                rocksDB.put((sign + "smallestSequence").getBytes(StandardCharsets.UTF_8),  ((Long) (s+1)).toString().getBytes());
+                            } catch (RocksDBException e) {
+                            }
+                        }
+                        if (this.ringBufferStorageMode == StorageMode.MongoDB) {
+                            Document query = new Document("ringBuffer", rb.getName()).append("key", s);
+                            cacheCollection.deleteOne(query);
+                        }
+                    }
+                } catch (Exception e) {
+                }
+            }
+        }).start();
         return this;
     }
 }

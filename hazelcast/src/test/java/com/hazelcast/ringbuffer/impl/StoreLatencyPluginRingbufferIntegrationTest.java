@@ -108,6 +108,11 @@ public class StoreLatencyPluginRingbufferIntegrationTest extends HazelcastTestSu
             }
 
             @Override
+            public long getSmallestSequence() {
+                return 0;
+            }
+
+            @Override
             public void init(Properties properties, String ringBufferName) {
 
             }

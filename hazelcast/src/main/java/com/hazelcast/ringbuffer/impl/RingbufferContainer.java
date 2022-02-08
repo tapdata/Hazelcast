@@ -152,10 +152,10 @@ public class RingbufferContainer<T, E> implements IdentifiedDataSerializable, No
                 configClassLoader);
         if (store.isEnabled()) {
             try {
-                final long storeSequence = store.getLargestSequence();
-                if (tailSequence() < storeSequence) {
-                    ringbuffer.setTailSequence(storeSequence);
-                    ringbuffer.setHeadSequence(storeSequence + 1);
+                final long tailSequence = store.getLargestSequence();
+                if (tailSequence() < tailSequence) {
+                    ringbuffer.setTailSequence(tailSequence);
+                    ringbuffer.setHeadSequence(tailSequence+1);
                 }
             } catch (Exception e) {
                 throw new HazelcastException(e);
@@ -185,6 +185,9 @@ public class RingbufferContainer<T, E> implements IdentifiedDataSerializable, No
     }
 
     public long headSequence() {
+        if (store.isEnabled()) {
+            return store.getSmallestSequence();
+        }
         return ringbuffer.headSequence();
     }
 

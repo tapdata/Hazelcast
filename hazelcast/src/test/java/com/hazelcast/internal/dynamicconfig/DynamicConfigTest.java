@@ -1035,6 +1035,11 @@ public class DynamicConfigTest extends HazelcastTestSupport {
         }
 
         @Override
+        public long getSmallestSequence() {
+            return 0;
+        }
+
+        @Override
         public void init(Properties properties, String ringBufferName) {
 
         }

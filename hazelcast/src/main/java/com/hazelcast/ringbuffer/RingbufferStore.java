@@ -76,6 +76,7 @@ public interface RingbufferStore<T> {
      * @return the largest sequence of the data in the data store
      */
     long getLargestSequence();
+    long getSmallestSequence();
 
     void init(Properties properties, String ringBufferName);
     void destroy();

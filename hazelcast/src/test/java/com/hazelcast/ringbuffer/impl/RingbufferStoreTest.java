@@ -371,6 +371,11 @@ public class RingbufferStoreTest extends HazelcastTestSupport {
         }
 
         @Override
+        public long getSmallestSequence() {
+            return 0;
+        }
+
+        @Override
         public void init(Properties properties, String ringBufferName) {
 
         }
@@ -413,6 +418,11 @@ public class RingbufferStoreTest extends HazelcastTestSupport {
                 throw new RuntimeException();
             }
             return -1;
+        }
+
+        @Override
+        public long getSmallestSequence() {
+            return 0;
         }
 
         @Override
@@ -490,6 +500,11 @@ public class RingbufferStoreTest extends HazelcastTestSupport {
         }
 
         @Override
+        public long getSmallestSequence() {
+            return 0;
+        }
+
+        @Override
         public void init(Properties properties, String ringBufferName) {
 
         }
@@ -528,6 +543,11 @@ public class RingbufferStoreTest extends HazelcastTestSupport {
         public long getLargestSequence() {
             final Set<Long> coll = store.keySet();
             return coll.isEmpty() ? -1 : Collections.max(coll);
+        }
+
+        @Override
+        public long getSmallestSequence() {
+            return 0;
         }
 
         @Override
