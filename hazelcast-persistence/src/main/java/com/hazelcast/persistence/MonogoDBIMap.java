@@ -69,7 +69,8 @@ public class MonogoDBIMap implements MapStore<String, Object>, MapLoaderLifecycl
         if (!(value instanceof Document)) {
             return;
         }
-        Document query = sign().append("key", key).append("ts", new Date());
+        value = ((Document) value).append("_ts", System.currentTimeMillis()/1000);
+        Document query = sign().append("key", key);
         Document doc = new Document(query).append("value", value);
         ReplaceOptions options = new ReplaceOptions().upsert(true);
         cacheCollection.replaceOne(query, doc, options);

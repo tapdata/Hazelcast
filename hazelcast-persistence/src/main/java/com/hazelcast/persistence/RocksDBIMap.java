@@ -3,17 +3,27 @@ package com.hazelcast.persistence;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.map.MapLoaderLifecycleSupport;
 import com.hazelcast.map.MapStore;
+import org.bson.BsonBinaryReader;
+import org.bson.BsonBinaryWriter;
+import org.bson.codecs.Codec;
+import org.bson.codecs.DecoderContext;
+import org.bson.codecs.DocumentCodec;
+import org.bson.codecs.EncoderContext;
+import org.bson.io.BasicOutputBuffer;
 import org.rocksdb.*;
 import org.bson.Document;
 
+import javax.print.Doc;
+import java.nio.ByteBuffer;
 import java.util.*;
 
-public class RocksDBIMap implements MapStore<String, Document>, MapLoaderLifecycleSupport {
+public class RocksDBIMap implements MapStore<String, Object>, MapLoaderLifecycleSupport {
     private static final String defaultDBPath   = "./imap-cache-data/";
     private static final String keySplit = "__0x0__";
     private String imapName;
     private String sign;
     private RocksDB rocksDB;
+    private static Codec<Document> DOCUMENT_CODEC = new DocumentCodec();
     static {
         RocksDB.loadLibrary();
     }
@@ -29,17 +39,24 @@ public class RocksDBIMap implements MapStore<String, Document>, MapLoaderLifecyc
         }
     }
 
-    public synchronized void store(String key, Document value) throws RuntimeException {
+    public synchronized void store(String key, Object value) throws RuntimeException {
+        if (! (value instanceof Document)) {
+            return;
+        }
         try {
             String sKey = sign + key;
-            rocksDB.put(sKey.getBytes(), value.toJson().getBytes());
+            Document val = ((Document) value).append("_ts", System.currentTimeMillis()/1000);
+            BasicOutputBuffer outputBuffer = new BasicOutputBuffer();
+            BsonBinaryWriter writer = new BsonBinaryWriter(outputBuffer);
+            DOCUMENT_CODEC.encode(writer, val, EncoderContext.builder().isEncodingCollectibleDocument(true).build());
+            rocksDB.put(sKey.getBytes(), outputBuffer.toByteArray());
         } catch (RocksDBException e) {
             throw new RuntimeException(e.getMessage());
         }
     }
 
-    public synchronized void storeAll(Map<String, Document> map) {
-        for (Map.Entry<String, Document> entry : map.entrySet()) {
+    public synchronized void storeAll(Map<String, Object> map) {
+        for (Map.Entry<String, Object> entry : map.entrySet()) {
             store(entry.getKey(), entry.getValue());
         }
     }
@@ -58,7 +75,8 @@ public class RocksDBIMap implements MapStore<String, Document>, MapLoaderLifecyc
             if (s == null) {
                 return null;
             }
-            doc = Document.parse(new String(s));
+            BsonBinaryReader bsonReader = new BsonBinaryReader(ByteBuffer.wrap(s));
+            doc = DOCUMENT_CODEC.decode(bsonReader, DecoderContext.builder().build());
         } catch (RocksDBException e) {
             throw new RuntimeException(e.getMessage());
         } catch (RuntimeException e) {
@@ -67,8 +85,8 @@ public class RocksDBIMap implements MapStore<String, Document>, MapLoaderLifecyc
         return doc;
     }
 
-    public synchronized Map<String, Document> loadAll(Collection<String> keys) {
-        Map<String, Document> result = new HashMap<>();
+    public synchronized Map<String, Object> loadAll(Collection<String> keys) {
+        Map<String, Object> result = new HashMap<>();
         for (String key : keys) {
             result.put(key, load(key));
         }
