@@ -15,6 +15,9 @@ import org.rocksdb.RocksDBException;
 import javax.print.Doc;
 import java.nio.charset.StandardCharsets;
 
+import static com.mongodb.client.model.Sorts.ascending;
+import static com.mongodb.client.model.Sorts.descending;
+
 public class PersistenceStorage {
     private StorageMode imapStorageMode = StorageMode.RocksDB;
     private String imapRocksDBPath = "./imap-cache-data/";
@@ -197,6 +200,39 @@ public class PersistenceStorage {
         return this;
     }
 
+    public long findSequence(Ringbuffer<Document> rb, long timestamp) {
+        if (this.ringBufferStorageMode == StorageMode.MongoDB) {
+            MongoClient mongoClient = new MongoClient(new MongoClientURI(this.ringBufferMongoUri));
+            MongoCollection<Document> cacheCollection = mongoClient.getDatabase(this.ringBufferDB).getCollection(this.ringBufferCollection);
+            Document query = new Document("ringBuffer", rb.getName()).append("value.timestamp", new Document("$gte", timestamp));
+            Document document = cacheCollection.find(query).sort(ascending("_id")).first();
+            if (document == null) {
+                return 0;
+            }
+            return document.getLong("key");
+        }
+
+        if (this.ringBufferStorageMode == StorageMode.RocksDB) {
+            if (rb.tailSequence() == -1) {
+                return 0;
+            }
+            for (long i=rb.headSequence(); i<=rb.tailSequence(); i++) {
+                try {
+                    Document document = rb.readOne(i);
+                    if (document == null) {
+                        continue;
+                    }
+                    if (document.getLong("timestamp") >= timestamp) {
+                        return i;
+                    }
+                } catch (Exception e) {
+                    continue;
+                }
+            }
+        }
+        return 0;
+    }
+
     public PersistenceStorage setImapTTL(String imapName, long ttlSeconds) {
         new Thread(() -> {
             long sleepSeconds = 60;
@@ -228,7 +264,6 @@ public class PersistenceStorage {
             if (sleepSeconds < 10) {
                 sleepSeconds = 10;
             }
-            sleepSeconds = 1;
             RocksDB rocksDB = null;
             MongoCollection<Document> cacheCollection = null;
             String keySplit = "__0x1__";

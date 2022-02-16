@@ -8,7 +8,7 @@
 1. RocksDB
 2. MongoDB
 
-支持 TTL
+支持 TTL, 对于 ringBuffer, 支持按照 timestamp 定位 sequence
 
 ## 示例代码
 ```
@@ -56,6 +56,8 @@ HazelcastInstance hz = Hazelcast.newHazelcastInstance(c);
 
 Ringbuffer<Document> rb = hz.getRingbuffer("ringBufferCache");
 persistenceStorage.setRingBufferTTL(rb, 5); // TTL 为 5s
+
+long sequence = persistenceStorage.findSequence(Ringbuffer<Document> rb, long timestamp); // 查找 seq
 ```
 
 ## 注意

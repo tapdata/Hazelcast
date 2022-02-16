@@ -25,7 +25,12 @@ public class Application {
 
         HazelcastInstance hz = Hazelcast.newHazelcastInstance(c);
         String key = "xxx";
-        Document value = new Document().append("x", 1).append("y", "sss");
+        Document value = new Document().append("x", 1).append("y", "sss").append("timestamp", 10000L);
+        Document value1 = new Document().append("x", 1).append("y", "sss").append("timestamp", 10001L);
+        Document value2 = new Document().append("x", 1).append("y", "sss").append("timestamp", 10002L);
+        Document value3 = new Document().append("x", 1).append("y", "sss").append("timestamp", 10003L);
+        Document value4 = new Document().append("x", 1).append("y", "sss").append("timestamp", 10004L);
+        Document value5 = new Document().append("x", 1).append("y", "sss").append("timestamp", 10005L);
 
         IMap<String, Document> m = hz.getMap("imapCache");
         System.out.println(m.get(key));
@@ -36,58 +41,26 @@ public class Application {
         System.out.println(m.get(key+5000));
 
         Ringbuffer<Document> rb = hz.getRingbuffer("ringBufferCache");
-        persistenceStorage.setRingBufferTTL(rb, 4);
         System.out.println(rb.headSequence());
         System.out.println(rb.tailSequence());
 
         rb.add(value);
-        rb.add(value);
-        rb.add(value);
-        rb.add(value);
-        rb.add(value);
-        rb.add(value);
-        System.out.println(rb.headSequence());
-        System.out.println(rb.tailSequence());
-        System.out.println(rb.readOne(0));
-        System.out.println(rb.readOne(5));
-
-        Thread.sleep(2000);
+        rb.add(value1);
+        rb.add(value2);
+        rb.add(value3);
+        rb.add(value4);
+        rb.add(value5);
         System.out.println(rb.headSequence());
         System.out.println(rb.tailSequence());
         System.out.println(rb.readOne(0));
         System.out.println(rb.readOne(5));
 
-        Thread.sleep(3000);
-        System.out.println(rb.headSequence());
-        System.out.println(rb.tailSequence());
-        System.out.println(rb.readOne(0));
-        System.out.println(rb.readOne(5));
+        System.out.println(persistenceStorage.findSequence(rb, 9999));
+        System.out.println(persistenceStorage.findSequence(rb, 10000));
+        System.out.println(persistenceStorage.findSequence(rb, 10001));
+        System.out.println(persistenceStorage.findSequence(rb, 10003));
+        System.out.println(persistenceStorage.findSequence(rb, 10008));
 
-
-//        rb.add(value);
-//        rb.add(value);
-//        System.out.println(rb.size());
-//        System.out.println(rb.capacity());
-//        System.out.println(rb.remainingCapacity());
-//        System.out.println(rb.headSequence());
-//        System.out.println(rb.tailSequence());
-//        System.out.println(rb.readOne(rb.tailSequence()));
-//
-//        rb.add(value);
-//        rb.add(value);
-//        rb.add(value);
-//        rb.add(value);
-//        rb.add(value);
-//        rb.add(value);
-//        rb.add(value);
-//        rb.add(value);
-//        rb.add(value);
-//        rb.add(value);
-//        rb.add(value);
-//        System.out.println(rb.size());
-//        System.out.println(rb.capacity());
-//        System.out.println(rb.remainingCapacity());
-//        System.out.println(rb.headSequence());
 //        System.out.println(rb.tailSequence());
 //        System.out.println(rb.readOne(rb.tailSequence()));
 //
