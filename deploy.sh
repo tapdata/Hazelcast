@@ -8,7 +8,7 @@ script_dir="$(
 echo "Script dir: ${script_dir}"
 cd "${script_dir}"
 module="all"
-if [[ !"${1}" == "" ]]; then
+if [[ "${1}" != "" ]]; then
   module="${1}"
 fi
 

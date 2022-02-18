@@ -149,13 +149,12 @@ public class PersistenceStorage {
 		return initMapStoreConfig(c, "default");
 	}
 
-	private PersistenceStorage initMapStoreConfig(Config c, String mapName) {
+	public PersistenceStorage initMapStoreConfig(Config c, String mapName) {
 		if (this.imapStorageMode == StorageMode.Mem) {
 			return this;
 		}
-		MapConfig mapCfg = new MapConfig();
-		mapCfg.setName(mapName);
-		MapStoreConfig mapStoreCfg = new MapStoreConfig();
+		MapConfig mapCfg = c.getMapConfig(mapName);
+		MapStoreConfig mapStoreCfg = mapCfg.getMapStoreConfig();
 		switch (this.imapStorageMode) {
 			case MongoDB:
 				mapStoreCfg.setClassName(MonogoDBIMap.class.getName())
@@ -182,14 +181,14 @@ public class PersistenceStorage {
 		return initRingBufferConfig(c, "default");
 	}
 
-	private PersistenceStorage initRingBufferConfig(Config c, String ringBufferName) {
+	public PersistenceStorage initRingBufferConfig(Config c, String ringBufferName) {
 		if (this.ringBufferStorageMode == StorageMode.Mem) {
 			return this;
 		}
 
-		RingbufferConfig ringbufferConfig = new RingbufferConfig();
-		ringbufferConfig.setName(ringBufferName).setCapacity(this.ringBufferInMemSize);
-		RingbufferStoreConfig ringbufferStoreConfig = new RingbufferStoreConfig();
+		RingbufferConfig ringbufferConfig = c.getRingbufferConfig(ringBufferName);
+		ringbufferConfig.setCapacity(this.ringBufferInMemSize);
+		RingbufferStoreConfig ringbufferStoreConfig = ringbufferConfig.getRingbufferStoreConfig();
 		switch (this.ringBufferStorageMode) {
 			case MongoDB:
 				ringbufferStoreConfig.setClassName(MongoDBRingBuffer.class.getName())
@@ -212,6 +211,12 @@ public class PersistenceStorage {
 	public PersistenceStorage initHZConfig(Config c) {
 		this.initMapStoreConfig(c);
 		this.initRingBufferConfig(c);
+		return this;
+	}
+
+	public PersistenceStorage initHZConfig(Config c, String configName) {
+		this.initMapStoreConfig(c, configName);
+		this.initRingBufferConfig(c, configName);
 		return this;
 	}
 
@@ -296,36 +301,37 @@ public class PersistenceStorage {
 		}).start();
 		return this;
 	}
-    public long findSequence(Ringbuffer<Document> rb, long timestamp) {
-        if (this.ringBufferStorageMode == StorageMode.MongoDB) {
-            MongoClient mongoClient = new MongoClient(new MongoClientURI(this.ringBufferMongoUri));
-            MongoCollection<Document> cacheCollection = mongoClient.getDatabase(this.ringBufferDB).getCollection(this.ringBufferCollection);
-            Document query = new Document("ringBuffer", rb.getName()).append("value.timestamp", new Document("$gte", timestamp));
-            Document document = cacheCollection.find(query).sort(ascending("_id")).first();
-            if (document == null) {
-                return 0;
-            }
-            return document.getLong("key");
-        }
 
-        if (this.ringBufferStorageMode == StorageMode.RocksDB) {
-            if (rb.tailSequence() == -1) {
-                return 0;
-            }
-            for (long i=rb.headSequence(); i<=rb.tailSequence(); i++) {
-                try {
-                    Document document = rb.readOne(i);
-                    if (document == null) {
-                        continue;
-                    }
-                    if (document.getLong("timestamp") >= timestamp) {
-                        return i;
-                    }
-                } catch (Exception e) {
-                    continue;
-                }
-            }
-        }
-        return 0;
-    }
+	public long findSequence(Ringbuffer<Document> rb, long timestamp) {
+		if (this.ringBufferStorageMode == StorageMode.MongoDB) {
+			MongoClient mongoClient = new MongoClient(new MongoClientURI(this.ringBufferMongoUri));
+			MongoCollection<Document> cacheCollection = mongoClient.getDatabase(this.ringBufferDB).getCollection(this.ringBufferCollection);
+			Document query = new Document("ringBuffer", rb.getName()).append("value.timestamp", new Document("$gte", timestamp));
+			Document document = cacheCollection.find(query).sort(ascending("_id")).first();
+			if (document == null) {
+				return 0;
+			}
+			return document.getLong("key");
+		}
+
+		if (this.ringBufferStorageMode == StorageMode.RocksDB) {
+			if (rb.tailSequence() == -1) {
+				return 0;
+			}
+			for (long i = rb.headSequence(); i <= rb.tailSequence(); i++) {
+				try {
+					Document document = rb.readOne(i);
+					if (document == null) {
+						continue;
+					}
+					if (document.getLong("timestamp") >= timestamp) {
+						return i;
+					}
+				} catch (Exception e) {
+					continue;
+				}
+			}
+		}
+		return 0;
+	}
 }
