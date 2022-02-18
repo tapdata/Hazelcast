@@ -146,11 +146,15 @@ public class PersistenceStorage {
 	}
 
 	private PersistenceStorage initMapStoreConfig(Config c) {
+		return initMapStoreConfig(c, "default");
+	}
+
+	private PersistenceStorage initMapStoreConfig(Config c, String mapName) {
 		if (this.imapStorageMode == StorageMode.Mem) {
 			return this;
 		}
 		MapConfig mapCfg = new MapConfig();
-		mapCfg.setName("default");
+		mapCfg.setName(mapName);
 		MapStoreConfig mapStoreCfg = new MapStoreConfig();
 		switch (this.imapStorageMode) {
 			case MongoDB:
@@ -175,12 +179,16 @@ public class PersistenceStorage {
 	}
 
 	private PersistenceStorage initRingBufferConfig(Config c) {
+		return initRingBufferConfig(c, "default");
+	}
+
+	private PersistenceStorage initRingBufferConfig(Config c, String ringBufferName) {
 		if (this.ringBufferStorageMode == StorageMode.Mem) {
 			return this;
 		}
 
 		RingbufferConfig ringbufferConfig = new RingbufferConfig();
-		ringbufferConfig.setName("default").setCapacity(this.ringBufferInMemSize);
+		ringbufferConfig.setName(ringBufferName).setCapacity(this.ringBufferInMemSize);
 		RingbufferStoreConfig ringbufferStoreConfig = new RingbufferStoreConfig();
 		switch (this.ringBufferStorageMode) {
 			case MongoDB:
