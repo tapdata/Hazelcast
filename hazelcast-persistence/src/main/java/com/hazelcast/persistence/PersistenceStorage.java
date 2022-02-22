@@ -304,14 +304,15 @@ public class PersistenceStorage {
 
 	public long findSequence(Ringbuffer<Document> rb, long timestamp) {
 		if (this.ringBufferStorageMode == StorageMode.MongoDB) {
-			MongoClient mongoClient = new MongoClient(new MongoClientURI(this.ringBufferMongoUri));
-			MongoCollection<Document> cacheCollection = mongoClient.getDatabase(this.ringBufferDB).getCollection(this.ringBufferCollection);
-			Document query = new Document("ringBuffer", rb.getName()).append("value.timestamp", new Document("$gte", timestamp));
-			Document document = cacheCollection.find(query).sort(ascending("_id")).first();
-			if (document == null) {
-				return 0;
+			try (MongoClient mongoClient = new MongoClient(new MongoClientURI(this.ringBufferMongoUri))) {
+				MongoCollection<Document> cacheCollection = mongoClient.getDatabase(this.ringBufferDB).getCollection(this.ringBufferCollection);
+				Document query = new Document("ringBuffer", rb.getName()).append("value.timestamp", new Document("$gte", timestamp));
+				Document document = cacheCollection.find(query).sort(ascending("_id")).first();
+				if (document == null) {
+					return 0;
+				}
+				return document.getLong("key");
 			}
-			return document.getLong("key");
 		}
 
 		if (this.ringBufferStorageMode == StorageMode.RocksDB) {
