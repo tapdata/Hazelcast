@@ -12,6 +12,7 @@ import org.rocksdb.RocksDBException;
 import java.nio.charset.StandardCharsets;
 
 import static com.mongodb.client.model.Sorts.ascending;
+import static com.mongodb.client.model.Sorts.descending;
 
 public class PersistenceStorage {
 	private StorageMode imapStorageMode = StorageMode.RocksDB;
@@ -309,7 +310,12 @@ public class PersistenceStorage {
 				Document query = new Document("ringBuffer", rb.getName()).append("value.timestamp", new Document("$gte", timestamp));
 				Document document = cacheCollection.find(query).sort(ascending("_id")).first();
 				if (document == null) {
-					return 0;
+					query = new Document("ringBuffer", rb.getName());
+					document = cacheCollection.find(query).sort(descending("_id")).first();
+					if (document == null) {
+						return 0;
+					}
+					return document.getLong("key");
 				}
 				return document.getLong("key");
 			}
@@ -333,6 +339,6 @@ public class PersistenceStorage {
 				}
 			}
 		}
-		return 0;
+		return rb.tailSequence();
 	}
 }
