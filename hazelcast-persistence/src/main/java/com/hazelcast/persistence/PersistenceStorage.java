@@ -158,7 +158,7 @@ public class PersistenceStorage {
 		MapStoreConfig mapStoreCfg = mapCfg.getMapStoreConfig();
 		switch (this.imapStorageMode) {
 			case MongoDB:
-				mapStoreCfg.setClassName(MonogoDBIMap.class.getName())
+				mapStoreCfg.setClassName(MongoDBIMap.class.getName())
 						.setProperty("mongo.uri", this.imapMongoUri)
 						.setProperty("mongo.db", this.imapDB)
 						.setProperty("mongo.collection", this.imapCollection);
