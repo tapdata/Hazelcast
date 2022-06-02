@@ -5,13 +5,17 @@ import com.hazelcast.map.MapLoaderLifecycleSupport;
 import com.hazelcast.map.MapStore;
 import com.mongodb.MongoClient;
 import com.mongodb.MongoClientURI;
+import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoCursor;
+import com.mongodb.client.MongoIterable;
 import com.mongodb.client.model.ReplaceOptions;
 import org.bson.Document;
 import com.mongodb.client.model.Indexes;
 import org.bson.conversions.Bson;
 
 import java.util.*;
+import java.util.function.Consumer;
 
 public class MongoDBIMap implements MapStore<String, Object>, MapLoaderLifecycleSupport {
 	private MongoClient mongoClient;
@@ -87,9 +91,10 @@ public class MongoDBIMap implements MapStore<String, Object>, MapLoaderLifecycle
 	}
 
 	public synchronized void deleteAll(Collection<String> keys) {
-		for (String key : keys) {
-			delete(key);
-		}
+		cacheCollection.deleteMany(new Document("imap", imapName));
+//		for (String key : keys) {
+//			delete(key);
+//		}
 	}
 
 	public synchronized Document load(String key) {
@@ -110,6 +115,48 @@ public class MongoDBIMap implements MapStore<String, Object>, MapLoaderLifecycle
 	}
 
 	public Iterable<String> loadAllKeys() {
-		return null;
+		return new MongoDBImapIterable(cacheCollection.find(new Document("imap", imapName)));
+	}
+
+	class MongoDBImapIterable implements Iterable<String> {
+		FindIterable<Document> mongoIterable;
+
+		public MongoDBImapIterable(FindIterable<Document> mongoIterable) {
+			if (null == mongoIterable) {
+				throw new IllegalArgumentException("MongoIterable is null");
+			}
+			this.mongoIterable = mongoIterable;
+		}
+
+		@Override
+		public void forEach(Consumer<? super String> action) {
+			mongoIterable.forEach((Consumer<Document>) document -> action.accept(document.getString("key")));
+		}
+
+		@Override
+		public Iterator<String> iterator() {
+			return new MongoDBImapIterator(mongoIterable.iterator());
+		}
+	}
+
+	class MongoDBImapIterator implements Iterator<String> {
+		private MongoCursor<Document> mongoCursor;
+
+		public MongoDBImapIterator(MongoCursor<Document> mongoCursor) {
+			if (null == mongoCursor) {
+				throw new IllegalArgumentException("MongoCursor is null");
+			}
+			this.mongoCursor = mongoCursor;
+		}
+
+		@Override
+		public boolean hasNext() {
+			return mongoCursor.hasNext();
+		}
+
+		@Override
+		public String next() {
+			return mongoCursor.next().getString("key");
+		}
 	}
 }
