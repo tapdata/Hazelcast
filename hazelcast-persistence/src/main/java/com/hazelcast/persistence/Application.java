@@ -14,7 +14,7 @@ public class Application {
     public static void main(String[] args) throws InterruptedException {
         Config c = new Config();
         PersistenceStorage persistenceStorage = PersistenceStorage.getInstance();
-        persistenceStorage.setStorageMode(StorageMode.MongoDB);
+//        persistenceStorage.setStorageMode(StorageMode.MongoDB);
         persistenceStorage.setRingBufferMongoUri("mongodb://root:Gotapd8!@192.168.1.181:32560/xxx?authSource=admin");
         persistenceStorage.initHZConfig(c);
 
@@ -32,6 +32,6 @@ public class Application {
         rb.add(value);
         System.out.println(rb.readOne(rb.tailSequence()));
 
-        persistenceStorage.findSequence(rb, 9999999L);
+//        persistenceStorage.findSequence(rb, 9999999L);
     }
 }
