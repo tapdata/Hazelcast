@@ -18,29 +18,37 @@ import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Collections;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Objects;
 
+import static com.hazelcast.persistence.ConfigConstant.MONGO_COLLECTION;
+import static com.hazelcast.persistence.ConfigConstant.MONGO_DB;
+import static com.hazelcast.persistence.ConfigConstant.MONGO_URI;
+import static com.hazelcast.persistence.ConfigConstant.ROCKSDB_DBPATH;
+import static com.hazelcast.persistence.ConfigConstant.STORAGE_MODE;
+import static com.hazelcast.persistence.StorageMode.MongoDB;
 import static com.mongodb.client.model.Sorts.ascending;
 import static com.mongodb.client.model.Sorts.descending;
 
 public class PersistenceStorage {
-//	private StorageMode imapStorageMode = StorageMode.RocksDB;
-	private String imapRocksDBPath = "./imap-cache-data/";
-	private String imapMongoUri = "mongodb://127.0.0.1";
-	private String imapDB = "cache";
-	private String imapCollection = "imap";
-	private Integer imapInMemSize = 1;
+	private StorageMode imapStorageMode = StorageMode.RocksDB;
+	private static final String DEFAULT_IMAP_ROCKSDB_PATH = "./imap-cache-data/";
+	private static final String DEFAULT_IMAP_MONGO_URI = "mongodb://127.0.0.1";
+	private static final String DEFAULT_IMAP_DB = "cache";
+	private static final String DEFAULT_IMAP_COLLECTION = "imap";
+	private static final Integer DEFAULT_IMAP_IN_MEM_SIZE = 1;
 
 	private StorageMode ringBufferStorageMode = StorageMode.RocksDB;
-	private String ringBufferRocksDBPath = "./ringBuffer-cache-data/";
-	private String ringBufferMongoUri = "mongodb://127.0.0.1";
-	private String ringBufferDB = "cache";
-	private String ringBufferCollection = "ringBuffer";
-	private Integer ringBufferInMemSize = 1;
+	private static final String DEFAULT_RING_BUFFER_ROCKSDB_PATH = "./ringBuffer-cache-data/";
+	private static final String DEFAULT_RING_BUFFER_MONGO_URI = "mongodb://127.0.0.1";
+	private static final String DEFAULT_RING_BUFFER_DB = "cache";
+	private static final String DEFAULT_RING_BUFFER_COLLECTION = "ringBuffer";
+	private static final Integer DEFAULT_RING_BUFFER_IN_MEM_SIZE = 1;
 	private static final String DEFAULT_CONFIG_NAME = "default";
+
+	private Config config;
 
 	private PersistenceStorage() {
 	}
@@ -63,6 +71,9 @@ public class PersistenceStorage {
 		}
 	}
 
+	public Config getConfig() {
+		return this.config;
+	}
 //	public PersistenceStorage setStorageMode(StorageMode storageMode) {
 //		this.setImapStorageMode(storageMode);
 //		this.setRingBufferStorageMode(storageMode);
@@ -79,158 +90,149 @@ public class PersistenceStorage {
 //		return this;
 //	}
 
-	public PersistenceStorage setRocksDBPath(String rocksDBPath) {
-		this.setImapRocksDBPath(rocksDBPath);
-		this.setRingBufferRocksDBPath(rocksDBPath);
-		return this;
-	}
+//	public PersistenceStorage setRocksDBPath(String rocksDBPath) {
+//		this.setImapRocksDBPath(rocksDBPath);
+//		this.setRingBufferRocksDBPath(rocksDBPath);
+//		return this;
+//	}
 
-	public PersistenceStorage setImapRocksDBPath(String rocksDBPath) {
-		this.imapRocksDBPath = rocksDBPath;
-		return this;
-	}
+//	public PersistenceStorage setImapRocksDBPath(String rocksDBPath) {
+//		this.imapRocksDBPath = rocksDBPath;
+//		return this;
+//	}
+//
+//	public PersistenceStorage setRingBufferRocksDBPath(String rocksDBPath) {
+//		this.ringBufferRocksDBPath = rocksDBPath;
+//		return this;
+//	}
+//
+//	public PersistenceStorage setMongoUri(String mongoUri) {
+//		this.setImapMongoUri(mongoUri);
+//		this.setRingBufferMongoUri(mongoUri);
+//		return this;
+//	}
 
-	public PersistenceStorage setRingBufferRocksDBPath(String rocksDBPath) {
-		this.ringBufferRocksDBPath = rocksDBPath;
-		return this;
-	}
+//	public PersistenceStorage setImapMongoUri(String mongoUri) {
+//		this.imapMongoUri = mongoUri;
+//		return this;
+//	}
 
-	public PersistenceStorage setMongoUri(String mongoUri) {
-		this.setImapMongoUri(mongoUri);
-		this.setRingBufferMongoUri(mongoUri);
-		return this;
-	}
+//	public String getImapMongoUri() {
+//		return this.imapMongoUri;
+//	}
 
-	public PersistenceStorage setImapMongoUri(String mongoUri) {
-		this.imapMongoUri = mongoUri;
-		return this;
-	}
+//	public PersistenceStorage setRingBufferMongoUri(String mongoUri) {
+//		this.ringBufferMongoUri = mongoUri;
+//		return this;
+//	}
 
-	public String getImapMongoUri() {
-		return this.imapMongoUri;
-	}
+//	public PersistenceStorage setDB(String db) {
+//		this.setImapDB(db);
+//		this.setRingBufferDB(db);
+//		return this;
+//	}
 
-	public PersistenceStorage setRingBufferMongoUri(String mongoUri) {
-		this.ringBufferMongoUri = mongoUri;
-		return this;
-	}
+//	public PersistenceStorage setImapDB(String db) {
+//		this.imapDB = db;
+//		return this;
+//	}
+//
+//	public PersistenceStorage setRingBufferDB(String db) {
+//		this.ringBufferDB = db;
+//		return this;
+//	}
 
-	public PersistenceStorage setDB(String db) {
-		this.setImapDB(db);
-		this.setRingBufferDB(db);
-		return this;
-	}
+//	public PersistenceStorage setCollection(String collection) {
+//		this.setImapCollection(collection);
+//		this.setRingBufferCollection((collection));
+//		return this;
+//	}
 
-	public PersistenceStorage setImapDB(String db) {
-		this.imapDB = db;
-		return this;
-	}
+//	public PersistenceStorage setImapCollection(String imapCollection) {
+//		this.imapCollection = imapCollection;
+//		return this;
+//	}
+//
+//	public PersistenceStorage setRingBufferCollection(String ringBufferCollection) {
+//		this.ringBufferCollection = ringBufferCollection;
+//		return this;
+//	}
+//
+//	public PersistenceStorage setInMemSize(Integer inMemSize) {
+//		this.setImapInMemSize(inMemSize);
+//		this.setRingBufferInMemSize(inMemSize);
+//		return this;
+//	}
 
-	public PersistenceStorage setRingBufferDB(String db) {
-		this.ringBufferDB = db;
-		return this;
-	}
-
-	public PersistenceStorage setCollection(String collection) {
-		this.setImapCollection(collection);
-		this.setRingBufferCollection((collection));
-		return this;
-	}
-
-	public PersistenceStorage setImapCollection(String imapCollection) {
-		this.imapCollection = imapCollection;
-		return this;
-	}
-
-	public PersistenceStorage setRingBufferCollection(String ringBufferCollection) {
-		this.ringBufferCollection = ringBufferCollection;
-		return this;
-	}
-
-	public PersistenceStorage setInMemSize(Integer inMemSize) {
-		this.setImapInMemSize(inMemSize);
-		this.setRingBufferInMemSize(inMemSize);
-		return this;
-	}
-
-	public PersistenceStorage setImapInMemSize(Integer imapInMemSize) {
-		this.imapInMemSize = imapInMemSize;
-		return this;
-	}
-
-	public PersistenceStorage setRingBufferInMemSize(Integer ringBufferInMemSize) {
-		this.ringBufferInMemSize = ringBufferInMemSize;
-		return this;
-	}
+//	public PersistenceStorage setImapInMemSize(Integer imapInMemSize) {
+//		this.imapInMemSize = imapInMemSize;
+//		return this;
+//	}
+//
+//	public PersistenceStorage setRingBufferInMemSize(Integer ringBufferInMemSize) {
+//		this.ringBufferInMemSize = ringBufferInMemSize;
+//		return this;
+//	}
 
 	private PersistenceStorage initMapStoreConfig(Config c) {
-		return initMapStoreConfig(c, "default");
-	}
-
-	public PersistenceStorage setPersistenceStorage(final Config c) {
-		final Map<String, MapConfig> configMap = c.getMapConfigs();
-		for (final Map.Entry<String, MapConfig> entry : configMap.entrySet()) {
-			// todo just for testing
-			this.imapMongoUri = entry.getKey();
-		}
-		return this;
+		return initMapStoreConfig(c, DEFAULT_CONFIG_NAME);
 	}
 
 	public PersistenceStorage initMapStoreConfig(Config c, String mapName) {
-//		if (this.imapStorageMode == StorageMode.Mem) {
-//			return this;
-//		}
-//		MapConfig mapCfg = c.getMapConfig(mapName);
-//		MapStoreConfig mapStoreCfg = mapCfg.getMapStoreConfig();
-//		switch (this.imapStorageMode) {
-//			case MongoDB:
-//				mapStoreCfg.setClassName(MongoDBIMap.class.getName())
-//						.setProperty("mongo.uri", this.imapMongoUri)
-//						.setProperty("mongo.db", this.imapDB)
-//						.setProperty("mongo.collection", this.imapCollection);
-//				break;
-//			case RocksDB:
-//				mapStoreCfg.setClassName(RocksDBIMap.class.getName())
-//						.setProperty("rocksdb.dbPath", this.imapRocksDBPath);
-//		}
-//		EvictionConfig evictionConfig = new EvictionConfig()
-//				.setEvictionPolicy(EvictionPolicy.LRU)
-//				.setMaxSizePolicy(MaxSizePolicy.PER_NODE)
-//				.setSize(this.imapInMemSize);
-//		mapCfg.setEvictionConfig(evictionConfig);
-//		mapStoreCfg.setEnabled(true);
-//		mapCfg.setMapStoreConfig(mapStoreCfg);
-//		c.addMapConfig(mapCfg);
+		if (this.imapStorageMode == StorageMode.Mem) {
+			return this;
+		}
+		MapConfig mapCfg = c.getMapConfig(mapName);
+		MapStoreConfig mapStoreCfg = mapCfg.getMapStoreConfig();
+		switch (this.imapStorageMode) {
+			case MongoDB:
+				mapStoreCfg.setClassName(MongoDBIMap.class.getName())
+						.setProperty(MONGO_URI, DEFAULT_IMAP_MONGO_URI)
+						.setProperty(MONGO_DB, DEFAULT_IMAP_DB)
+						.setProperty(MONGO_COLLECTION, DEFAULT_IMAP_COLLECTION);
+				break;
+			case RocksDB:
+				mapStoreCfg.setClassName(RocksDBIMap.class.getName())
+						.setProperty(ROCKSDB_DBPATH, DEFAULT_IMAP_ROCKSDB_PATH);
+		}
+		EvictionConfig evictionConfig = new EvictionConfig()
+				.setEvictionPolicy(EvictionPolicy.LRU)
+				.setMaxSizePolicy(MaxSizePolicy.PER_NODE)
+				.setSize(DEFAULT_IMAP_IN_MEM_SIZE);
+		mapCfg.setEvictionConfig(evictionConfig);
+		mapStoreCfg.setEnabled(true);
+		mapCfg.setMapStoreConfig(mapStoreCfg);
+		c.addMapConfig(mapCfg);
 		return this;
 	}
 
 	private PersistenceStorage initRingBufferConfig(Config c) {
-		return initRingBufferConfig(c, "default");
+		return initRingBufferConfig(c, DEFAULT_CONFIG_NAME);
 	}
 
 	public PersistenceStorage initRingBufferConfig(Config c, String ringBufferName) {
-//		if (this.ringBufferStorageMode == StorageMode.Mem) {
-//			return this;
-//		}
-//
-//		RingbufferConfig ringbufferConfig = c.getRingbufferConfig(ringBufferName);
-//		ringbufferConfig.setCapacity(this.ringBufferInMemSize);
-//		RingbufferStoreConfig ringbufferStoreConfig = ringbufferConfig.getRingbufferStoreConfig();
-//		switch (this.ringBufferStorageMode) {
-//			case MongoDB:
-//				ringbufferStoreConfig.setClassName(MongoDBRingBuffer.class.getName())
-//						.setProperty("mongo.uri", this.ringBufferMongoUri)
-//						.setProperty("mongo.db", this.ringBufferDB)
-//						.setProperty("mongo.collection", this.ringBufferCollection);
-//				break;
-//			case RocksDB:
-//				ringbufferStoreConfig.setClassName(RocksDBRingBuffer.class.getName())
-//						.setProperty("rocksdb.dbPath", this.ringBufferRocksDBPath);
-//		}
-//		ringbufferConfig.setCapacity(this.ringBufferInMemSize).setInMemoryFormat(InMemoryFormat.OBJECT);
-//		ringbufferStoreConfig.setEnabled(true);
-//		ringbufferConfig.setRingbufferStoreConfig(ringbufferStoreConfig);
-//		c.addRingBufferConfig(ringbufferConfig);
+		if (this.ringBufferStorageMode == StorageMode.Mem) {
+			return this;
+		}
+
+		RingbufferConfig ringbufferConfig = c.getRingbufferConfig(ringBufferName);
+		ringbufferConfig.setCapacity(DEFAULT_RING_BUFFER_IN_MEM_SIZE);
+		RingbufferStoreConfig ringbufferStoreConfig = ringbufferConfig.getRingbufferStoreConfig();
+		switch (this.ringBufferStorageMode) {
+			case MongoDB:
+				ringbufferStoreConfig.setClassName(MongoDBRingBuffer.class.getName())
+						.setProperty(MONGO_URI, DEFAULT_RING_BUFFER_MONGO_URI)
+						.setProperty(MONGO_DB, DEFAULT_RING_BUFFER_DB)
+						.setProperty(MONGO_COLLECTION, DEFAULT_RING_BUFFER_COLLECTION);
+				break;
+			case RocksDB:
+				ringbufferStoreConfig.setClassName(RocksDBRingBuffer.class.getName())
+						.setProperty(ROCKSDB_DBPATH, DEFAULT_RING_BUFFER_ROCKSDB_PATH);
+		}
+		ringbufferConfig.setCapacity(DEFAULT_RING_BUFFER_IN_MEM_SIZE).setInMemoryFormat(InMemoryFormat.OBJECT);
+		ringbufferStoreConfig.setEnabled(true);
+		ringbufferConfig.setRingbufferStoreConfig(ringbufferStoreConfig);
+		c.addRingBufferConfig(ringbufferConfig);
 		return this;
 	}
 
@@ -238,12 +240,14 @@ public class PersistenceStorage {
 	public PersistenceStorage initHZConfig(Config c) {
 		this.initMapStoreConfig(c);
 		this.initRingBufferConfig(c);
+		this.config = c;
 		return this;
 	}
 
 	public PersistenceStorage initHZConfig(Config c, String configName) {
 		this.initMapStoreConfig(c, configName);
 		this.initRingBufferConfig(c, configName);
+		this.config = c;
 		return this;
 	}
 
@@ -252,13 +256,92 @@ public class PersistenceStorage {
 	 * @param newConfig
 	 */
 	public void addConfig(final ExternalStorageConfig newConfig) {
-//		Map<String, MapConfig> mapConfigMap = globalConfigContainer.getMapConfigs();
+		if (newConfig == null || !newConfig.checkIfValid()) {
+			throw new RuntimeException("invalid config");
+		}
+		final Object config = newConfig.getConfig();
+		final String configName = newConfig.getConfigName();
+		final StorageMode storageMode = newConfig.getStorageMode();
+		if (config instanceof MongoDBConfig) {
+			final MongoDBConfig mongoDBConfig = (MongoDBConfig) config;
 
+			final MapConfig mapConfig = new MapConfig();
+			mapConfig.setName(configName);
+			mapConfig.getMapStoreConfig()
+					.setClassName(MongoDBIMap.class.getName())
+					.setProperty(MONGO_URI, mongoDBConfig.getMongoUrl())
+					.setProperty(MONGO_COLLECTION, mongoDBConfig.getCollection())
+					.setProperty(MONGO_DB, mongoDBConfig.getDb())
+					.setProperty(STORAGE_MODE, storageMode.name())
+					.setEnabled(true);
+			this.config.addMapConfig(mapConfig);
+
+			final RingbufferConfig ringbufferConfig = new RingbufferConfig();
+			ringbufferConfig.setName(configName);
+			ringbufferConfig.getRingbufferStoreConfig()
+					.setClassName(MongoDBRingBuffer.class.getName())
+					.setProperty(MONGO_URI, mongoDBConfig.getMongoUrl())
+					.setProperty(MONGO_COLLECTION, mongoDBConfig.getCollection())
+					.setProperty(MONGO_DB, mongoDBConfig.getDb())
+					.setProperty(STORAGE_MODE, storageMode.name())
+					.setEnabled(true);
+			this.config.addRingBufferConfig(ringbufferConfig);
+		} else if (config instanceof RocksDBConfig) {
+			final RocksDBConfig rocksDBConfig = (RocksDBConfig) config;
+
+			final MapConfig mapConfig = new MapConfig();
+			mapConfig.setName(configName);
+			mapConfig.getMapStoreConfig()
+					.setClassName(RocksDBIMap.class.getName())
+					.setProperty(ROCKSDB_DBPATH, rocksDBConfig.getDbPath())
+					.setProperty(STORAGE_MODE, storageMode.name())
+					.setEnabled(true);
+			this.config.addMapConfig(mapConfig);
+
+			final RingbufferConfig ringbufferConfig = new RingbufferConfig();
+			ringbufferConfig.setName(configName);
+			ringbufferConfig.getRingbufferStoreConfig()
+					.setClassName(RocksDBRingBuffer.class.getName())
+					.setProperty(ROCKSDB_DBPATH, rocksDBConfig.getDbPath())
+					.setProperty(STORAGE_MODE, storageMode.name())
+					.setEnabled(true);
+			this.config.addRingBufferConfig(ringbufferConfig);
+		} else {
+			throw new UnsupportedOperationException("unsupported config type");
+		}
 	}
 
 	public void modifyConfig(final ExternalStorageConfig newConfig) {
-//		Map<String, MapConfig> mapConfigMap = globalConfigContainer.getMapConfigs();
+		if (newConfig == null || !newConfig.checkIfValid()) {
+			throw new RuntimeException("invalid config");
+		}
+		final String configName = newConfig.getConfigName();
+		final MapConfig mapConfig = this.config.getMapConfigOrNull(configName);
+		if (mapConfig == null) {
+			throw new RuntimeException("specific config does not exist");
+		}
+		final MapConfig existedMapConfig = this.config.getMapConfig(configName);
+		final MapStoreConfig mapStoreConfig = existedMapConfig.getMapStoreConfig();
+		final RingbufferConfig existedRbConfig = this.config.getRingbufferConfig(configName);
+		final RingbufferStoreConfig rbStoreConfig = existedRbConfig.getRingbufferStoreConfig();
 
+		final Object config = newConfig.getConfig();
+		if (config instanceof MongoDBConfig) {
+			final MongoDBConfig mongoDBConfig = (MongoDBConfig) config;
+			mapStoreConfig.setProperty(MONGO_URI, mongoDBConfig.getMongoUrl())
+					.setProperty(MONGO_COLLECTION, mongoDBConfig.getCollection())
+					.setProperty(MONGO_DB, mongoDBConfig.getDb());
+
+			rbStoreConfig.setProperty(MONGO_URI, mongoDBConfig.getMongoUrl())
+					.setProperty(MONGO_COLLECTION, mongoDBConfig.getCollection())
+					.setProperty(MONGO_DB, mongoDBConfig.getDb());
+		} else if (config instanceof RocksDBConfig) {
+			final RocksDBConfig rocksDBConfig = (RocksDBConfig) config;
+			mapStoreConfig.setProperty(ROCKSDB_DBPATH, rocksDBConfig.getDbPath());
+			rbStoreConfig.setProperty(ROCKSDB_DBPATH, rocksDBConfig.getDbPath());
+		} else {
+			throw new UnsupportedOperationException("unsupported config type");
+		}
 	}
 
 	public void deleteConfig(final String configName) {
@@ -266,7 +349,36 @@ public class PersistenceStorage {
 	}
 
 	public List<ExternalStorageConfig> queryConfigs() {
-		return Collections.emptyList();
+		final Map<String, MapConfig> mapConfigs = this.config.getMapConfigs();
+		final List<ExternalStorageConfig> configs = new ArrayList<>();
+		for (final Map.Entry<String, MapConfig> entry : mapConfigs.entrySet()) {
+			final String configName = entry.getKey();
+			final MapConfig mapConfig = entry.getValue();
+			final MapStoreConfig mapStoreConfig = mapConfig.getMapStoreConfig();
+			final String storageMode = mapStoreConfig.getProperty(STORAGE_MODE);
+			final ExternalStorageConfig config = new ExternalStorageConfig();
+
+			config.setConfigName(configName);
+			if (StorageMode.MongoDB.name().equals(storageMode)) {
+				config.setStorageMode(StorageMode.MongoDB);
+
+				MongoDBConfig mongoDBConfig = new MongoDBConfig();
+				mongoDBConfig.setMongoUrl(mapStoreConfig.getProperty(MONGO_URI));
+				mongoDBConfig.setDb(mapStoreConfig.getProperty(MONGO_DB));
+				mongoDBConfig.setCollection(mapStoreConfig.getProperty(MONGO_COLLECTION));
+				config.setConfig(mongoDBConfig);
+			} else if (StorageMode.RocksDB.name().equals(storageMode)) {
+				config.setStorageMode(StorageMode.RocksDB);
+
+				RocksDBConfig rocksDBConfig = new RocksDBConfig();
+				rocksDBConfig.setDbPath(mapStoreConfig.getProperty(ROCKSDB_DBPATH));
+				config.setConfig(rocksDBConfig);
+			} else {
+				config.setStorageMode(StorageMode.Mem);
+			}
+			configs.add(config);
+		}
+		return configs;
 	}
 
 //	public PersistenceStorage addHZConfig(Config c, String configName, StorageMode storageMode) {
@@ -364,8 +476,15 @@ public class PersistenceStorage {
 //		return this;
 //	}
 
-	public PersistenceStorage setRingBufferTTL(Ringbuffer<Document> rb, long ttlSeconds, StorageMode storageMode) {
-		if (storageMode == StorageMode.Mem) {
+	public PersistenceStorage setRingBufferTTL(Ringbuffer<Document> rb, long ttlSeconds, Config config, String configName) {
+		final MapConfig mapConfig = config.getMapConfigOrNull(configName);
+		if (mapConfig == null) {
+			throw new RuntimeException("specific config does not exist");
+		}
+		final RingbufferConfig existedConfig = config.getRingbufferConfig(configName);
+		final RingbufferStoreConfig storeConfig = existedConfig.getRingbufferStoreConfig();
+		final String storageMode = storeConfig.getProperty(STORAGE_MODE);
+		if (Objects.equals(storageMode, StorageMode.Mem.name())) {
 			return this;
 		}
 		new Thread(() -> {
@@ -380,12 +499,16 @@ public class PersistenceStorage {
 			MongoCollection<Document> cacheCollection = null;
 			String keySplit = "__0x1__";
 			String sign = rb.getName() + keySplit;
-			if (storageMode == StorageMode.RocksDB) {
-				rocksDB = RocksDBInstance.getInstance(this.ringBufferRocksDBPath);
+			if (Objects.equals(storageMode, StorageMode.RocksDB.name())) {
+				final String rbRocksDBPath = storeConfig.getProperty(ROCKSDB_DBPATH);
+				rocksDB = RocksDBInstance.getInstance(rbRocksDBPath);
 			}
-			if (storageMode == StorageMode.MongoDB) {
-				MongoClient mongoClient = new MongoClient(new MongoClientURI(this.ringBufferMongoUri));
-				cacheCollection = mongoClient.getDatabase(this.ringBufferDB).getCollection(this.ringBufferCollection);
+			if (Objects.equals(storageMode, MongoDB.name())) {
+				final String rbMongoUri = storeConfig.getProperty(MONGO_URI);
+				final String rbDB = storeConfig.getProperty(MONGO_DB);
+				final String rbCollection = storeConfig.getProperty(MONGO_COLLECTION);
+				MongoClient mongoClient = new MongoClient(new MongoClientURI(rbMongoUri));
+				cacheCollection = mongoClient.getDatabase(rbDB).getCollection(rbCollection);
 			}
 			while (true) {
 				try {
@@ -408,14 +531,14 @@ public class PersistenceStorage {
 						if (System.currentTimeMillis() - _ts * 1000 < ttlSeconds * 1000) {
 							break;
 						}
-						if (storageMode == StorageMode.RocksDB) {
+						if (Objects.equals(storageMode, StorageMode.RocksDB.name())) {
 							try {
 								rocksDB.delete((sign + s).getBytes(StandardCharsets.UTF_8));
 								rocksDB.put((sign + "smallestSequence").getBytes(StandardCharsets.UTF_8), ((Long) (s + 1)).toString().getBytes());
 							} catch (RocksDBException e) {
 							}
 						}
-						if (storageMode == StorageMode.MongoDB) {
+						if (Objects.equals(storageMode, MongoDB.name())) {
 							Document query = new Document("ringBuffer", rb.getName()).append("key", s);
 							cacheCollection.deleteOne(query);
 						}
@@ -466,10 +589,21 @@ public class PersistenceStorage {
 //		return rb.tailSequence();
 //	}
 
-	public long findSequence(Ringbuffer<Document> rb, long timestamp, StorageMode storageMode) {
-		if (storageMode == StorageMode.MongoDB) {
-			try (MongoClient mongoClient = new MongoClient(new MongoClientURI(this.ringBufferMongoUri))) {
-				MongoCollection<Document> cacheCollection = mongoClient.getDatabase(this.ringBufferDB).getCollection(this.ringBufferCollection);
+	public long findSequence(Ringbuffer<Document> rb, long timestamp, Config config, String configName) {
+		final MapConfig mapConfig = config.getMapConfigOrNull(configName);
+		if (mapConfig == null) {
+			throw new RuntimeException("specific config does not exist");
+		}
+		final RingbufferConfig existedConfig = config.getRingbufferConfig(configName);
+		final RingbufferStoreConfig storeConfig = existedConfig.getRingbufferStoreConfig();
+
+		final String storageMode = storeConfig.getProperty(STORAGE_MODE);
+		if (Objects.equals(storageMode, MongoDB.name())) {
+			final String rbMongoUri = storeConfig.getProperty(MONGO_URI);
+			final String rbMongoDB = storeConfig.getProperty(MONGO_DB);
+			final String rbMongoCollection = storeConfig.getProperty(MONGO_COLLECTION);
+			try (MongoClient mongoClient = new MongoClient(new MongoClientURI(rbMongoUri))) {
+				MongoCollection<Document> cacheCollection = mongoClient.getDatabase(rbMongoDB).getCollection(rbMongoCollection);
 				Document query = new Document("ringBuffer", rb.getName()).append("value.timestamp", new Document("$gte", timestamp));
 				Document document = cacheCollection.find(query).sort(ascending("_id")).first();
 				if (document == null) {
@@ -484,7 +618,7 @@ public class PersistenceStorage {
 			}
 		}
 
-		if (storageMode == StorageMode.RocksDB) {
+		if (Objects.equals(storageMode, StorageMode.RocksDB.name())) {
 			if (rb.tailSequence() == -1) {
 				return 0;
 			}
@@ -497,8 +631,7 @@ public class PersistenceStorage {
 					if (document.getLong("timestamp") >= timestamp) {
 						return i;
 					}
-				} catch (Exception e) {
-					continue;
+				} catch (Exception ignored) {
 				}
 			}
 		}

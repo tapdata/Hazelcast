@@ -45,4 +45,9 @@ public class ExternalStorageConfig<T> {
     public void setConfig(T config) {
         this.config = config;
     }
+
+    public boolean checkIfValid() {
+        return (this.config instanceof MongoDBConfig && StorageMode.MongoDB.equals(this.storageMode))
+                || (this.config instanceof RocksDBConfig && StorageMode.RocksDB.equals(this.storageMode));
+    }
 }
