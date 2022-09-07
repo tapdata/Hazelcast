@@ -135,4 +135,51 @@ public class ConfigTest {
         t3.start();
         t3.join();
     }
+
+    @Test
+    public void testAddRepeated() throws InterruptedException {
+        Config c = new Config();
+        PersistenceStorage ps = PersistenceStorage.getInstance();
+        ps.initHZConfig(c);
+
+        Thread t1 = new Thread(() -> {
+            HazelcastInstance hz = Hazelcast.newHazelcastInstance(c);
+
+            ExternalStorageConfig config2 = new ExternalStorageConfig();
+            config2.setConfigName("config2");
+            config2.setStorageMode(StorageMode.RocksDB);
+            RocksDBConfig rocksDBConfig = new RocksDBConfig();
+            rocksDBConfig.setDbPath("/xxx");
+            config2.setConfig(rocksDBConfig);
+            ps.addConfig(config2);
+        });
+
+        Thread t2 = new Thread(() -> {
+            MapConfig mapConfig2 = ps.getConfig().getMapConfigOrNull("config2");
+            Assert.assertNotNull(mapConfig2);
+            Assert.assertEquals("/xxx", mapConfig2.getMapStoreConfig().getProperty(ROCKSDB_DBPATH));
+
+            ExternalStorageConfig config3 = new ExternalStorageConfig();
+            config3.setConfigName("config2");
+            config3.setStorageMode(StorageMode.RocksDB);
+            RocksDBConfig rocksDBConfig = new RocksDBConfig();
+            rocksDBConfig.setDbPath("/yyy");
+            config3.setConfig(rocksDBConfig);
+            ps.addConfig(config3);
+        });
+
+        Thread t3 = new Thread(() -> {
+            MapConfig mapConfig2 = c.getMapConfigOrNull("config2");
+            Assert.assertNotNull(mapConfig2);
+            MapStoreConfig mapStoreConfig2 = mapConfig2.getMapStoreConfig();
+            Assert.assertEquals("/yyy", mapStoreConfig2.getProperty(ROCKSDB_DBPATH));
+        });
+
+        t1.start();
+        t1.join();
+        t2.start();
+        t2.join();
+        t3.start();
+        t3.join();
+    }
 }
