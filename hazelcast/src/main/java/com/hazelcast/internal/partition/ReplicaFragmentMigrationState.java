@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,12 +55,13 @@ public class ReplicaFragmentMigrationState
     public ReplicaFragmentMigrationState(Map<ServiceNamespace, long[]> namespaces,
                                          Collection<Operation> migrationOperations,
                                          Collection<ChunkSupplier> chunkSuppliers,
+                                         boolean chunkedMigrationEnabled,
                                          int maxTotalChunkedDataInBytes, ILogger logger,
                                          int partitionId) {
         this.namespaces = namespaces;
         this.migrationOperations = migrationOperations;
         this.chunkSerDeHelper = new ChunkSerDeHelper(logger, partitionId,
-                chunkSuppliers, maxTotalChunkedDataInBytes);
+                chunkSuppliers, chunkedMigrationEnabled, maxTotalChunkedDataInBytes);
     }
 
     public Map<ServiceNamespace, long[]> getNamespaceVersionMap() {

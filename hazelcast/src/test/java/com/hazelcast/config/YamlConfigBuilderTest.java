@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,6 +31,7 @@ import com.hazelcast.instance.EndpointQualifier;
 import com.hazelcast.internal.config.SchemaViolationConfigurationException;
 import com.hazelcast.internal.nio.IOUtil;
 import com.hazelcast.internal.serialization.impl.compact.CompactTestUtil;
+import com.hazelcast.memory.MemorySize;
 import com.hazelcast.memory.MemoryUnit;
 import com.hazelcast.splitbrainprotection.SplitBrainProtectionOn;
 import com.hazelcast.splitbrainprotection.impl.ProbabilisticSplitBrainProtectionFunction;
@@ -2703,6 +2704,7 @@ public class YamlConfigBuilderTest
                 + "          in-memory-format: BINARY\n"
                 + "          coalesce: false\n"
                 + "          populate: true\n"
+                + "          serialize-keys: true\n"
                 + "          indexes:\n"
                 + "            - type: HASH\n"
                 + "              attributes:\n"
@@ -2729,6 +2731,7 @@ public class YamlConfigBuilderTest
         assertEquals(InMemoryFormat.BINARY, queryCacheConfig.getInMemoryFormat());
         assertFalse(queryCacheConfig.isCoalesce());
         assertTrue(queryCacheConfig.isPopulate());
+        assertTrue(queryCacheConfig.isSerializeKeys());
         assertIndexesEqual(queryCacheConfig);
         assertEquals("com.hazelcast.examples.SimplePredicate", queryCacheConfig.getPredicateConfig().getClassName());
         assertEquals(LRU, queryCacheConfig.getEvictionConfig().getEvictionPolicy());
@@ -3147,7 +3150,6 @@ public class YamlConfigBuilderTest
     @Test
     public void testDynamicConfig() {
         boolean persistenceEnabled = true;
-        String persistenceFile = "/mnt/dynamic-configuration/persistence-file";
         String backupDir = "/mnt/dynamic-configuration/backup-dir";
         int backupCount = 7;
 
@@ -3155,7 +3157,6 @@ public class YamlConfigBuilderTest
                 + "hazelcast:\n"
                 + "  dynamic-configuration:\n"
                 + "    persistence-enabled: " +  persistenceEnabled + "\n"
-                + "    persistence-file: " + persistenceFile + "\n"
                 + "    backup-dir: " + backupDir + "\n"
                 + "    backup-count: " + backupCount + "\n";
 
@@ -3163,7 +3164,6 @@ public class YamlConfigBuilderTest
         DynamicConfigurationConfig dynamicConfigurationConfig = config.getDynamicConfigurationConfig();
 
         assertEquals(persistenceEnabled, dynamicConfigurationConfig.isPersistenceEnabled());
-        assertEquals(new File(persistenceFile).getAbsolutePath(), dynamicConfigurationConfig.getPersistenceFile().getAbsolutePath());
         assertEquals(new File(backupDir).getAbsolutePath(), dynamicConfigurationConfig.getBackupDir().getAbsolutePath());
         assertEquals(backupCount, dynamicConfigurationConfig.getBackupCount());
 
@@ -3176,7 +3176,6 @@ public class YamlConfigBuilderTest
         dynamicConfigurationConfig = config.getDynamicConfigurationConfig();
 
         assertEquals(persistenceEnabled, dynamicConfigurationConfig.isPersistenceEnabled());
-        assertNull(dynamicConfigurationConfig.getPersistenceFile());
         assertEquals(new File(DEFAULT_BACKUP_DIR).getAbsolutePath(), dynamicConfigurationConfig.getBackupDir().getAbsolutePath());
         assertEquals(DEFAULT_BACKUP_COUNT, dynamicConfigurationConfig.getBackupCount());
     }
@@ -3194,6 +3193,9 @@ public class YamlConfigBuilderTest
                 + "  local-device:\n"
                 + "    my-device:\n"
                 + "      base-dir: " + baseDir + "\n"
+                + "      capacity:\n"
+                + "        unit: GIGABYTES\n"
+                + "        value: 100\n"
                 + "      block-size: " + blockSize + "\n"
                 + "      read-io-thread-count: " + readIOThreadCount + "\n"
                 + "      write-io-thread-count: " + writeIOThreadCount + "\n";
@@ -3204,6 +3206,7 @@ public class YamlConfigBuilderTest
         assertEquals("my-device", localDeviceConfig.getName());
         assertEquals(new File(baseDir).getAbsolutePath(), localDeviceConfig.getBaseDir().getAbsolutePath());
         assertEquals(blockSize, localDeviceConfig.getBlockSize());
+        assertEquals(new MemorySize(100, MemoryUnit.GIGABYTES), localDeviceConfig.getCapacity());
         assertEquals(readIOThreadCount, localDeviceConfig.getReadIOThreadCount());
         assertEquals(writeIOThreadCount, localDeviceConfig.getWriteIOThreadCount());
 
@@ -3213,6 +3216,9 @@ public class YamlConfigBuilderTest
                 + "hazelcast:\n"
                 + "  local-device:\n"
                 + "    device0:\n"
+                + "      capacity:\n"
+                + "        unit: MEGABYTES\n"
+                + "        value: 1234567890\n"
                 + "      block-size: " + (blockSize * device0Multiplier) + "\n"
                 + "      read-io-thread-count: " + (readIOThreadCount * device0Multiplier) + "\n"
                 + "      write-io-thread-count: " + (writeIOThreadCount * device0Multiplier) + "\n"
@@ -3228,6 +3234,7 @@ public class YamlConfigBuilderTest
         assertEquals(blockSize * device0Multiplier, localDeviceConfig.getBlockSize());
         assertEquals(readIOThreadCount * device0Multiplier, localDeviceConfig.getReadIOThreadCount());
         assertEquals(writeIOThreadCount * device0Multiplier, localDeviceConfig.getWriteIOThreadCount());
+        assertEquals(new MemorySize(1234567890, MemoryUnit.MEGABYTES), localDeviceConfig.getCapacity());
 
         localDeviceConfig = config.getDeviceConfig("device1");
         assertEquals(blockSize * device1Multiplier, localDeviceConfig.getBlockSize());
@@ -3241,6 +3248,7 @@ public class YamlConfigBuilderTest
         assertEquals(DEFAULT_BLOCK_SIZE_IN_BYTES, localDeviceConfig.getBlockSize());
         assertEquals(DEFAULT_READ_IO_THREAD_COUNT, localDeviceConfig.getReadIOThreadCount());
         assertEquals(DEFAULT_WRITE_IO_THREAD_COUNT, localDeviceConfig.getWriteIOThreadCount());
+        assertEquals(LocalDeviceConfig.DEFAULT_CAPACITY, localDeviceConfig.getCapacity());
 
         // override the default device config
         String newBaseDir = "/some/random/base/dir/for/tiered/store";
@@ -3273,7 +3281,9 @@ public class YamlConfigBuilderTest
                 + "      tiered-store:\n"
                 + "        enabled: true\n"
                 + "        memory-tier:\n"
-                + "          capacity: 1024 MB\n"
+                + "          capacity:\n"
+                + "            unit: MEGABYTES\n"
+                + "            value: 1024\n"
                 + "        disk-tier:\n"
                 + "          enabled: true\n"
                 + "          device-name: local-device\n"
@@ -3286,7 +3296,9 @@ public class YamlConfigBuilderTest
                 + "      tiered-store:\n"
                 + "        enabled: true\n"
                 + "        memory-tier:\n"
-                + "          capacity: 1 GB\n"
+                + "          capacity:\n"
+                + "            unit: GIGABYTES\n"
+                + "            value: 1\n"
                 + "    map3:\n"
                 + "      tiered-store:\n"
                 + "        enabled: true\n";
@@ -3323,6 +3335,20 @@ public class YamlConfigBuilderTest
         diskTierConfig = tieredStoreConfig.getDiskTierConfig();
         assertFalse(diskTierConfig.isEnabled());
         assertEquals(DEFAULT_DEVICE_NAME, diskTierConfig.getDeviceName());
+
+        yaml = ""
+                + "hazelcast:\n"
+                + "  map:\n"
+                + "    some-map:\n"
+                + "      tiered-store:\n"
+                + "        enabled: true\n";
+
+        config = new InMemoryYamlConfig(yaml);
+        assertEquals(1, config.getDeviceConfigs().size());
+        assertEquals(1, config.getDeviceConfigs().size());
+        assertEquals(new LocalDeviceConfig(), config.getDeviceConfig(DEFAULT_DEVICE_NAME));
+        assertEquals(DEFAULT_DEVICE_NAME,
+                config.getMapConfig("some-map").getTieredStoreConfig().getDiskTierConfig().getDeviceName());
     }
 
     @Override
@@ -4368,5 +4394,18 @@ public class YamlConfigBuilderTest
                 + "          extractor-class-name: usercodedeployment.CapitalizingFirstNameExtractor\n";
 
         return new InMemoryYamlConfig(yaml);
+    }
+
+    @Override
+    @Test
+    public void testIntegrityCheckerConfig() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  integrity-checker:\n"
+                + "    enabled: false\n";
+
+        Config config = buildConfig(yaml);
+
+        assertFalse(config.getIntegrityCheckerConfig().isEnabled());
     }
 }

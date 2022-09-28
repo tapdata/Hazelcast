@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -99,7 +99,7 @@ public class GenericRecordTest {
     public void testCloneObjectConvertedFromData() {
         SerializationService serializationService = createSerializationService();
 
-        GenericRecordBuilder builder = compact("fooBarClassName");
+        GenericRecordBuilder builder = compact("fooBarTypeName");
         builder.setInt32("foo", 1);
         assertTrue(trySetAndGetMessage("foo", 5, builder).startsWith("Field can only be written once"));
         builder.setInt64("bar", 1231L);
@@ -133,7 +133,7 @@ public class GenericRecordTest {
 
     @Test
     public void testCloneObjectCreatedViaAPI() {
-        GenericRecordBuilder builder = compact("fooBarClassName");
+        GenericRecordBuilder builder = compact("fooBarTypeName");
         builder.setInt32("foo", 1);
         assertTrue(trySetAndGetMessage("foo", 5, builder).startsWith("Field can only be written once"));
         builder.setInt64("bar", 1231L);
@@ -155,7 +155,7 @@ public class GenericRecordTest {
     public void testBuildFromObjectConvertedFromData() {
         SerializationService serializationService = createSerializationService();
 
-        GenericRecordBuilder builder = compact("fooBarClassName");
+        GenericRecordBuilder builder = compact("fooBarTypeName");
         builder.setInt32("foo", 1);
         assertTrue(trySetAndGetMessage("foo", 5, builder).startsWith("Field can only be written once"));
         builder.setInt64("bar", 1231L);
@@ -182,7 +182,7 @@ public class GenericRecordTest {
 
     @Test
     public void testBuildFromObjectCreatedViaAPI() {
-        GenericRecordBuilder builder = compact("fooBarClassName");
+        GenericRecordBuilder builder = compact("fooBarTypeName");
         builder.setInt32("foo", 1);
         assertTrue(trySetAndGetMessage("foo", 5, builder).startsWith("Field can only be written once"));
         builder.setInt64("bar", 1231L);
@@ -242,5 +242,23 @@ public class GenericRecordTest {
             return e.getMessage();
         }
         return null;
+    }
+
+
+    @Test
+    public void testGetFieldKindThrowsExceptionWhenFieldDoesNotExist() throws IOException {
+        GenericRecord record = compact("test").build();
+        assertThrows(IllegalArgumentException.class, () -> {
+            record.getFieldKind("doesNotExist");
+        });
+
+
+        InternalSerializationService serializationService = (InternalSerializationService) createSerializationService();
+        Data data = serializationService.toData(record);
+
+        InternalGenericRecord internalGenericRecord = serializationService.readAsInternalGenericRecord(data);
+        assertThrows(IllegalArgumentException.class, () -> {
+            internalGenericRecord.getFieldKind("doesNotExist");
+        });
     }
 }

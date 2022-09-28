@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,11 +38,11 @@ import com.hazelcast.internal.util.executor.StripedRunnable;
 import javax.annotation.Nonnull;
 import java.io.IOException;
 import java.nio.channels.SocketChannel;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
@@ -63,6 +63,7 @@ import static com.hazelcast.internal.metrics.MetricDescriptorConstants.TCP_METRI
 import static com.hazelcast.internal.metrics.MetricDescriptorConstants.TCP_METRIC_TEXT_COUNT;
 import static com.hazelcast.internal.metrics.MetricDescriptorConstants.TCP_PREFIX_CONNECTION;
 import static com.hazelcast.internal.metrics.MetricDescriptorConstants.TCP_TAG_ENDPOINT;
+import static com.hazelcast.internal.metrics.ProbeLevel.DEBUG;
 import static com.hazelcast.internal.metrics.ProbeLevel.MANDATORY;
 import static com.hazelcast.internal.metrics.ProbeUnit.COUNT;
 import static com.hazelcast.internal.nio.ConnectionType.MEMCACHE_CLIENT;
@@ -129,10 +130,13 @@ public class TcpServerConnectionManager extends TcpServerConnectionManagerBase
     @Override
     @Nonnull
     public List<ServerConnection> getAllConnections(@Nonnull Address address) {
-        UUID uuid = addressRegistry.uuidOf(address);
-        return uuid != null
-                ? Arrays.stream(planes).map(plane -> plane.getConnection(uuid)).filter(x -> x != null)
-                .collect(Collectors.toList())
+        UUID instanceUuid = addressRegistry.uuidOf(address);
+        // Because duplicate connections can be established on the planes and
+        // we don't keep all duplicates on the planes, we need to iterate over
+        // connections set which stores all active connections.
+        return instanceUuid != null
+                ? connections.stream().filter(connection -> Objects.equals(instanceUuid, connection.getRemoteUuid()))
+                                      .collect(Collectors.toList())
                 : Collections.emptyList();
     }
 
@@ -317,7 +321,7 @@ public class TcpServerConnectionManager extends TcpServerConnectionManagerBase
                 + ", connectionsMap=" + null + '}';
     }
 
-    @Probe(name = TCP_METRIC_ENDPOINT_MANAGER_IN_PROGRESS_COUNT)
+    @Probe(name = TCP_METRIC_ENDPOINT_MANAGER_IN_PROGRESS_COUNT, level = DEBUG)
     private int connectionsInProgress() {
         int c = 0;
         for (Plane plane : planes) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -108,7 +108,7 @@ public class MapContainer {
     /**
      * Holds number of registered {@link InvalidationListener} from clients.
      */
-    protected final AtomicInteger invalidationListenerCount = new AtomicInteger();
+    protected final AtomicInteger invalidationListenerCounter;
     protected final AtomicLong lastInvalidMergePolicyCheckTime = new AtomicLong();
 
     protected SplitBrainMergePolicy wanMergePolicy;
@@ -146,6 +146,8 @@ public class MapContainer {
                 serializationService, extractors);
         this.globalIndexes = shouldUseGlobalIndex() ? createIndexes(true) : null;
         this.mapStoreContext = createMapStoreContext(this);
+        this.invalidationListenerCounter = mapServiceContext.getEventListenerCounter()
+                .getOrCreateCounter(name);
         initWanReplication(mapServiceContext.getNodeEngine());
     }
 
@@ -430,15 +432,11 @@ public class MapContainer {
     }
 
     public boolean hasInvalidationListener() {
-        return invalidationListenerCount.get() > 0;
+        return invalidationListenerCounter.get() > 0;
     }
 
-    public void increaseInvalidationListenerCount() {
-        invalidationListenerCount.incrementAndGet();
-    }
-
-    public void decreaseInvalidationListenerCount() {
-        invalidationListenerCount.decrementAndGet();
+    public AtomicInteger getInvalidationListenerCounter() {
+        return invalidationListenerCounter;
     }
 
     public InterceptorRegistry getInterceptorRegistry() {
@@ -453,7 +451,8 @@ public class MapContainer {
         destroyed = true;
     }
 
-    // callback called when the MapContainer is de-registered from MapService and destroyed - basically on map-destroy
+    // callback called when the MapContainer is de-registered
+    // from MapService and destroyed - basically on map-destroy
     public void onDestroy() {
     }
 
@@ -462,7 +461,8 @@ public class MapContainer {
     }
 
     public boolean shouldCloneOnEntryProcessing(int partitionId) {
-        return getIndexes(partitionId).haveAtLeastOneIndex() && OBJECT.equals(mapConfig.getInMemoryFormat());
+        return getIndexes(partitionId).haveAtLeastOneIndex()
+                && OBJECT.equals(mapConfig.getInMemoryFormat());
     }
 
     public ObjectNamespace getObjectNamespace() {
@@ -498,8 +498,7 @@ public class MapContainer {
     }
 
     public boolean isUseCachedDeserializedValuesEnabled(int partitionId) {
-        CacheDeserializedValues cacheDeserializedValues = getMapConfig().getCacheDeserializedValues();
-        switch (cacheDeserializedValues) {
+        switch (getMapConfig().getCacheDeserializedValues()) {
             case NEVER:
                 return false;
             case ALWAYS:
@@ -508,5 +507,13 @@ public class MapContainer {
                 //if index exists then cached value is already set -> let's use it
                 return getIndexes(partitionId).haveAtLeastOneIndex();
         }
+    }
+
+    @Override
+    public String toString() {
+        return "MapContainer{"
+                + "name='" + name + '\''
+                + ", destroyed=" + destroyed
+                + '}';
     }
 }

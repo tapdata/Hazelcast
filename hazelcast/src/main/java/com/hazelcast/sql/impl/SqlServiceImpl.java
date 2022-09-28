@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
 package com.hazelcast.sql.impl;
 
 import com.hazelcast.core.HazelcastException;
-import com.hazelcast.internal.cluster.Versions;
 import com.hazelcast.internal.util.Preconditions;
 import com.hazelcast.internal.util.counters.Counter;
 import com.hazelcast.internal.util.counters.MwCounter;
@@ -96,6 +95,9 @@ public class SqlServiceImpl implements SqlService {
     }
 
     public void start() {
+        if (!Util.isJetEnabled(nodeEngine)) {
+            return;
+        }
         QueryResultRegistry resultRegistry = new QueryResultRegistry();
         optimizer = createOptimizer(nodeEngine, resultRegistry);
 
@@ -116,10 +118,16 @@ public class SqlServiceImpl implements SqlService {
     }
 
     public void reset() {
+        if (!Util.isJetEnabled(nodeEngine)) {
+            return;
+        }
         planCache.clear();
     }
 
     public void shutdown() {
+        if (!Util.isJetEnabled(nodeEngine)) {
+            return;
+        }
         planCache.clear();
         if (internalService != null) {
             internalService.shutdown();
@@ -175,10 +183,6 @@ public class SqlServiceImpl implements SqlService {
         }
 
         try {
-            if (nodeEngine.getClusterService().getClusterVersion().isLessThan(Versions.V5_0)) {
-                throw QueryException.error("SQL queries cannot be executed until the cluster fully updates to 5.0");
-            }
-
             if (nodeEngine.getLocalMember().isLiteMember()) {
                 throw QueryException.error("SQL queries cannot be executed on lite members");
             }
@@ -346,5 +350,12 @@ public class SqlServiceImpl implements SqlService {
         } catch (ReflectiveOperationException e) {
             throw new HazelcastException("Failed to instantiate the optimizer class " + className + ": " + e.getMessage(), e);
         }
+    }
+
+    public void closeOnError(QueryId queryId) {
+        if (!Util.isJetEnabled(nodeEngine)) {
+            return;
+        }
+        getInternalService().getClientStateRegistry().closeOnError(queryId);
     }
 }

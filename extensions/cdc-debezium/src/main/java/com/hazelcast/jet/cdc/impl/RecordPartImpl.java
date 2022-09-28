@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -74,7 +74,7 @@ class RecordPartImpl implements RecordPart {
 
     @Override
     public int hashCode() {
-        return json.hashCode();
+        return toJson().hashCode();
     }
 
     @Override
@@ -86,7 +86,7 @@ class RecordPartImpl implements RecordPart {
             return false;
         }
         RecordPartImpl other = (RecordPartImpl) obj;
-        return Objects.equals(json, other.json);
+        return Objects.equals(toJson(), other.toJson());
     }
 
     @Override

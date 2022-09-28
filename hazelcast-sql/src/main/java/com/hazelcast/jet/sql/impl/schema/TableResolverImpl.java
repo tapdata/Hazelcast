@@ -17,10 +17,12 @@
 package com.hazelcast.jet.sql.impl.schema;
 
 import com.hazelcast.core.EntryEvent;
+import com.hazelcast.core.LifecycleEvent;
 import com.hazelcast.jet.sql.impl.connector.SqlConnector;
 import com.hazelcast.jet.sql.impl.connector.SqlConnectorCache;
 import com.hazelcast.jet.sql.impl.connector.infoschema.MappingColumnsTable;
 import com.hazelcast.jet.sql.impl.connector.infoschema.MappingsTable;
+import com.hazelcast.jet.sql.impl.connector.infoschema.TablesTable;
 import com.hazelcast.jet.sql.impl.connector.infoschema.ViewsTable;
 import com.hazelcast.jet.sql.impl.connector.virtual.ViewTable;
 import com.hazelcast.spi.impl.NodeEngine;
@@ -77,19 +79,23 @@ public class TableResolverImpl implements TableResolver {
         // because listeners are invoked asynchronously from the calling thread,
         // local changes are handled in createMapping() & removeMapping(), thus
         // we skip events originating from local member to avoid double processing
-        this.tableStorage.registerListener(new TablesStorage.EntryListenerAdapter() {
-            @Override
-            public void entryUpdated(EntryEvent<String, Object> event) {
-                if (!event.getMember().localMember()) {
-                    listeners.forEach(TableListener::onTableChanged);
-                }
-            }
+        nodeEngine.getHazelcastInstance().getLifecycleService().addLifecycleListener(event -> {
+            if (event.getState() == LifecycleEvent.LifecycleState.STARTED) {
+                this.tableStorage.registerListener(new TablesStorage.EntryListenerAdapter() {
+                    @Override
+                    public void entryUpdated(EntryEvent<String, Object> event) {
+                        if (!event.getMember().localMember()) {
+                            listeners.forEach(TableListener::onTableChanged);
+                        }
+                    }
 
-            @Override
-            public void entryRemoved(EntryEvent<String, Object> event) {
-                if (!event.getMember().localMember()) {
-                    listeners.forEach(TableListener::onTableChanged);
-                }
+                    @Override
+                    public void entryRemoved(EntryEvent<String, Object> event) {
+                        if (!event.getMember().localMember()) {
+                            listeners.forEach(TableListener::onTableChanged);
+                        }
+                    }
+                });
             }
         });
     }
@@ -137,7 +143,6 @@ public class TableResolverImpl implements TableResolver {
     public Collection<String> getMappingNames() {
         return tableStorage.mappingNames();
     }
-
     // endregion
 
     // region view
@@ -160,6 +165,11 @@ public class TableResolverImpl implements TableResolver {
         if (tableStorage.removeView(name) == null && !ifExists) {
             throw QueryException.error("View does not exist: " + name);
         }
+    }
+
+    @Nonnull
+    public Collection<String> getViewNames() {
+        return tableStorage.viewNames();
     }
 
     // endregion
@@ -193,8 +203,9 @@ public class TableResolverImpl implements TableResolver {
                 .filter(o -> o instanceof View)
                 .map(v -> (View) v)
                 .collect(Collectors.toList());
+        tables.add(new TablesTable(CATALOG, SCHEMA_NAME_INFORMATION_SCHEMA, SCHEMA_NAME_PUBLIC, mappings, views));
         tables.add(new MappingsTable(CATALOG, SCHEMA_NAME_INFORMATION_SCHEMA, SCHEMA_NAME_PUBLIC, mappings));
-        tables.add(new MappingColumnsTable(CATALOG, SCHEMA_NAME_INFORMATION_SCHEMA, SCHEMA_NAME_PUBLIC, mappings));
+        tables.add(new MappingColumnsTable(CATALOG, SCHEMA_NAME_INFORMATION_SCHEMA, SCHEMA_NAME_PUBLIC, mappings, views));
         tables.add(new ViewsTable(CATALOG, SCHEMA_NAME_INFORMATION_SCHEMA, SCHEMA_NAME_PUBLIC, views));
         return tables;
     }

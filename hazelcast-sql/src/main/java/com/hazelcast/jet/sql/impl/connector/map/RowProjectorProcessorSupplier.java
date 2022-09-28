@@ -30,6 +30,7 @@ import com.hazelcast.sql.impl.expression.Expression;
 import com.hazelcast.sql.impl.expression.ExpressionEvalContext;
 import com.hazelcast.sql.impl.extract.QueryPath;
 import com.hazelcast.sql.impl.extract.QueryTargetDescriptor;
+import com.hazelcast.sql.impl.row.JetSqlRow;
 import com.hazelcast.sql.impl.type.QueryDataType;
 
 import javax.annotation.Nonnull;
@@ -64,9 +65,9 @@ public final class RowProjectorProcessorSupplier implements ProcessorSupplier, D
     public Collection<? extends Processor> get(int count) {
         List<Processor> processors = new ArrayList<>(count);
         for (int i = 0; i < count; i++) {
-            ResettableSingletonTraverser<Object[]> traverser = new ResettableSingletonTraverser<>();
+            ResettableSingletonTraverser<JetSqlRow> traverser = new ResettableSingletonTraverser<>();
             KvRowProjector projector = projectorSupplier.get(evalContext, extractors);
-            Processor processor = new TransformP<LazyMapEntry<Object, Object>, Object[]>(entry -> {
+            Processor processor = new TransformP<LazyMapEntry<Object, Object>, JetSqlRow>(entry -> {
                 traverser.accept(projector.project(entry.getKeyData(), entry.getValueData()));
                 return traverser;
             });

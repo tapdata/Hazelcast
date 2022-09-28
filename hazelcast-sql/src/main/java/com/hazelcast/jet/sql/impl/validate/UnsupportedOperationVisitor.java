@@ -217,6 +217,7 @@ public final class UnsupportedOperationVisitor extends SqlBasicVisitor<Void> {
         // Windowing
         SUPPORTED_OPERATORS.add(HazelcastSqlOperatorTable.IMPOSE_ORDER);
         SUPPORTED_OPERATORS.add(HazelcastSqlOperatorTable.TUMBLE);
+        SUPPORTED_OPERATORS.add(HazelcastSqlOperatorTable.HOP);
 
         // JSON
         SUPPORTED_OPERATORS.add(HazelcastSqlOperatorTable.JSON_QUERY);
@@ -227,6 +228,7 @@ public final class UnsupportedOperationVisitor extends SqlBasicVisitor<Void> {
         // Extensions
         SUPPORTED_OPERATORS.add(SqlOption.OPERATOR);
         SUPPORTED_OPERATORS.add(SqlShowStatement.SHOW_MAPPINGS);
+        SUPPORTED_OPERATORS.add(SqlShowStatement.SHOW_VIEWS);
         SUPPORTED_OPERATORS.add(SqlShowStatement.SHOW_JOBS);
 
         SUPPORTED_OPERATORS.add(HazelcastSqlOperatorTable.GENERATE_SERIES);

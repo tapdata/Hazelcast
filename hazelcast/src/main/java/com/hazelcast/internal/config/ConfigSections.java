@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -68,7 +68,8 @@ public enum ConfigSections {
     SQL("sql", false),
     JET("jet", false),
     LOCAL_DEVICE("local-device", true),
-    DYNAMIC_CONFIGURATION("dynamic-configuration", false);
+    DYNAMIC_CONFIGURATION("dynamic-configuration", false),
+    INTEGRITY_CHECKER("integrity-checker", false);
 
     final boolean multipleOccurrence;
     private final String name;

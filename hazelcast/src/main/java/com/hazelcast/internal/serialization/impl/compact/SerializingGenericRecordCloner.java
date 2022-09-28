@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -248,7 +248,7 @@ public class SerializingGenericRecordCloner implements GenericRecordBuilder {
 
     @Nonnull
     @Override
-    public GenericRecordBuilder setNullableint16(@Nonnull String fieldName, @Nullable Short value) {
+    public GenericRecordBuilder setNullableInt16(@Nonnull String fieldName, @Nullable Short value) {
         checkTypeWithSchema(schema, fieldName, FieldKind.NULLABLE_INT16);
         if (fields.putIfAbsent(fieldName, () -> cw.writeNullableInt16(fieldName, value)) != null) {
             throw new HazelcastSerializationException("Field can only be written once");
@@ -339,7 +339,7 @@ public class SerializingGenericRecordCloner implements GenericRecordBuilder {
     @Override
     @Nonnull
     public GenericRecordBuilder setArrayOfBoolean(@Nonnull String fieldName, @Nullable boolean[] value) {
-        checkTypeWithSchema(schema, fieldName, FieldKind.ARRAY_OF_BOOLEANS);
+        checkTypeWithSchema(schema, fieldName, FieldKind.ARRAY_OF_BOOLEAN);
         if (fields.putIfAbsent(fieldName, () -> cw.writeArrayOfBoolean(fieldName, value)) != null) {
             throw new HazelcastSerializationException("Field can only be written once");
         }

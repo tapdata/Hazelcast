@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  ~ Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+  ~ Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
   ~ you may not use this file except in compliance with the License.
@@ -450,6 +450,7 @@
                         <hz:buffer-size>33</hz:buffer-size>
                         <hz:coalesce>true</hz:coalesce>
                         <hz:populate>false</hz:populate>
+                        <hz:serialize-keys>true</hz:serialize-keys>
                         <hz:delay-seconds>12</hz:delay-seconds>
                         <hz:entry-listeners>
                             <hz:entry-listener class-name="com.hazelcast.spring.DummyEntryListener"/>
@@ -471,7 +472,7 @@
             <hz:map name="testMap5">
                 <hz:tiered-store enabled="true">
                     <hz:memory-tier>
-                        <hz:capacity>128 MB</hz:capacity>
+                        <hz:capacity unit="MEGABYTES" value="128"/>
                     </hz:memory-tier>
                     <hz:disk-tier enabled="true" device-name="the-local0751"/>
                 </hz:tiered-store>
@@ -1070,6 +1071,7 @@
             </hz:jet>
             <hz:local-device name="device0">
                 <hz:base-dir>/dev/devices/tiered_store_device0</hz:base-dir>
+                <hz:capacity unit="MEGABYTES" value="9321"/>
                 <hz:block-size>8192</hz:block-size>
                 <hz:read-io-thread-count>16</hz:read-io-thread-count>
                 <hz:write-io-thread-count>8</hz:write-io-thread-count>
@@ -1083,7 +1085,6 @@
 
             <hz:dynamic-configuration>
                 <hz:persistence-enabled>false</hz:persistence-enabled>
-                <hz:persistence-file>/mnt/persistence-file</hz:persistence-file>
                 <hz:backup-dir>/mnt/backup-dir</hz:backup-dir>
                 <hz:backup-count>7</hz:backup-count>
             </hz:dynamic-configuration>
@@ -1094,6 +1095,7 @@
                     <hz:property name="port">514</hz:property>
                 </hz:properties>
             </hz:auditlog>
+            <hz:integrity-checker enabled="false"/>
         </hz:config>
     </hz:hazelcast>
 

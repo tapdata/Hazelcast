@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -129,6 +129,7 @@ import static com.hazelcast.internal.util.SetUtil.createHashSet;
 import static com.hazelcast.internal.util.ThreadUtil.getThreadId;
 import static com.hazelcast.internal.util.TimeUtil.timeInMsOrOneIfResultIsZero;
 import static com.hazelcast.map.impl.EntryRemovingProcessor.ENTRY_REMOVING_PROCESSOR;
+import static com.hazelcast.map.impl.MapOperationStatsUpdater.incrementOperationStats;
 import static com.hazelcast.map.impl.MapService.SERVICE_NAME;
 import static com.hazelcast.map.impl.query.Target.createPartitionTarget;
 import static com.hazelcast.query.Predicates.alwaysFalse;
@@ -395,6 +396,7 @@ abstract class MapProxySupport<K, V>
             InvocationFuture<Data> future = operationService
                     .createInvocationBuilder(SERVICE_NAME, operation, partitionId)
                     .setResultDeserialized(false)
+                    .setAsync()
                     .invoke();
 
             if (statisticsEnabled) {
@@ -476,7 +478,7 @@ abstract class MapProxySupport<K, V>
                         .setResultDeserialized(false)
                         .invoke();
                 result = future.get();
-                mapServiceContext.incrementOperationStats(startTimeNanos, localMapStats, name, operation);
+                incrementOperationStats(operation, localMapStats, startTimeNanos);
             } else {
                 Future future = operationService
                         .createInvocationBuilder(SERVICE_NAME, operation, partitionId)
@@ -499,7 +501,7 @@ abstract class MapProxySupport<K, V>
         operation.setThreadId(getThreadId());
         try {
             long startTimeNanos = Timer.nanos();
-            InvocationFuture<Data> future = operationService.invokeOnPartition(SERVICE_NAME, operation, partitionId);
+            InvocationFuture<Data> future = operationService.invokeOnPartitionAsync(SERVICE_NAME, operation, partitionId);
 
             if (statisticsEnabled) {
                 future.whenCompleteAsync(new IncrementStatsExecutionCallback<>(operation, startTimeNanos), CALLER_RUNS);
@@ -519,7 +521,7 @@ abstract class MapProxySupport<K, V>
         operation.setThreadId(getThreadId());
         try {
             long startTimeNanos = Timer.nanos();
-            InvocationFuture<Data> future = operationService.invokeOnPartition(SERVICE_NAME, operation, partitionId);
+            InvocationFuture<Data> future = operationService.invokeOnPartitionAsync(SERVICE_NAME, operation, partitionId);
             if (statisticsEnabled) {
                 future.whenCompleteAsync(new IncrementStatsExecutionCallback<>(operation, startTimeNanos), CALLER_RUNS);
             }
@@ -542,11 +544,11 @@ abstract class MapProxySupport<K, V>
             if (statisticsEnabled) {
                 long startTimeNanos = Timer.nanos();
                 result = operationService
-                        .invokeOnPartition(SERVICE_NAME, operation, partitionId);
+                        .invokeOnPartitionAsync(SERVICE_NAME, operation, partitionId);
                 result.whenCompleteAsync(new IncrementStatsExecutionCallback<>(operation, startTimeNanos), CALLER_RUNS);
             } else {
                 result = operationService
-                        .invokeOnPartition(SERVICE_NAME, operation, partitionId);
+                        .invokeOnPartitionAsync(SERVICE_NAME, operation, partitionId);
             }
             return result;
         } catch (Throwable t) {
@@ -717,7 +719,7 @@ abstract class MapProxySupport<K, V>
         operation.setThreadId(getThreadId());
         try {
             long startTimeNanos = Timer.nanos();
-            InvocationFuture<Data> future = operationService.invokeOnPartition(SERVICE_NAME, operation, partitionId);
+            InvocationFuture<Data> future = operationService.invokeOnPartitionAsync(SERVICE_NAME, operation, partitionId);
 
             if (statisticsEnabled) {
                 future.whenCompleteAsync(new IncrementStatsExecutionCallback<>(operation, startTimeNanos), CALLER_RUNS);
@@ -1435,7 +1437,7 @@ abstract class MapProxySupport<K, V>
         @Override
         public void accept(T t, Throwable throwable) {
             if (throwable == null) {
-                mapServiceContext.incrementOperationStats(startTime, localMapStats, name, operation);
+                incrementOperationStats(operation, localMapStats, startTime);
             }
         }
     }

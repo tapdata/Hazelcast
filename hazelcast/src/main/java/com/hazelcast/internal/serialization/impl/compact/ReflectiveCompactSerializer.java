@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,7 +37,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static com.hazelcast.internal.nio.InstanceCreationUtil.createNewInstance;
-import static com.hazelcast.nio.serialization.FieldKind.ARRAY_OF_BOOLEANS;
+import static com.hazelcast.nio.serialization.FieldKind.ARRAY_OF_BOOLEAN;
 import static com.hazelcast.nio.serialization.FieldKind.ARRAY_OF_INT8;
 import static com.hazelcast.nio.serialization.FieldKind.ARRAY_OF_COMPACT;
 import static com.hazelcast.nio.serialization.FieldKind.ARRAY_OF_DATE;
@@ -213,6 +213,8 @@ public class ReflectiveCompactSerializer<T> implements CompactSerializer<T> {
                     }
                 };
                 writers[index] = (w, o) -> w.writeInt8(name, field.getByte(o));
+            } else if (Character.TYPE.equals(type)) {
+                throwUnsupportedFieldTypeException("char");
             } else if (Short.TYPE.equals(type)) {
                 readers[index] = (reader, schema, o) -> {
                     if (fieldExists(schema, name, INT16, NULLABLE_INT16)) {
@@ -304,6 +306,8 @@ public class ReflectiveCompactSerializer<T> implements CompactSerializer<T> {
                     }
                 };
                 writers[index] = (w, o) -> w.writeNullableInt8(name, (Byte) field.get(o));
+            } else if (Character.class.equals(type)) {
+                throwUnsupportedFieldTypeException("Character");
             } else if (Boolean.class.equals(type)) {
                 readers[index] = (reader, schema, o) -> {
                     if (fieldExists(schema, name, BOOLEAN, NULLABLE_BOOLEAN)) {
@@ -362,7 +366,7 @@ public class ReflectiveCompactSerializer<T> implements CompactSerializer<T> {
                 Class<?> componentType = type.getComponentType();
                 if (Boolean.TYPE.equals(componentType)) {
                     readers[index] = (reader, schema, o) -> {
-                        if (fieldExists(schema, name, ARRAY_OF_BOOLEANS, ARRAY_OF_NULLABLE_BOOLEAN)) {
+                        if (fieldExists(schema, name, ARRAY_OF_BOOLEAN, ARRAY_OF_NULLABLE_BOOLEAN)) {
                             field.set(o, reader.readArrayOfBoolean(name));
                         }
                     };
@@ -370,10 +374,12 @@ public class ReflectiveCompactSerializer<T> implements CompactSerializer<T> {
                 } else if (Byte.TYPE.equals(componentType)) {
                     readers[index] = (reader, schema, o) -> {
                         if (fieldExists(schema, name, ARRAY_OF_INT8, ARRAY_OF_NULLABLE_INT8)) {
-                            field.set(o, reader.readArrayOInt(name));
+                            field.set(o, reader.readArrayOfInt8(name));
                         }
                     };
                     writers[index] = (w, o) -> w.writeArrayOfInt8(name, (byte[]) field.get(o));
+                } else if (Character.TYPE.equals(componentType)) {
+                    throwUnsupportedFieldTypeException("char[]");
                 } else if (Short.TYPE.equals(componentType)) {
                     readers[index] = (reader, schema, o) -> {
                         if (fieldExists(schema, name, ARRAY_OF_INT16, ARRAY_OF_NULLABLE_INT16)) {
@@ -411,7 +417,7 @@ public class ReflectiveCompactSerializer<T> implements CompactSerializer<T> {
                     writers[index] = (w, o) -> w.writeArrayOfFloat64(name, (double[]) field.get(o));
                 } else if (Boolean.class.equals(componentType)) {
                     readers[index] = (reader, schema, o) -> {
-                        if (fieldExists(schema, name, ARRAY_OF_BOOLEANS, ARRAY_OF_NULLABLE_BOOLEAN)) {
+                        if (fieldExists(schema, name, ARRAY_OF_BOOLEAN, ARRAY_OF_NULLABLE_BOOLEAN)) {
                             field.set(o, reader.readArrayOfNullableBoolean(name));
                         }
                     };
@@ -423,6 +429,8 @@ public class ReflectiveCompactSerializer<T> implements CompactSerializer<T> {
                         }
                     };
                     writers[index] = (w, o) -> w.writeArrayOfNullableInt8(name, (Byte[]) field.get(o));
+                } else if (Character.class.equals(componentType)) {
+                    throwUnsupportedFieldTypeException("Character[]");
                 } else if (Short.class.equals(componentType)) {
                     readers[index] = (reader, schema, o) -> {
                         if (fieldExists(schema, name, ARRAY_OF_INT16, ARRAY_OF_NULLABLE_INT16)) {
@@ -489,14 +497,14 @@ public class ReflectiveCompactSerializer<T> implements CompactSerializer<T> {
                 } else if (LocalDateTime.class.equals(componentType)) {
                     readers[index] = (reader, schema, o) -> {
                         if (fieldExists(schema, name, ARRAY_OF_TIMESTAMP)) {
-                            field.set(o, reader.readArrayOfTimetamp(name));
+                            field.set(o, reader.readArrayOfTimestamp(name));
                         }
                     };
                     writers[index] = (w, o) -> w.writeArrayOfTimestamp(name, (LocalDateTime[]) field.get(o));
                 } else if (OffsetDateTime.class.equals(componentType)) {
                     readers[index] = (reader, schema, o) -> {
                         if (fieldExists(schema, name, ARRAY_OF_TIMESTAMP_WITH_TIMEZONE)) {
-                            field.set(o, reader.readArrayOfTimetampWithTimezone(name));
+                            field.set(o, reader.readArrayOfTimestampWithTimezone(name));
                         }
                     };
                     writers[index] = (w, o) -> w.writeArrayOfTimestampWithTimezone(name, (OffsetDateTime[]) field.get(o));
@@ -558,6 +566,12 @@ public class ReflectiveCompactSerializer<T> implements CompactSerializer<T> {
             }
         }
         return enumArray;
+    }
+
+    private void throwUnsupportedFieldTypeException(String typeName) {
+        throw new HazelcastSerializationException("Compact serialization format does not support "
+                + "fields of type '" + typeName + "'. If you want to use such fields with the compact"
+                + " serialization format, consider adding an explicit serializer for it.");
     }
 
     interface Reader {

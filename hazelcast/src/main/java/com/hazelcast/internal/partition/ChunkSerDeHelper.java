@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,10 +46,12 @@ public final class ChunkSerDeHelper {
 
     public ChunkSerDeHelper(ILogger logger, int partitionId,
                             Collection<ChunkSupplier> chunkSuppliers,
+                            boolean chunkedMigrationEnabled,
                             int maxTotalChunkedDataInBytes) {
         assert chunkSuppliers != null;
         assert logger != null;
-        assert maxTotalChunkedDataInBytes > 0 : maxTotalChunkedDataInBytes;
+        assert !chunkedMigrationEnabled || (maxTotalChunkedDataInBytes > 0)
+                : "Found maxTotalChunkedDataInBytes=" + maxTotalChunkedDataInBytes;
 
         this.logger = logger;
         this.partitionId = partitionId;

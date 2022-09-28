@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
 package com.hazelcast.spi.impl.operationexecutor;
 
 import com.hazelcast.internal.nio.Packet;
-import com.hazelcast.map.impl.operation.MapOperation;
 import com.hazelcast.spi.impl.operationexecutor.impl.OperationExecutorImpl;
 import com.hazelcast.spi.impl.operationservice.Operation;
 
@@ -171,9 +170,7 @@ public abstract class OperationRunner {
             operation.afterRun();
         } finally {
             operation.popThreadContext();
-            if (operation instanceof MapOperation) {
-                ((MapOperation) operation).afterRunFinal();
-            }
+            operation.afterRunFinal();
         }
     }
 }

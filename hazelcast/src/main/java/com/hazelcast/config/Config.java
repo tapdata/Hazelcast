@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -65,6 +65,7 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.SequenceInputStream;
 import java.net.URL;
@@ -96,6 +97,9 @@ import static com.hazelcast.partition.strategy.StringPartitioningStrategy.getBas
  * <p>
  * Config instances can be shared between threads, but should not be
  * modified after they are used to create HazelcastInstances.
+ * <p>
+ * Unlike {@code Config} instances obtained via {@link Config#load()} and its variants,
+ * a {@code Config} does not apply overrides found in environment variables/system properties.
  */
 @SuppressWarnings({"checkstyle:methodcount", "checkstyle:classfanoutcomplexity", "checkstyle:classdataabstractioncoupling"})
 public class Config {
@@ -210,6 +214,9 @@ public class Config {
 
     private DynamicConfigurationConfig dynamicConfigurationConfig = new DynamicConfigurationConfig();
 
+    // @since 5.1
+    private IntegrityCheckerConfig integrityCheckerConfig = new IntegrityCheckerConfig();
+
     public Config() {
     }
 
@@ -237,7 +244,22 @@ public class Config {
         cfg = new ExternalConfigurationOverride().overwriteMemberConfig(cfg);
         PersistenceAndHotRestartPersistenceMerger
                 .merge(cfg.getHotRestartPersistenceConfig(), cfg.getPersistenceConfig());
+        setConfigurationFileFromUrl(cfg);
         return cfg;
+    }
+
+    // configurationFile must be set correctly because dynamic
+    // configuration persistence depends on this field. If this is
+    // absent, hazelcast instance may fail to find a file to persist.
+    private static void setConfigurationFileFromUrl(Config cfg) {
+        if (cfg.getConfigurationFile() == null && cfg.getConfigurationUrl() != null) {
+            File configFile = new File(cfg.getConfigurationUrl().getPath());
+
+            // Only set configurationFile if the config actually exist on the filesystem.
+            if (configFile.exists()) {
+                cfg.setConfigurationFile(configFile);
+            }
+        }
     }
 
     private static Config loadFromFile(Properties properties) {
@@ -319,17 +341,24 @@ public class Config {
         checkTrue(resource != null, "resource can't be null");
         checkTrue(properties != null, "properties can't be null");
 
-        InputStream stream = classLoader.getResourceAsStream(resource);
+        // Below try catch is inlined Classloader#getResourceAsStream() to access URL.
+        InputStream stream;
+        URL url = classLoader.getResource(resource);
+        try {
+            stream = url != null ? url.openStream() : null;
+        } catch (IOException e) {
+            stream = null;
+        }
         checkTrue(stream != null, "Specified resource '" + resource + "' could not be found!");
 
         if (resource.endsWith(".xml")) {
             return applyEnvAndSystemVariableOverrides(
-                    new XmlConfigBuilder(stream).setProperties(properties).build()
+                    new XmlConfigBuilder(stream).setProperties(properties).build().setConfigurationUrl(url)
             );
         }
         if (resource.endsWith(".yaml") || resource.endsWith(".yml")) {
             return applyEnvAndSystemVariableOverrides(
-                    new YamlConfigBuilder(stream).setProperties(properties).build()
+                    new YamlConfigBuilder(stream).setProperties(properties).build().setConfigurationUrl(url)
             );
         }
 
@@ -367,12 +396,12 @@ public class Config {
         InputStream stream = new FileInputStream(configFile);
         if (path.endsWith(".xml")) {
             return applyEnvAndSystemVariableOverrides(
-                    new XmlConfigBuilder(stream).setProperties(properties).build()
+                    new XmlConfigBuilder(stream).setProperties(properties).build().setConfigurationFile(configFile)
             );
         }
         if (path.endsWith(".yaml") || path.endsWith(".yml")) {
             return applyEnvAndSystemVariableOverrides(
-                    new YamlConfigBuilder(stream).setProperties(properties).build()
+                    new YamlConfigBuilder(stream).setProperties(properties).build().setConfigurationFile(configFile)
             );
         }
 
@@ -2675,6 +2704,23 @@ public class Config {
     }
 
     /**
+     * Returns the device config mapped by the provided device name.
+     *
+     * @param name the device name
+     * @param clazz desired device implementation class
+     * @return device config or {@code null} if absent
+     */
+    @Nullable
+    public <T extends DeviceConfig> T getDeviceConfig(Class<T> clazz, String name) {
+        DeviceConfig deviceConfig = deviceConfigs.get(name);
+        if (deviceConfig == null || clazz.isAssignableFrom(deviceConfig.getClass())) {
+            return (T) deviceConfig;
+        }
+        throw new ClassCastException("there is a deviceConfig with deviceName=" + name
+                + ", however, it is not an instance or a subtype of " + clazz);
+    }
+
+    /**
      * Adds the device configuration.
      *
      * @param deviceConfig device config
@@ -3028,6 +3074,25 @@ public class Config {
     }
 
     /**
+     * Returns the IntegrityChecker config
+     * @since 5.1
+     */
+    @Nonnull
+    public IntegrityCheckerConfig getIntegrityCheckerConfig() {
+        return integrityCheckerConfig;
+    }
+
+    /**
+     * Sets the Integrity Checker config
+     * @since 5.1
+     */
+    @Nonnull
+    public Config setIntegrityCheckerConfig(final IntegrityCheckerConfig integrityCheckerConfig) {
+        this.integrityCheckerConfig = integrityCheckerConfig;
+        return this;
+    }
+
+    /**
      * Returns the configuration for the user services managed by this
      * hazelcast instance.
      *
@@ -3089,6 +3154,7 @@ public class Config {
                 + ", auditlogConfig=" + auditlogConfig
                 + ", jetConfig=" + jetConfig
                 + ", deviceConfigs=" + deviceConfigs
+                + ", integrityCheckerConfig=" + integrityCheckerConfig
                 + '}';
     }
 }

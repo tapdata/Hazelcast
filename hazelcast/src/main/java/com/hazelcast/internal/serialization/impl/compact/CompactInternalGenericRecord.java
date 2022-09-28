@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -50,7 +50,7 @@ import static com.hazelcast.internal.serialization.impl.compact.OffsetReader.NUL
 import static com.hazelcast.internal.serialization.impl.compact.OffsetReader.SHORT_OFFSET_READER;
 import static com.hazelcast.internal.serialization.impl.compact.OffsetReader.SHORT_OFFSET_READER_RANGE;
 import static com.hazelcast.internal.util.Preconditions.checkNotNegative;
-import static com.hazelcast.nio.serialization.FieldKind.ARRAY_OF_BOOLEANS;
+import static com.hazelcast.nio.serialization.FieldKind.ARRAY_OF_BOOLEAN;
 import static com.hazelcast.nio.serialization.FieldKind.ARRAY_OF_COMPACT;
 import static com.hazelcast.nio.serialization.FieldKind.ARRAY_OF_DATE;
 import static com.hazelcast.nio.serialization.FieldKind.ARRAY_OF_DECIMAL;
@@ -91,7 +91,6 @@ public class CompactInternalGenericRecord extends CompactGenericRecord implement
     private final OffsetReader offsetReader;
     private final Schema schema;
     private final BufferObjectDataInput in;
-    private final int finalPosition;
     private final int dataStartPosition;
     private final int variableOffsetsPosition;
     private final CompactStreamSerializer serializer;
@@ -107,6 +106,7 @@ public class CompactInternalGenericRecord extends CompactGenericRecord implement
         this.associatedClass = associatedClass;
         this.schemaIncludedInBinary = schemaIncludedInBinary;
         try {
+            int finalPosition;
             int numberOfVariableLengthFields = schema.getNumberOfVariableSizeFields();
             if (numberOfVariableLengthFields != 0) {
                 int dataLength = in.readInt();
@@ -165,7 +165,11 @@ public class CompactInternalGenericRecord extends CompactGenericRecord implement
     @Override
     @Nonnull
     public FieldKind getFieldKind(@Nonnull String fieldName) {
-        return schema.getField(fieldName).getKind();
+        FieldDescriptor field = schema.getField(fieldName);
+        if (field == null) {
+            throw new IllegalArgumentException("Field name " + fieldName + " does not exist in the schema");
+        }
+        return field.getKind();
     }
 
     @Override
@@ -414,7 +418,7 @@ public class CompactInternalGenericRecord extends CompactGenericRecord implement
         FieldDescriptor fd = getFieldDefinition(fieldName);
         FieldKind fieldKind = fd.getKind();
         switch (fieldKind) {
-            case ARRAY_OF_BOOLEANS:
+            case ARRAY_OF_BOOLEAN:
                 return getVariableSize(fd, CompactInternalGenericRecord::readBooleanBits);
             case ARRAY_OF_NULLABLE_BOOLEAN:
                 return getNullableArrayAsPrimitiveArray(fd, ObjectDataInput::readBooleanArray, "Boolean");
@@ -691,8 +695,8 @@ public class CompactInternalGenericRecord extends CompactGenericRecord implement
         FieldDescriptor fd = getFieldDefinition(fieldName);
         FieldKind fieldKind = fd.getKind();
         switch (fieldKind) {
-            case ARRAY_OF_BOOLEANS:
-                return getVariableSize(fieldName, ARRAY_OF_BOOLEANS, CompactInternalGenericRecord::readBooleanBitsAsNullables);
+            case ARRAY_OF_BOOLEAN:
+                return getVariableSize(fieldName, ARRAY_OF_BOOLEAN, CompactInternalGenericRecord::readBooleanBitsAsNullables);
             case ARRAY_OF_NULLABLE_BOOLEAN:
                 return getArrayOfVariableSize(fieldName, ARRAY_OF_NULLABLE_BOOLEAN,
                         Boolean[]::new, ObjectDataInput::readBoolean);
@@ -904,7 +908,7 @@ public class CompactInternalGenericRecord extends CompactGenericRecord implement
     }
 
     public Boolean getBooleanFromArray(@Nonnull String fieldName, int index) {
-        int position = readVariableSizeFieldPosition(fieldName, ARRAY_OF_BOOLEANS);
+        int position = readVariableSizeFieldPosition(fieldName, ARRAY_OF_BOOLEAN);
         if (position == NULL_OFFSET) {
             return null;
         }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -136,7 +136,7 @@ public class EnumCompatibilityTest {
         // Used in FieldDescriptorCodec
         Map<FieldKind, Integer> mappings = new HashMap<>();
         mappings.put(FieldKind.BOOLEAN, 0);
-        mappings.put(FieldKind.ARRAY_OF_BOOLEANS, 1);
+        mappings.put(FieldKind.ARRAY_OF_BOOLEAN, 1);
         mappings.put(FieldKind.INT8, 2);
         mappings.put(FieldKind.ARRAY_OF_INT8, 3);
         mappings.put(FieldKind.CHAR, 4);

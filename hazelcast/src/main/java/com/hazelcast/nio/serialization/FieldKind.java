@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,7 +32,7 @@ import com.hazelcast.spi.annotation.Beta;
 public enum FieldKind {
 
     BOOLEAN(0),
-    ARRAY_OF_BOOLEANS(1),
+    ARRAY_OF_BOOLEAN(1),
     INT8(2),
     ARRAY_OF_INT8(3),
     CHAR(4),
