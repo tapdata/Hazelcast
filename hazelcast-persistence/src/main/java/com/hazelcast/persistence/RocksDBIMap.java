@@ -14,11 +14,12 @@ import org.rocksdb.*;
 import org.bson.Document;
 
 import javax.print.Doc;
+import java.io.File;
 import java.nio.ByteBuffer;
 import java.util.*;
 
 public class RocksDBIMap implements MapStore<String, Object>, MapLoaderLifecycleSupport {
-    private static final String defaultDBPath   = "./imap-cache-data/";
+    private static final String defaultDBPath   = "." + File.separator + "imap-cache-data" + File.separator;
     private static final String keySplit = "__0x0__";
     private String imapName;
     private String sign;

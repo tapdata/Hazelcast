@@ -12,11 +12,12 @@ import org.rocksdb.*;
 import org.bson.Document;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.nio.ByteBuffer;
 import java.util.Properties;
 
 public class RocksDBRingBuffer implements RingbufferStore<Document> {
-    private static final String defaultDBPath   = "./imap-cache-data/";
+	private static final String defaultDBPath   = "." + File.separator + "imap-cache-data" + File.separator;
     private RocksDB rocksDB;
     private String ringBufferName;
     private static final String keySplit = "__0x1__";
