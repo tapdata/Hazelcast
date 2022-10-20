@@ -1,6 +1,10 @@
 package com.hazelcast.persistence.http.entity;
 
+import com.hazelcast.persistence.StringCompression;
+import com.hazelcast.persistence.http.ObjectSerializerImpl;
+
 import java.io.Serializable;
+import java.util.Base64;
 import java.util.Map;
 
 /**
@@ -46,6 +50,34 @@ public class IMapEntity implements Serializable {
 
 	public Map<String, Object> getValue() {
 		return value;
+	}
+
+	public Object getData() {
+		if (null == value) return null;
+		Object valueObj = value.get("value");
+		if (valueObj instanceof String) {
+			try {
+				String uncompress = StringCompression.uncompress(valueObj.toString());
+				return ObjectSerializerImpl.from(uncompress);
+			} catch (Throwable ignored) {
+				return valueObj;
+			}
+		} else {
+			return valueObj;
+		}
+	}
+
+	public IMapEntity serializeAndCompressValue() {
+		if (null == value) return this;
+		Object valueObj = value.get("value");
+		try {
+			byte[] bytes = ObjectSerializerImpl.to(valueObj);
+			String encodeToString = Base64.getEncoder().encodeToString(bytes);
+			String compress = StringCompression.compress(encodeToString);
+			value.put("value", compress);
+		} catch (Throwable ignored) {
+		}
+		return this;
 	}
 
 	@Override

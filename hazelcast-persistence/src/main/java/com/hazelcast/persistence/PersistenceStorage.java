@@ -161,6 +161,20 @@ public class PersistenceStorage {
 		return this;
 	}
 
+	private Integer connectTimeoutMs;
+
+	public PersistenceStorage connectTimeoutMs(Integer connectTimeoutMs) {
+		this.connectTimeoutMs = connectTimeoutMs;
+		return this;
+	}
+
+	private Integer readTimeoutMs;
+
+	public PersistenceStorage readTimeoutMs(Integer readTimeoutMs) {
+		this.readTimeoutMs = readTimeoutMs;
+		return this;
+	}
+
 	public PersistenceStorage initMapStoreConfig(Config c) {
 		return initMapStoreConfig(c, "default");
 	}
@@ -185,7 +199,9 @@ public class PersistenceStorage {
 			case HTTP_TM:
 				mapStoreCfg.setClassName(HttpTMIMap.class.getName())
 						.setProperty(HttpConstant.BASE_URL_PROPERTY, baseUrl)
-						.setProperty(HttpConstant.ACCESS_CODE_PROPERTY, accessCode);
+						.setProperty(HttpConstant.ACCESS_CODE_PROPERTY, accessCode)
+						.setProperty(HttpConstant.CONNECT_TIMEOUT_PROPERTY, connectTimeoutMs.toString())
+						.setProperty(HttpConstant.READ_TIMEOUT_PROPERTY, readTimeoutMs.toString());
 				break;
 		}
 		EvictionConfig evictionConfig = new EvictionConfig()

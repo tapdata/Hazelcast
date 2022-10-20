@@ -1,6 +1,7 @@
-package com.hazelcast.persistence.http.entity;
+package com.hazelcast.persistence.http;
 
 import java.io.*;
+import java.util.Base64;
 
 /**
  * @author samuel
@@ -14,6 +15,12 @@ public class ObjectSerializerImpl {
 		ObjectOutputStream objectOutputStream = new ObjectOutputStream(byteArrayOutputStream);
 		objectOutputStream.writeObject(obj);
 		return byteArrayOutputStream.toByteArray();
+	}
+
+	public static Object from(String str) throws IOException, ClassNotFoundException {
+		if (null == str) return null;
+		byte[] decode = Base64.getDecoder().decode(str);
+		return from(decode);
 	}
 
 	public static Object from(byte[] bytes) throws IOException, ClassNotFoundException {

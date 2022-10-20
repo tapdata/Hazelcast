@@ -31,10 +31,6 @@ public abstract class Http {
 	protected int readTimeout;
 	protected RestTemplate restTemplate;
 
-	private final static String RETURN_TYPE_ARRAY = "array";
-	private final static String RETURN_TYPE_OBJECT = "object";
-	private final static String RETURN_TYPE_STRING = "string";
-
 	public Http() {
 	}
 
@@ -44,11 +40,11 @@ public abstract class Http {
 			throw new IllegalArgumentException("Base url cannot be empty");
 		}
 		Object connectTimeoutObj = properties.get(HttpConstant.CONNECT_TIMEOUT_PROPERTY);
-		if (connectTimeoutObj instanceof Integer) {
+		if (connectTimeoutObj instanceof String) {
 			connectTimeout = Integer.parseInt(connectTimeoutObj.toString());
 		}
 		Object readTimeoutObj = properties.get(HttpConstant.READ_TIMEOUT_PROPERTY);
-		if (readTimeoutObj instanceof Integer) {
+		if (readTimeoutObj instanceof String) {
 			readTimeout = Integer.parseInt(readTimeoutObj.toString());
 		}
 	}
@@ -72,7 +68,7 @@ public abstract class Http {
 			if (null == data) {
 				return null;
 			}
-			return JsonUtil.convertValue(data, typeReference);
+			return JacksonUtil.convertValue(data, typeReference);
 		} else {
 			throw new TMRequestException(String.format("Request post[%s] failed\n Request: %s\n Response: %s", uri, httpEntity, response));
 		}
@@ -97,7 +93,7 @@ public abstract class Http {
 			Object items = ((Map<?, ?>) data).get("items");
 			if (items instanceof List) {
 				List<E> retList = new ArrayList<>();
-				((List<?>) items).forEach(obj -> retList.add(JsonUtil.convertValue(obj, typeReference)));
+				((List<?>) items).forEach(obj -> retList.add(JacksonUtil.convertValue(obj, typeReference)));
 				return retList;
 			} else {
 				return null;
@@ -117,7 +113,7 @@ public abstract class Http {
 		if (null == data) {
 			return null;
 		}
-		return JsonUtil.convertValue(data, typeReference);
+		return JacksonUtil.convertValue(data, typeReference);
 	}
 
 	protected void delete(Map<String, Object> param) {

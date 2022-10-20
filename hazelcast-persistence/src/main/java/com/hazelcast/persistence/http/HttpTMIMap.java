@@ -2,6 +2,7 @@ package com.hazelcast.persistence.http;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.persistence.StringCompression;
 import com.hazelcast.persistence.http.entity.IMapEntity;
 import com.hazelcast.persistence.http.entity.LoginResp;
 import com.hazelcast.persistence.http.entity.TMRequestException;
@@ -19,7 +20,6 @@ import java.util.function.Consumer;
  * @create 2022-10-18 16:09
  **/
 public class HttpTMIMap extends HttpIMap {
-	private final static String RESOURCE = Resource.HAZELCAST_PERSISTENCE.getResource();
 	private final static HttpHeaders headers = new HttpHeaders() {{
 		add(HttpHeaders.CONTENT_TYPE, "application/json");
 	}};
@@ -48,7 +48,7 @@ public class HttpTMIMap extends HttpIMap {
 		if (null == iMapEntity) {
 			return null;
 		}
-		return iMapEntity.getValue().get("value");
+		return iMapEntity.getData();
 	}
 
 	@Override
@@ -67,7 +67,9 @@ public class HttpTMIMap extends HttpIMap {
 			return null;
 		}
 		Map<String, Object> retMap = new HashMap<>();
-		iMapEntities.forEach(iMapEntity -> retMap.put(iMapEntity.getKey(), iMapEntity.getValue().get("value")));
+		for (IMapEntity iMapEntity : iMapEntities) {
+			retMap.put(iMapEntity.getKey(), iMapEntity.getData());
+		}
 		return retMap;
 	}
 
@@ -124,7 +126,8 @@ public class HttpTMIMap extends HttpIMap {
 		IMapEntity iMapEntity = IMapEntity.create()
 				.imap(mapName)
 				.key(key)
-				.value(valueMap);
+				.value(valueMap)
+				.serializeAndCompressValue();
 		HttpEntity<IMapEntity> httpEntity = new HttpEntity<>(iMapEntity, headers);
 		upsert(queryMap, httpEntity);
 	}
@@ -160,6 +163,7 @@ public class HttpTMIMap extends HttpIMap {
 
 	@Override
 	public void delete(String key) {
+		validateToken();
 		Map<String, Object> param = new HashMap<String, Object>() {{
 			put("imap", mapName);
 			put("key", key);
@@ -170,6 +174,7 @@ public class HttpTMIMap extends HttpIMap {
 
 	@Override
 	public void deleteAll(Collection<String> keys) {
+		validateToken();
 		Map<String, Object> param = new HashMap<String, Object>() {{
 			put("imap", mapName);
 			put("key", new HashMap<String, Object>() {{
