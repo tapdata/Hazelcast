@@ -4,4 +4,5 @@ public enum StorageMode {
     MongoDB,
     RocksDB,
     Mem,
+    HTTP_TM,
 }

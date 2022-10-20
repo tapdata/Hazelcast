@@ -1,6 +1,8 @@
 package com.hazelcast.persistence;
 
 import com.hazelcast.config.*;
+import com.hazelcast.persistence.http.HttpConstant;
+import com.hazelcast.persistence.http.HttpTMIMap;
 import com.hazelcast.ringbuffer.Ringbuffer;
 import com.mongodb.MongoClient;
 import com.mongodb.MongoClientURI;
@@ -29,7 +31,10 @@ public class PersistenceStorage {
 	private String ringBufferCollection = "ringBuffer";
 	private Integer ringBufferInMemSize = 1;
 
-	private PersistenceStorage() {
+	private String baseUrl;
+	private String accessCode;
+
+	public PersistenceStorage() {
 	}
 
 	public static PersistenceStorage getInstance() {
@@ -146,7 +151,17 @@ public class PersistenceStorage {
 		return this;
 	}
 
-	private PersistenceStorage initMapStoreConfig(Config c) {
+	public PersistenceStorage baseUrl(String baseUrl) {
+		this.baseUrl = baseUrl;
+		return this;
+	}
+
+	public PersistenceStorage accessCode(String accessCode) {
+		this.accessCode = accessCode;
+		return this;
+	}
+
+	public PersistenceStorage initMapStoreConfig(Config c) {
 		return initMapStoreConfig(c, "default");
 	}
 
@@ -166,6 +181,12 @@ public class PersistenceStorage {
 			case RocksDB:
 				mapStoreCfg.setClassName(RocksDBIMap.class.getName())
 						.setProperty("rocksdb.dbPath", this.imapRocksDBPath);
+				break;
+			case HTTP_TM:
+				mapStoreCfg.setClassName(HttpTMIMap.class.getName())
+						.setProperty(HttpConstant.BASE_URL_PROPERTY, baseUrl)
+						.setProperty(HttpConstant.ACCESS_CODE_PROPERTY, accessCode);
+				break;
 		}
 		EvictionConfig evictionConfig = new EvictionConfig()
 				.setEvictionPolicy(EvictionPolicy.LRU)
@@ -178,7 +199,7 @@ public class PersistenceStorage {
 		return this;
 	}
 
-	private PersistenceStorage initRingBufferConfig(Config c) {
+	public PersistenceStorage initRingBufferConfig(Config c) {
 		return initRingBufferConfig(c, "default");
 	}
 

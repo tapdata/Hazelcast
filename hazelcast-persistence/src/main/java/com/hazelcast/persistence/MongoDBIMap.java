@@ -8,10 +8,9 @@ import com.mongodb.MongoClientURI;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
-import com.mongodb.client.MongoIterable;
+import com.mongodb.client.model.Indexes;
 import com.mongodb.client.model.ReplaceOptions;
 import org.bson.Document;
-import com.mongodb.client.model.Indexes;
 import org.bson.conversions.Bson;
 
 import java.util.*;
