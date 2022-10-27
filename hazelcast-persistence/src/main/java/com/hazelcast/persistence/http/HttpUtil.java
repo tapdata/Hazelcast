@@ -1,5 +1,7 @@
 package com.hazelcast.persistence.http;
 
+import com.tapdata.tm.sdk.available.CloudRestTemplate;
+import com.tapdata.tm.sdk.util.CloudSignUtil;
 import org.apache.http.conn.ssl.NoopHostnameVerifier;
 import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
 import org.apache.http.impl.client.CloseableHttpClient;
@@ -25,7 +27,12 @@ import java.util.List;
 public class HttpUtil {
 
 	public static RestTemplate getRestTemplate(int connectTimeout, int readTimeout) {
-		RestTemplate restTemplate = new RestTemplate(getClientHttpRequestFactory(connectTimeout, readTimeout));
+		RestTemplate restTemplate;
+		if (CloudSignUtil.isNeedSign()) {
+			restTemplate = new CloudRestTemplate(getClientHttpRequestFactory(connectTimeout, readTimeout));
+		} else {
+			restTemplate = new RestTemplate(getClientHttpRequestFactory(connectTimeout, readTimeout));
+		}
 		restTemplate.getMessageConverters().add(new TxMappingJackson2HttpMessageConverter());
 		return restTemplate;
 	}
