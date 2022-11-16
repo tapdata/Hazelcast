@@ -50,7 +50,7 @@ public class MongoDBRingBuffer implements RingbufferStore<Document> {
 			collection = defaultMongoCollection;
 		}
 
-		mongoClient = new MongoClient(new MongoClientURI(mongoUri));
+		mongoClient = MongodbUtil.createClient(mongoUri);
 		cacheCollection = mongoClient.getDatabase(db).getCollection(collection);
 
 		/*Long cacheCollectionCount = cacheCollection.countDocuments();
