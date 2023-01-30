@@ -4,7 +4,6 @@ import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.map.MapLoaderLifecycleSupport;
 import com.hazelcast.map.MapStore;
 import com.mongodb.MongoClient;
-import com.mongodb.MongoClientURI;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
@@ -48,6 +47,10 @@ public class MongoDBIMap implements MapStore<String, Object>, MapLoaderLifecycle
 			collection = defaultMongoCollection;
 		}
 
+		if (null != mongoClient) {
+			mongoClient.close();
+			mongoClient = null;
+		}
 		mongoClient = MongodbUtil.createClient(mongoUri);
 		cacheCollection = mongoClient.getDatabase(db).getCollection(collection);
 

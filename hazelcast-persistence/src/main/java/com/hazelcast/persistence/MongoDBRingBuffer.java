@@ -2,19 +2,17 @@ package com.hazelcast.persistence;
 
 import com.hazelcast.ringbuffer.RingbufferStore;
 import com.mongodb.MongoClient;
-import com.mongodb.MongoClientURI;
-
-import static com.mongodb.client.model.Sorts.*;
-import static com.mongodb.client.model.Filters.*;
-
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.IndexOptions;
+import com.mongodb.client.model.Indexes;
 import com.mongodb.client.model.ReplaceOptions;
 import org.bson.Document;
-import com.mongodb.client.model.Indexes;
 import org.bson.conversions.Bson;
 
 import java.util.Properties;
+
+import static com.mongodb.client.model.Sorts.ascending;
+import static com.mongodb.client.model.Sorts.descending;
 
 public class MongoDBRingBuffer implements RingbufferStore<Document> {
 	private MongoClient mongoClient;
@@ -50,6 +48,10 @@ public class MongoDBRingBuffer implements RingbufferStore<Document> {
 			collection = defaultMongoCollection;
 		}
 
+		if (null != mongoClient) {
+			mongoClient.close();
+			mongoClient = null;
+		}
 		mongoClient = MongodbUtil.createClient(mongoUri);
 		cacheCollection = mongoClient.getDatabase(db).getCollection(collection);
 
