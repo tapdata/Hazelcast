@@ -312,7 +312,7 @@ public class PersistenceStorage {
 						if (s >= rb.tailSequence()) {
 							break;
 						}
-						long _ts = 0;
+						long _ts;
 						try {
 							_ts = rb.readOne(s).getLong("_ts");
 						} catch (Exception e) {
@@ -352,7 +352,7 @@ public class PersistenceStorage {
 					if (document == null) {
 						return 0;
 					}
-					return document.getLong("key");
+					return document.getLong("key") + 1L;
 				}
 				return document.getLong("key");
 			}
@@ -372,10 +372,10 @@ public class PersistenceStorage {
 						return i;
 					}
 				} catch (Exception e) {
-					continue;
+					throw new RuntimeException(e);
 				}
 			}
 		}
-		return rb.tailSequence();
+		return rb.tailSequence() + 1L;
 	}
 }
