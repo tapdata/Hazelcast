@@ -7,11 +7,20 @@ import com.hazelcast.ringbuffer.Ringbuffer;
 import com.mongodb.MongoClient;
 import com.mongodb.MongoClientURI;
 import com.mongodb.client.MongoCollection;
+import org.apache.logging.log4j.Logger;
+import org.bson.BsonBinaryReader;
 import org.bson.Document;
+import org.bson.codecs.Codec;
+import org.bson.codecs.DecoderContext;
+import org.bson.codecs.DocumentCodec;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 import static com.mongodb.client.model.Sorts.ascending;
 import static com.mongodb.client.model.Sorts.descending;
@@ -30,9 +39,10 @@ public class PersistenceStorage {
 	private String ringBufferDB = "cache";
 	private String ringBufferCollection = "ringBuffer";
 	private Integer ringBufferInMemSize = 1;
-
 	private String baseUrl;
 	private String accessCode;
+	private ConcurrentHashMap<String, Thread> ttlThreadMap = new ConcurrentHashMap<>();
+	private Logger logger;
 
 	public PersistenceStorage() {
 	}
@@ -175,6 +185,11 @@ public class PersistenceStorage {
 		return this;
 	}
 
+	public PersistenceStorage logger(Logger logger) {
+		this.logger = logger;
+		return this;
+	}
+
 	public PersistenceStorage initMapStoreConfig(Config c) {
 		return initMapStoreConfig(c, "default");
 	}
@@ -281,63 +296,124 @@ public class PersistenceStorage {
 		if (this.ringBufferStorageMode == StorageMode.Mem) {
 			return this;
 		}
-		new Thread(() -> {
-			long sleepSeconds = 60;
-			if (ttlSeconds < 60) {
-				sleepSeconds = ttlSeconds;
-			}
-			if (sleepSeconds < 10) {
-				sleepSeconds = 10;
-			}
+		if (this.ringBufferStorageMode == StorageMode.HTTP_TM) {
+			return this;
+		}
+		if (ttlThreadMap.containsKey(rb.getName())) {
+			// use thread's interrupt method to stop pre ttl thread
+			ttlThreadMap.get(rb.getName()).interrupt();
+		}
+		Thread ttlThread = new Thread(() -> {
 			RocksDB rocksDB = null;
+			MongoClient mongoClient = null;
 			MongoCollection<Document> cacheCollection = null;
-			String keySplit = "__0x1__";
-			String sign = rb.getName() + keySplit;
-			if (this.ringBufferStorageMode == StorageMode.RocksDB) {
-				rocksDB = RocksDBInstance.getInstance(this.ringBufferRocksDBPath);
-			}
-			if (this.ringBufferStorageMode == StorageMode.MongoDB) {
-				MongoClient mongoClient = new MongoClient(new MongoClientURI(this.ringBufferMongoUri));
-				cacheCollection = mongoClient.getDatabase(this.ringBufferDB).getCollection(this.ringBufferCollection);
-			}
-			while (true) {
-				try {
-					Thread.sleep(sleepSeconds * 1000);
-					if (rb.tailSequence() == -1) {
-						continue;
+			Codec<Document> documentCodec = null;
+				Thread.currentThread().setName(String.format("Clear-RingBuffer-TTL-%s-%s", ringBufferStorageMode.name(), rb.getName()));
+				long sleepSeconds = 60;
+				if (ttlSeconds < 60) {
+					sleepSeconds = ttlSeconds;
+				}
+				if (sleepSeconds < 10) {
+					sleepSeconds = 10;
+				}
+			try {
+				String keySplit = "__0x1__";
+				String sign = rb.getName() + keySplit;
+				if (this.ringBufferStorageMode == StorageMode.MongoDB) {
+					mongoClient = MongodbUtil.createClient(this.ringBufferMongoUri);
+					cacheCollection = mongoClient.getDatabase(this.ringBufferDB).getCollection(this.ringBufferCollection);
+				} else if (this.ringBufferStorageMode == StorageMode.RocksDB) {
+					rocksDB = RocksDBInstance.getInstance(this.ringBufferRocksDBPath);
+					documentCodec = new DocumentCodec();
+				}
+				while (ttlIsRunning()) {
+					try {
+						TimeUnit.SECONDS.sleep(sleepSeconds);
+					} catch (InterruptedException e) {
+						break;
 					}
-					long s = rb.headSequence() - 1;
-					while (true) {
-						s++;
-						if (s >= rb.tailSequence()) {
-							break;
+					try {
+						if (rb.tailSequence() == -1) {
+							continue;
 						}
-						long _ts;
-						try {
-							_ts = rb.readOne(s).getLong("_ts");
-						} catch (Exception e) {
-							break;
-						}
-						if (System.currentTimeMillis() - _ts * 1000 < ttlSeconds * 1000) {
-							break;
-						}
-						if (this.ringBufferStorageMode == StorageMode.RocksDB) {
+						long s = rb.headSequence() - 1;
+						while (ttlIsRunning()) {
+							s++;
+							if (s >= rb.tailSequence()) {
+								break;
+							}
+							Document document = null;
+							Document value = null;
 							try {
-								rocksDB.delete((sign + s).getBytes(StandardCharsets.UTF_8));
-								rocksDB.put((sign + "smallestSequence").getBytes(StandardCharsets.UTF_8), ((Long) (s + 1)).toString().getBytes());
-							} catch (RocksDBException e) {
+								if (this.ringBufferStorageMode == StorageMode.MongoDB) {
+									document = cacheCollection.find(new Document("ringBuffer", rb.getName()).append("key", s)).first();
+								} else if (this.ringBufferStorageMode == StorageMode.RocksDB) {
+									byte[] bytes = rocksDB.get((sign + s).getBytes());
+									if (null != bytes) {
+										BsonBinaryReader bsonReader = new BsonBinaryReader(ByteBuffer.wrap(bytes));
+										document = documentCodec.decode(bsonReader, DecoderContext.builder().build());
+									}
+								}
+							} catch (Exception e) {
+								throw new RuntimeException("Read one from ringBuffer failed, sequence: " + s, e);
+							}
+							if (null == document) {
+								continue;
+							}
+							if (document.get("value") instanceof Document) {
+								value = (Document) document.get("value");
+							}
+							if (null == value) {
+								continue;
+							}
+							long _ts;
+							if (!value.containsKey("_ts")) {
+								continue;
+							}
+							_ts = value.getLong("_ts");
+							if (System.currentTimeMillis() - _ts * 1000 < ttlSeconds * 1000) {
+								break;
+							}
+							if (this.ringBufferStorageMode == StorageMode.MongoDB) {
+								Document query = new Document("ringBuffer", rb.getName()).append("key", s);
+								try {
+									cacheCollection.deleteOne(query);
+								} catch (Exception e) {
+									throw new RuntimeException("Delete from mongodb failed, query: " + query.toJson(), e);
+								}
+							} else if (this.ringBufferStorageMode == StorageMode.RocksDB) {
+								try {
+									rocksDB.delete((sign + s).getBytes(StandardCharsets.UTF_8));
+									rocksDB.put((sign + "smallestSequence").getBytes(StandardCharsets.UTF_8), ((Long) (s + 1)).toString().getBytes());
+								} catch (RocksDBException e) {
+									throw new RuntimeException("Delete from rocksdb failed, key: " + sign + s, e);
+								}
 							}
 						}
-						if (this.ringBufferStorageMode == StorageMode.MongoDB) {
-							Document query = new Document("ringBuffer", rb.getName()).append("key", s);
-							cacheCollection.deleteOne(query);
+					} catch (Exception e) {
+						if (null != logger) {
+							logger.warn("Ringbuffer [{}] clear ttl data failed, ttl seconds: {}", ttlSeconds, rb.getName(), e);
 						}
 					}
-				} catch (Exception e) {
+				}
+			} finally {
+				try {
+					Optional.ofNullable(rocksDB).ifPresent(RocksDB::close);
+				} catch (Exception ignored) {
+				}
+				try {
+					Optional.ofNullable(mongoClient).ifPresent(MongoClient::close);
+				} catch (Exception ignored) {
 				}
 			}
-		}).start();
+		});
+		ttlThread.start();
+		ttlThreadMap.put(rb.getName(), ttlThread);
 		return this;
+	}
+
+	private boolean ttlIsRunning() {
+		return !Thread.currentThread().isInterrupted();
 	}
 
 	public long findSequence(Ringbuffer<Document> rb, long timestamp) {
