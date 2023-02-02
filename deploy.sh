@@ -16,7 +16,7 @@ echo "Deploy module: ${module}"
 
 function deployRoot() {
   echo "Deploy hazelcast root"
-  mvn clean deploy -Dquick -DskipTests -f pom-root.xml
+  mvn clean deploy -Dquick -T 1C -DskipTests -f pom-root.xml
 }
 
 function deployPersistence() {
