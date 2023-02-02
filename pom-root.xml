@@ -1360,11 +1360,19 @@
         </snapshotRepository>
     </distributionManagement>-->
 
-    <distributionManagement>
+<!--    <distributionManagement>
         <repository>
             <id>tapdata-tapdata-maven</id>
             <name>Tapdata Maven Repository</name>
             <url>https://tapdata-maven.pkg.coding.net/repository/tapdata/maven/</url>
+        </repository>
+    </distributionManagement>-->
+
+    <distributionManagement>
+        <repository>
+            <id>github</id>
+            <name>GitHub tapdata Apache Maven Packages</name>
+            <url>https://maven.pkg.github.com/tapdata/tapdata</url>
         </repository>
     </distributionManagement>
 
