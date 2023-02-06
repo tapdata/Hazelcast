@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,7 +58,7 @@ public final class FieldTypeToFieldKind {
             case BYTE_ARRAY:
                 return FieldKind.ARRAY_OF_INT8;
             case BOOLEAN_ARRAY:
-                return FieldKind.ARRAY_OF_BOOLEANS;
+                return FieldKind.ARRAY_OF_BOOLEAN;
             case CHAR_ARRAY:
                 return FieldKind.ARRAY_OF_CHAR;
             case SHORT_ARRAY:

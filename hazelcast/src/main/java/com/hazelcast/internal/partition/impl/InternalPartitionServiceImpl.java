@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -131,7 +131,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService,
     private final long partitionMigrationTimeout;
 
     private final PartitionServiceProxy proxy;
-    private final Lock lock = new ReentrantLock();
+    private final Lock partitionServiceLock = new ReentrantLock();
 
     private final PartitionStateManager partitionStateManager;
     private final MigrationManager migrationManager;
@@ -158,7 +158,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService,
         this.logger = node.getLogger(InternalPartitionService.class);
 
         partitionStateManager = new PartitionStateManager(node, this);
-        migrationManager = new MigrationManager(node, this, lock);
+        migrationManager = new MigrationManager(node, this, partitionServiceLock);
         replicaManager = new PartitionReplicaManager(node, this);
 
         partitionReplicaStateChecker = new PartitionReplicaStateChecker(node, this);
@@ -241,7 +241,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService,
         }
 
         try {
-            if (!lock.tryLock(PARTITION_OWNERSHIP_WAIT_MILLIS, TimeUnit.MILLISECONDS)) {
+            if (!partitionServiceLock.tryLock(PARTITION_OWNERSHIP_WAIT_MILLIS, TimeUnit.MILLISECONDS)) {
                 return null;
             }
         } catch (InterruptedException e) {
@@ -258,7 +258,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService,
 
             return createPartitionStateInternal();
         } finally {
-            lock.unlock();
+            partitionServiceLock.unlock();
         }
     }
 
@@ -326,11 +326,11 @@ public class InternalPartitionServiceImpl implements InternalPartitionService,
      * @throws IllegalStateException if the partition manager has already been initialized
      */
     public void setInitialState(PartitionTableView partitionTable) {
-        lock.lock();
+        partitionServiceLock.lock();
         try {
             partitionStateManager.setInitialState(partitionTable);
         } finally {
-            lock.unlock();
+            partitionServiceLock.unlock();
         }
     }
 
@@ -352,7 +352,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService,
     @Override
     public void memberAdded(Member member) {
         logger.fine("Adding " + member);
-        lock.lock();
+        partitionServiceLock.lock();
         try {
             latestMaster = node.getClusterService().getMasterAddress();
             if (!member.localMember()) {
@@ -364,7 +364,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService,
                 }
             }
         } finally {
-            lock.unlock();
+            partitionServiceLock.unlock();
         }
     }
 
@@ -374,7 +374,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService,
             return;
         }
         logger.fine("Removing " + Arrays.toString(members));
-        lock.lock();
+        partitionServiceLock.lock();
         try {
             ClusterState clusterState = node.getClusterService().getClusterState();
             for (Member member : members) {
@@ -396,6 +396,10 @@ public class InternalPartitionServiceImpl implements InternalPartitionService,
                     // no partitions were assigned to it (member left with graceful shutdown)
                     if (!partitionStateManager.isAbsentInPartitionTable(member)) {
                         partitionStateManager.storeSnapshot(member.getUuid());
+                    } else {
+                        // member is removed due to graceful shutdown
+                        // cleanup any leftover snapshots
+                        partitionStateManager.removeSnapshot(member.getUuid());
                     }
                 }
             }
@@ -408,7 +412,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService,
                 migrationManager.triggerControlTaskWithDelay();
             }
         } finally {
-            lock.unlock();
+            partitionServiceLock.unlock();
         }
     }
 
@@ -424,14 +428,14 @@ public class InternalPartitionServiceImpl implements InternalPartitionService,
             return;
         }
 
-        lock.lock();
+        partitionServiceLock.lock();
         try {
             if (partitionStateManager.isInitialized()
                     && migrationManager.shouldTriggerRepartitioningWhenClusterStateAllowsMigration()) {
                 migrationManager.triggerControlTask();
             }
         } finally {
-            lock.unlock();
+            partitionServiceLock.unlock();
         }
     }
 
@@ -448,7 +452,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService,
      * lock.
      */
     public PartitionRuntimeState createPartitionStateInternal() {
-        lock.lock();
+        partitionServiceLock.lock();
         try {
             if (!partitionStateManager.isInitialized()) {
                 return null;
@@ -469,7 +473,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService,
             state.setActiveMigrations(activeMigrations);
             return state;
         } finally {
-            lock.unlock();
+            partitionServiceLock.unlock();
         }
     }
 
@@ -482,7 +486,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService,
      * @return the partition table with the executed migrations or {@code null} if the partitions are not initialized (assigned)
      */
     PartitionRuntimeState createPromotionCommitPartitionState(Collection<MigrationInfo> migrationInfos) {
-        lock.lock();
+        partitionServiceLock.lock();
         try {
             if (!partitionStateManager.isInitialized()) {
                 return null;
@@ -501,7 +505,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService,
             long stamp = calculateStamp(partitions);
             return new PartitionRuntimeState(partitions, completedMigrations, stamp);
         } finally {
-            lock.unlock();
+            partitionServiceLock.unlock();
         }
     }
 
@@ -669,12 +673,12 @@ public class InternalPartitionServiceImpl implements InternalPartitionService,
      */
     private boolean applyNewPartitionTable(InternalPartition[] partitions, Collection<MigrationInfo> completedMigrations,
             Address sender) {
-        lock.lock();
+        partitionServiceLock.lock();
         try {
             requestMemberListUpdateIfUnknownMembersFound(sender, partitions);
             return updatePartitionsAndFinalizeMigrations(partitions, completedMigrations, sender);
         } finally {
-            lock.unlock();
+            partitionServiceLock.unlock();
         }
     }
 
@@ -801,7 +805,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService,
         if (!validateSenderIsMaster(sender, "completed migrations")) {
             return false;
         }
-        lock.lock();
+        partitionServiceLock.lock();
         try {
             if (!partitionStateManager.isInitialized()) {
                 if (logger.isFineEnabled()) {
@@ -861,7 +865,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService,
 
             return appliedAllMigrations;
         } finally {
-            lock.unlock();
+            partitionServiceLock.unlock();
         }
     }
 
@@ -919,7 +923,8 @@ public class InternalPartitionServiceImpl implements InternalPartitionService,
                 if (node.getThisAddress().equals(masterAddress)) {
                     onShutdownRequest(node.getLocalMember());
                 } else {
-                    operationService.send(new ShutdownRequestOperation(), masterAddress);
+                    UUID memberUuid = node.getLocalMember().getUuid();
+                    operationService.send(new ShutdownRequestOperation(memberUuid), masterAddress);
                 }
                 if (latch.await(awaitStep, TimeUnit.MILLISECONDS)) {
                     return true;
@@ -945,11 +950,11 @@ public class InternalPartitionServiceImpl implements InternalPartitionService,
     }
 
     public void onShutdownRequest(Member member) {
-        if (lock.tryLock()) {
+        if (partitionServiceLock.tryLock()) {
             try {
                 migrationManager.onShutdownRequest(member);
             } finally {
-                lock.unlock();
+                partitionServiceLock.unlock();
             }
         }
     }
@@ -963,6 +968,11 @@ public class InternalPartitionServiceImpl implements InternalPartitionService,
     @Override
     public boolean isMemberStateSafe() {
         return partitionReplicaStateChecker.getPartitionServiceState() == PartitionServiceState.SAFE;
+    }
+
+    @Override
+    public boolean isPartitionTableSafe() {
+        return partitionReplicaStateChecker.getPartitionTableState() == PartitionServiceState.SAFE;
     }
 
     @Override
@@ -1038,14 +1048,14 @@ public class InternalPartitionServiceImpl implements InternalPartitionService,
 
     @Override
     public void reset() {
-        lock.lock();
+        partitionServiceLock.lock();
         try {
             shouldFetchPartitionTables = false;
             replicaManager.reset();
             partitionStateManager.reset();
             migrationManager.reset();
         } finally {
-            lock.unlock();
+            partitionServiceLock.unlock();
         }
     }
 
@@ -1204,7 +1214,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService,
     }
 
     boolean scheduleFetchMostRecentPartitionTableTaskIfRequired() {
-       lock.lock();
+       partitionServiceLock.lock();
        try {
            if (shouldFetchPartitionTables) {
                migrationManager.schedule(new FetchMostRecentPartitionTableTask());
@@ -1213,26 +1223,26 @@ public class InternalPartitionServiceImpl implements InternalPartitionService,
 
            return false;
        } finally {
-           lock.unlock();
+           partitionServiceLock.unlock();
        }
     }
 
     public void replaceMember(Member oldMember, Member newMember) {
-        lock.lock();
+        partitionServiceLock.lock();
         try {
             partitionStateManager.replaceMember(oldMember, newMember);
         } finally {
-            lock.unlock();
+            partitionServiceLock.unlock();
         }
     }
 
     @Override
     public PartitionTableView createPartitionTableView() {
-        lock.lock();
+        partitionServiceLock.lock();
         try {
             return partitionStateManager.getPartitionTable();
         } finally {
-            lock.unlock();
+            partitionServiceLock.unlock();
         }
     }
 
@@ -1279,7 +1289,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService,
 
     @SuppressWarnings("checkstyle:npathcomplexity")
     public boolean commitMigrationOnDestination(MigrationInfo migration, Address sender) {
-        lock.lock();
+        partitionServiceLock.lock();
         try {
             if (!validateSenderIsMaster(sender, "migration commit")) {
                 return false;
@@ -1326,7 +1336,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService,
             }
             return true;
         } finally {
-            lock.unlock();
+            partitionServiceLock.unlock();
         }
     }
 
@@ -1481,7 +1491,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService,
         private void processNewState(Collection<MigrationInfo> allCompletedMigrations,
                 Collection<MigrationInfo> allActiveMigrations) {
 
-            lock.lock();
+            partitionServiceLock.lock();
             try {
                 processMigrations(allCompletedMigrations, allActiveMigrations);
                 if (initialized) {
@@ -1513,7 +1523,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService,
                 logger.warning(sb.toString());
                 throw rethrowed;
             } finally {
-                lock.unlock();
+                partitionServiceLock.unlock();
             }
         }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -96,6 +96,10 @@ public class JobTest extends SimpleTestInClusterSupport {
     @Before
     public void setup() {
         TestProcessors.reset(TOTAL_PARALLELISM);
+    }
+    @Before
+    public void after() {
+        TestProcessors.assertNoErrorsInProcessors();
     }
 
     @Test
@@ -346,6 +350,7 @@ public class JobTest extends SimpleTestInClusterSupport {
         DAG dag = new DAG().vertex(new Vertex("test", new MockPS(NoOutputSourceP::new, NODE_COUNT)));
 
         Job submittedJob = instance().getJet().newJob(dag);
+        assertJobVisible(instance(), submittedJob, "submittedJob");
 
         Collection<Job> trackedJobs = instances()[1].getJet().getJobs();
         Job trackedJob = trackedJobs.stream().filter(j -> j.getId() == submittedJob.getId()).findFirst().orElse(null);
@@ -409,6 +414,7 @@ public class JobTest extends SimpleTestInClusterSupport {
         NoOutputSourceP.executionStarted.await();
 
         // Then
+        assertJobVisible(instance, job, "job");
         Job trackedJob = instance.getJet().getJob(jobName);
 
         assertNotNull(trackedJob);
@@ -438,6 +444,7 @@ public class JobTest extends SimpleTestInClusterSupport {
         NoOutputSourceP.executionStarted.await();
 
         // Then
+        assertJobVisible(instance, job, "job");
         Job trackedJob = instance.getJet().getJob(job.getId());
 
         assertNotNull(trackedJob);
@@ -514,6 +521,7 @@ public class JobTest extends SimpleTestInClusterSupport {
                 .setName(randomName());
         Job job1 = instance.getJet().newJob(dag, config);
         assertTrueEventually(() -> assertEquals(RUNNING, job1.getStatus()));
+        assertJobVisible(instance, job1, "job1");
 
         // When
         Job job2 = instance.getJet().newJobIfAbsent(dag, config);
@@ -775,6 +783,16 @@ public class JobTest extends SimpleTestInClusterSupport {
         // When
         Job job = useLightJob ? instances()[1].getJet().newLightJob(dag) : instance().getJet().newJob(dag);
         NoOutputSourceP.executionStarted.await();
+
+        // The light job is submitted in JobCoordinationService.submitLightJob. The order of instructions is:
+        // - LightMasterContext.createContext()
+        // - thenComposeAsync -> lightMasterContexts.put(jobId, mc)
+        // As long as the context is not put in the lightMasterContexts we cannot get the job by id. The tasklets are added
+        // to workers in the execution of LightMasterContext.createContext(), so the tasklet may start before the
+        // lightMasterContexts is filled.
+        assertTrueEventually(() -> {
+            assertNotNull(instance.getJet().getJob(job.getId()));
+        });
         Job trackedJob = instance.getJet().getJob(job.getId());
 
         // Then
@@ -905,6 +923,7 @@ public class JobTest extends SimpleTestInClusterSupport {
 
         // light streaming job, cancelled
         Job lightStreamingJobCancelled = jet.newLightJob(streamingDag);
+        assertJobVisible(inst, lightStreamingJobCancelled, "lightStreamingJobCancelled");
         lightStreamingJobCancelled.cancel();
         joinAndExpectCancellation(lightStreamingJobCancelled);
 
@@ -917,14 +936,13 @@ public class JobTest extends SimpleTestInClusterSupport {
         List<Job> allJobsExceptCompletedLightJobs =
                 asList(streamingJob, batchJob1, batchJob2, namedStreamingJob1, namedStreamingJob2, namedStreamingJob2_1, lightStreamingJob);
 
-        List<Job> allJobs = new ArrayList<>();
-        allJobs.addAll(allJobsExceptCompletedLightJobs);
+        List<Job> allJobs = new ArrayList<>(allJobsExceptCompletedLightJobs);
         allJobs.add(lightStreamingJobCancelled);
         allJobs.add(lightBatchJob1);
         allJobs.add(lightBatchJob2);
 
         // Then
-        // getJobs must include all submitted all jobs, except for the light batch jobs that are done
+        // getJobs must include all submitted jobs, except for the light batch jobs that are done
         assertThat(toList(jet.getJobs(), this::jobEqualityString))
                 .containsExactlyInAnyOrderElementsOf(toList(allJobsExceptCompletedLightJobs, this::jobEqualityString));
 
@@ -933,6 +951,7 @@ public class JobTest extends SimpleTestInClusterSupport {
             Job trackedJobByName = job.getName() != null ? jet.getJob(job.getName()) : null;
 
             if (allJobsExceptCompletedLightJobs.contains(job)) {
+                assertJobVisible(inst, trackedJobById, "trackedJobById");
                 assertEquals(jobEqualityString(job), jobEqualityString(trackedJobById));
                 if (job.getName() != null && job != namedStreamingJob2) {
                     assertEquals(jobEqualityString(job), jobEqualityString(trackedJobByName));
@@ -975,7 +994,6 @@ public class JobTest extends SimpleTestInClusterSupport {
         Job job = instance().getJet().newLightJob(streamingDag);
 
         // Then
-        assertThatThrownBy(job::getConfig).isInstanceOf(UnsupportedOperationException.class);
         assertThatThrownBy(job::getSuspensionCause).isInstanceOf(UnsupportedOperationException.class);
         assertThatThrownBy(job::getMetrics).isInstanceOf(UnsupportedOperationException.class);
         assertThatThrownBy(job::restart).isInstanceOf(UnsupportedOperationException.class);
@@ -992,8 +1010,8 @@ public class JobTest extends SimpleTestInClusterSupport {
         Job job1 = instances()[0].getJet().newLightJob(streamingDag());
         assertTrueEventually(() -> assertJobExecuting(job1, instances()[0]));
 
+        assertJobVisible(clientConnectedToI1, job1, "job1ThroughClient2");
         Job job1ThroughClient2 = clientConnectedToI1.getJet().getJob(job1.getId());
-        assertNotNull("job1ThroughClient2 not found", job1ThroughClient2);
         job1ThroughClient2.getSubmissionTime();
         assertEquals(RUNNING, job1ThroughClient2.getStatus());
         assertTrue(job1ThroughClient2.isLightJob());
@@ -1009,6 +1027,7 @@ public class JobTest extends SimpleTestInClusterSupport {
         for (int i = 0; i < 10; i++) {
             Job job = client.getJet().newLightJob(streamingDag());
             assertTrueEventually(() -> assertJobExecuting(job, instance()));
+            assertJobVisible(client, job, "streaming job");
             cancelAndJoin(job);
         }
     }

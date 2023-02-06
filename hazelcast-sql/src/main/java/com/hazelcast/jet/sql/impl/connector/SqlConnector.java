@@ -23,14 +23,18 @@ import com.hazelcast.jet.core.EventTimePolicy;
 import com.hazelcast.jet.core.Vertex;
 import com.hazelcast.jet.sql.impl.ExpressionUtil;
 import com.hazelcast.jet.sql.impl.JetJoinInfo;
+import com.hazelcast.jet.sql.impl.schema.HazelcastTable;
 import com.hazelcast.spi.impl.NodeEngine;
 import com.hazelcast.sql.impl.expression.Expression;
 import com.hazelcast.sql.impl.expression.ExpressionEvalContext;
+import com.hazelcast.sql.impl.row.JetSqlRow;
 import com.hazelcast.sql.impl.schema.MappingField;
 import com.hazelcast.sql.impl.schema.Table;
+import org.apache.calcite.rex.RexNode;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -122,6 +126,22 @@ public interface SqlConnector {
     String OPTION_VALUE_COMPACT_TYPE_NAME = "valueCompactTypeName";
 
     /**
+     * The class name of the Custom Type's underlying Java Class
+     */
+    String OPTION_TYPE_JAVA_CLASS = "javaClass";
+
+    /**
+     * The name of the Compact type used for Type
+     */
+    String OPTION_TYPE_COMPACT_TYPE_NAME = "compactTypeName";
+
+    String OPTION_TYPE_PORTABLE_FACTORY_ID = "portableFactoryId";
+
+    String OPTION_TYPE_PORTABLE_CLASS_ID = "portableClassId";
+
+    String OPTION_TYPE_PORTABLE_CLASS_VERSION = "portableClassVersion";
+
+    /**
      * Value for {@value #OPTION_KEY_FORMAT} and {@value #OPTION_VALUE_FORMAT}
      * for Java serialization.
      */
@@ -190,13 +210,15 @@ public interface SqlConnector {
      * @param nodeEngine an instance of {@link NodeEngine}
      * @param options    user-provided options
      * @param userFields user-provided list of fields, possibly empty
+     * @param externalName external name of the table
      * @return final field list, must not be empty
      */
     @Nonnull
     List<MappingField> resolveAndValidateFields(
             @Nonnull NodeEngine nodeEngine,
             @Nonnull Map<String, String> options,
-            @Nonnull List<MappingField> userFields
+            @Nonnull List<MappingField> userFields,
+            @Nonnull String externalName
     );
 
     /**
@@ -224,7 +246,7 @@ public interface SqlConnector {
     /**
      * Returns a supplier for a source vertex reading the input according to
      * the {@code projection}/{@code predicate}. The output type of the source
-     * is Object[].
+     * is {@link JetSqlRow}.
      * <p>
      * The field indexes in the predicate and projection refer to the
      * zero-based indexes of the original fields of the {@code table}. For
@@ -247,19 +269,36 @@ public interface SqlConnector {
             @Nonnull Table table,
             @Nullable Expression<Boolean> predicate,
             @Nonnull List<Expression<?>> projection,
-            @Nullable FunctionEx<ExpressionEvalContext, EventTimePolicy<Object[]>> eventTimePolicyProvider
+            @Nullable FunctionEx<ExpressionEvalContext, EventTimePolicy<JetSqlRow>> eventTimePolicyProvider
     ) {
         throw new UnsupportedOperationException("Full scan not supported for " + typeName());
     }
 
     /**
+     * Variant of {@link #fullScanReader(DAG, Table, Expression, List, FunctionEx)} that provides
+     * {@link HazelcastTable}. It is useful to get filter and projection as RexNode instead of Expression.
+     *
+     * You should override only one of the {@code fullScanReader} methods.
+     */
+    default Vertex fullScanReader(
+            @Nonnull DAG dag,
+            @Nonnull Table table,
+            @Nonnull HazelcastTable hzTable,
+            @Nullable Expression<Boolean> predicate,
+            @Nonnull List<Expression<?>> projection,
+            @Nullable FunctionEx<ExpressionEvalContext, EventTimePolicy<JetSqlRow>> eventTimePolicyProvider
+    ) {
+        return fullScanReader(dag, table, predicate, projection, eventTimePolicyProvider);
+    }
+
+    /**
      * Creates a vertex to read the given {@code table} as a part of a
      * nested-loop join. The vertex will receive items from the left side of
-     * the join as {@code Object[]}. For each record it must read the matching
+     * the join as {@link JetSqlRow}. For each record it must read the matching
      * records from the {@code table}, according to the {@code joinInfo} and
-     * emit joined records, again as {@code Object[]}. The length of the output
-     * array is {@code inputRecordLength + projection.size()}. See {@link
-     * ExpressionUtil#join} for a utility to create output records.
+     * emit joined records, again as {@link JetSqlRow}. The number of fields in
+     * the output row is {@code inputRecordLength + projection.size()}. See
+     * {@link ExpressionUtil#join} for a utility to create output rows.
      * <p>
      * The given {@code predicate} and {@code projection} apply only to the
      * records of the {@code table} (i.e. of the right-side of the join, before
@@ -305,6 +344,17 @@ public interface SqlConnector {
         throw new UnsupportedOperationException("Nested-loop join not supported for " + typeName());
     }
 
+    default boolean isNestedLoopReaderSupported() {
+        try {
+            // nestedLoopReader() is supported, if the class overrides the default method in this class
+            Method m = getClass().getMethod("nestedLoopReader", DAG.class, Table.class, Expression.class, List.class,
+                    JetJoinInfo.class);
+            return m.getDeclaringClass() != SqlConnector.class;
+        } catch (NoSuchMethodException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     /**
      * Returns the supplier for the insert processor.
      */
@@ -333,6 +383,16 @@ public interface SqlConnector {
             @Nonnull Map<String, Expression<?>> updatesByFieldNames
     ) {
         throw new UnsupportedOperationException("UPDATE not supported for " + typeName());
+    }
+
+    @Nonnull
+    default Vertex updateProcessor(
+            @Nonnull DAG dag,
+            @Nonnull Table table,
+            @Nonnull Map<String, RexNode> updates,
+            @Nonnull Map<String, Expression<?>> updatesByFieldNames
+    ) {
+        return updateProcessor(dag, table, updatesByFieldNames);
     }
 
     /**

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -958,7 +958,7 @@ public class EntryProcessorTest extends HazelcastTestSupport {
         setCustomTtl(entryProcessor, "executeOnKey");
     }
 
-    private void setCustomTtl(EntryProcessor entryProcessor, String methodName) {
+    protected void setCustomTtl(EntryProcessor entryProcessor, String methodName) {
         TestHazelcastInstanceFactory nodeFactory = createHazelcastInstanceFactory(2);
         Config cfg = getConfig();
         cfg.getMapConfig(MAP_NAME).setReadBackupData(true);
@@ -1671,8 +1671,8 @@ public class EntryProcessorTest extends HazelcastTestSupport {
         }
     }
 
-    private static class PartitionAwareTestEntryProcessor implements EntryProcessor<Integer, Integer, Object>,
-            HazelcastInstanceAware {
+    private static class PartitionAwareTestEntryProcessor
+            implements EntryProcessor<Integer, Integer, Object>, HazelcastInstanceAware {
 
         private final String name;
         private transient HazelcastInstance hz;
@@ -1698,7 +1698,8 @@ public class EntryProcessorTest extends HazelcastTestSupport {
         }
     }
 
-    private static final class ExecutionCountingEP<K, V, O> implements EntryProcessor<K, V, O>, ReadOnly, HazelcastInstanceAware {
+    private static final class ExecutionCountingEP<K, V, O>
+            implements EntryProcessor<K, V, O>, ReadOnly, HazelcastInstanceAware {
         private AtomicLong executionCounter;
 
         @Override
@@ -1813,14 +1814,22 @@ public class EntryProcessorTest extends HazelcastTestSupport {
 
         @Override
         public Set<QueryableEntry<K, V>> filter(QueryContext queryContext) {
-            Index index = queryContext.getIndex(attributeName);
+            Index index = getIndex(queryContext);
+            if (index == null) {
+                return null;
+            }
+
             Set records = index.getRecords(key);
             return records;
         }
 
+        private Index getIndex(QueryContext queryContext) {
+            return queryContext.getIndex(attributeName);
+        }
+
         @Override
         public boolean isIndexed(QueryContext queryContext) {
-            return true;
+            return getIndex(queryContext) != null;
         }
 
         @Override

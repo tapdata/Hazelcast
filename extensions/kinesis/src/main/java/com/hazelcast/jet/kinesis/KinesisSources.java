@@ -19,6 +19,7 @@ package com.hazelcast.jet.kinesis;
 import com.amazonaws.services.kinesis.model.Record;
 import com.amazonaws.services.kinesis.model.Shard;
 import com.hazelcast.function.BiFunctionEx;
+import com.hazelcast.function.SupplierEx;
 import com.hazelcast.jet.kinesis.impl.AwsConfig;
 import com.hazelcast.jet.kinesis.impl.source.InitialShardIterators;
 import com.hazelcast.jet.kinesis.impl.source.KinesisSourcePMetaSupplier;
@@ -34,6 +35,7 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ExecutorService;
 
 import static com.hazelcast.jet.Util.entry;
 
@@ -166,7 +168,9 @@ public final class KinesisSources {
 
         private Builder(@Nonnull String stream) {
             this.stream = stream;
-            this.projectionFn = (record, shard) -> (T) entry(record.getPartitionKey(), toArray(record, shard));
+            // Don't use lambda here since serialization/deserialization of the lambda gets corrupted
+            // after relocating aws classes
+            this.projectionFn = new DefaultProjection<>();
         }
 
         /**
@@ -307,6 +311,16 @@ public final class KinesisSources {
         }
 
         /**
+         * Specifies an executor service supplier that will be used by the {@link AwsConfig}
+         * to construct an AWS async client.
+         */
+        @Nonnull
+        public Builder<T> withExecutorServiceSupplier(@Nonnull SupplierEx<ExecutorService> executorSupplier) {
+            awsConfig.withExecutorServiceSupplier(executorSupplier);
+            return this;
+        }
+
+        /**
          * Constructs the source based on the options provided so far.
          */
         @Nonnull
@@ -322,8 +336,18 @@ public final class KinesisSources {
                     eventTimePolicy -> new KinesisSourcePMetaSupplier<T>(awsConfig, stream, retryStrategy,
                             initialShardIterators, eventTimePolicy, projectionFn));
         }
+    }
 
-        private static byte[] toArray(Record record, Shard shard) {
+    private static class DefaultProjection<T> implements BiFunctionEx<Record, Shard, T> {
+
+        private static final long serialVersionUID = 1L;
+
+        @Override
+        public T applyEx(Record record, Shard shard) {
+            return (T) entry(record.getPartitionKey(), toArray(record));
+        }
+
+        private static byte[] toArray(Record record) {
             ByteBuffer buffer = record.getData();
             int position = buffer.position();
             int limit = buffer.limit();
@@ -334,5 +358,4 @@ public final class KinesisSources {
             }
         }
     }
-
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -132,9 +132,13 @@ public interface OperationService {
 
     <E> InvocationFuture<E> invokeOnTarget(String serviceName, Operation op, Address target);
 
+    <E> InvocationFuture<E> invokeOnMaster(String serviceName, Operation op);
+
     InvocationBuilder createInvocationBuilder(String serviceName, Operation op, int partitionId);
 
     InvocationBuilder createInvocationBuilder(String serviceName, Operation op, Address target);
+
+    InvocationBuilder createMasterInvocationBuilder(String serviceName, Operation op);
 
     /**
      * Invokes a set of operations on each partition.

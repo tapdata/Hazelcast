@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  ~ Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+  ~ Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
   ~ you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@
        xsi:schemaLocation="http://www.springframework.org/schema/beans
         http://www.springframework.org/schema/beans/spring-beans.xsd
         http://www.hazelcast.com/schema/spring
-        http://www.hazelcast.com/schema/spring/hazelcast-spring-5.1.xsd">
+        http://www.hazelcast.com/schema/spring/hazelcast-spring-5.2.xsd">
 
     <bean class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer"
           p:systemPropertiesModeName="SYSTEM_PROPERTIES_MODE_OVERRIDE">
@@ -89,9 +89,9 @@
                               tag="TAG-NAME=HZLCAST001"/>
                     <hz:kubernetes enabled="false"
                                    namespace="MY-KUBERNETES-NAMESPACE"
-                                   service-name="MY-SERVICE-NAME"
+                                   service-name="${kubernetes.service.name}"
                                    service-label-name="MY-SERVICE-LABEL-NAME"
-                                   service-label-value="MY-SERVICE-LABEL-VALUE"/>
+                                   service-label-value="${kubernetes.service.label}"/>
                     <hz:eureka enabled="false"
                                self-registration="true"
                                namespace="hazelcast"/>
@@ -165,9 +165,9 @@
                               tag="TAG-NAME=HZLCAST001"/>
                     <hz:kubernetes enabled="false"
                                    namespace="MY-KUBERNETES-NAMESPACE"
-                                   service-name="MY-SERVICE-NAME"
+                                   service-name="${kubernetes.service.name}"
                                    service-label-name="MY-SERVICE-LABEL-NAME"
-                                   service-label-value="MY-SERVICE-LABEL-VALUE"/>
+                                   service-label-value="${kubernetes.service.label}"/>
                     <hz:eureka enabled="false"
                                self-registration="true"
                                namespace="hazelcast"/>
@@ -177,16 +177,28 @@
                     <hz:interface>10.10.1.*</hz:interface>
                 </hz:interfaces>
 
-
-                <hz:ssl enabled="false" factory-class-name="com.hazelcast.spring.DummySSLContextFactory"
-                        factory-implementation="dummySSLContextFactory"/>
+                <hz:ssl enabled="false">
+                    <hz:properties>
+                        <hz:property name="protocol">TLS</hz:property>
+                        <hz:property name="mutualAuthentication">REQUIRED</hz:property>
+                        <hz:property name="keyStore">/opt/hazelcast.keystore</hz:property>
+                        <hz:property name="keyStorePassword">secret.97531</hz:property>
+                        <hz:property name="keyStoreType">PKCS12</hz:property>
+                        <hz:property name="trustStore">/opt/hazelcast.truststore</hz:property>
+                        <hz:property name="trustStorePassword">changeit</hz:property>
+                        <hz:property name="trustStoreType">PKCS12</hz:property>
+                    </hz:properties>
+                </hz:ssl>
                 <hz:socket-interceptor enabled="false" class-name="com.hazelcast.spring.DummySocketInterceptor"
                                        implementation="dummySocketInterceptor"/>
+                <!--
+                The symmetric-encryption is deprecated since Hazelcast 4.2. Consider using TLS instead.
                 <hz:symmetric-encryption enabled="false"
                                          algorithm="PBEWithMD5AndDES"
                                          salt="thesalt"
                                          password="thepass"
                                          iteration-count="19"/>
+                 -->
                 <hz:reuse-address>true</hz:reuse-address>
                 <hz:member-address-provider enabled="false" class-name="com.hazelcast.spring.DummyMemberAddressProvider">
                     <hz:properties>
@@ -331,6 +343,7 @@
                 <hz:map-store enabled="true"
                               class-name="com.hazelcast.spring.DummyStore"
                               write-delay-seconds="0"
+                              offload="false"
                               initial-mode="EAGER"
                               write-batch-size="10"/>
                 <hz:near-cache time-to-live-seconds="0"
@@ -351,6 +364,17 @@
                             <hz:attribute>age</hz:attribute>
                             <hz:attribute>name</hz:attribute>
                         </hz:attributes>
+                    </hz:index>
+                    <hz:index name="sortedIndexTiered" type="SORTED">
+                        <hz:attributes>
+                            <hz:attribute>age</hz:attribute>
+                        </hz:attributes>
+                        <hz:btree-index>
+                            <hz:page-size unit="GIGABYTES" value="17"/>
+                            <hz:memory-tier>
+                                <hz:capacity value="129" unit="GIGABYTES" />
+                            </hz:memory-tier>
+                        </hz:btree-index>
                     </hz:index>
                 </hz:indexes>
                 <hz:attributes>
@@ -450,6 +474,7 @@
                         <hz:buffer-size>33</hz:buffer-size>
                         <hz:coalesce>true</hz:coalesce>
                         <hz:populate>false</hz:populate>
+                        <hz:serialize-keys>true</hz:serialize-keys>
                         <hz:delay-seconds>12</hz:delay-seconds>
                         <hz:entry-listeners>
                             <hz:entry-listener class-name="com.hazelcast.spring.DummyEntryListener"/>
@@ -471,7 +496,7 @@
             <hz:map name="testMap5">
                 <hz:tiered-store enabled="true">
                     <hz:memory-tier>
-                        <hz:capacity>128 MB</hz:capacity>
+                        <hz:capacity unit="MEGABYTES" value="128"/>
                     </hz:memory-tier>
                     <hz:disk-tier enabled="true" device-name="the-local0751"/>
                 </hz:tiered-store>
@@ -621,15 +646,13 @@
                         <hz:package>com.acme.app.subpkg</hz:package>
                     </hz:whitelist>
                 </hz:java-serialization-filter>
-                <hz:compact-serialization enabled="true">
-                    <hz:registered-classes>
-                        <hz:class>
-                            com.hazelcast.spring.serialization.DummyReflectiveSerializable
-                        </hz:class>
-                        <hz:class type-name="dummy" serializer="com.hazelcast.spring.serialization.DummyCompactSerializer">
-                            com.hazelcast.spring.serialization.DummyCompactSerializable
-                        </hz:class>
-                    </hz:registered-classes>
+                <hz:compact-serialization>
+                    <hz:serializers>
+                        <hz:serializer>com.hazelcast.spring.serialization.DummyCompactSerializer</hz:serializer>
+                    </hz:serializers>
+                    <hz:classes>
+                        <hz:class>com.hazelcast.spring.serialization.DummyReflectiveSerializable</hz:class>
+                    </hz:classes>
                 </hz:compact-serialization>
             </hz:serialization>
 
@@ -1005,6 +1028,7 @@
                 <hz:persistence-enabled>false</hz:persistence-enabled>
                 <hz:base-dir>/custom-dir</hz:base-dir>
                 <hz:data-load-timeout-seconds>30</hz:data-load-timeout-seconds>
+                <hz:cp-member-priority>-1</hz:cp-member-priority>
                 <hz:raft-algorithm>
                     <hz:leader-election-timeout-in-millis>500</hz:leader-election-timeout-in-millis>
                     <hz:leader-heartbeat-period-in-millis>100</hz:leader-heartbeat-period-in-millis>
@@ -1070,6 +1094,7 @@
             </hz:jet>
             <hz:local-device name="device0">
                 <hz:base-dir>/dev/devices/tiered_store_device0</hz:base-dir>
+                <hz:capacity unit="MEGABYTES" value="9321"/>
                 <hz:block-size>8192</hz:block-size>
                 <hz:read-io-thread-count>16</hz:read-io-thread-count>
                 <hz:write-io-thread-count>8</hz:write-io-thread-count>
@@ -1083,7 +1108,6 @@
 
             <hz:dynamic-configuration>
                 <hz:persistence-enabled>false</hz:persistence-enabled>
-                <hz:persistence-file>/mnt/persistence-file</hz:persistence-file>
                 <hz:backup-dir>/mnt/backup-dir</hz:backup-dir>
                 <hz:backup-count>7</hz:backup-count>
             </hz:dynamic-configuration>
@@ -1094,6 +1118,14 @@
                     <hz:property name="port">514</hz:property>
                 </hz:properties>
             </hz:auditlog>
+            <hz:integrity-checker enabled="false"/>
+            <hz:external-data-store name="${external.datastore.name}">
+                <hz:class-name>com.hazelcast.datastore.JdbcDataStoreFactory</hz:class-name>
+                <hz:properties>
+                    <hz:property name="jdbcUrl">${external.datastore.url}</hz:property>
+                </hz:properties>
+                <hz:shared>false</hz:shared>
+            </hz:external-data-store>
         </hz:config>
     </hz:hazelcast>
 

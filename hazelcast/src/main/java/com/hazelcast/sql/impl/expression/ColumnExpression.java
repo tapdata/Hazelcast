@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import com.hazelcast.sql.impl.LazyTarget;
 import com.hazelcast.sql.impl.SqlDataSerializerHook;
 import com.hazelcast.sql.impl.row.Row;
 import com.hazelcast.sql.impl.type.QueryDataType;
+import com.hazelcast.sql.impl.type.QueryDataTypeFamily;
 import com.hazelcast.sql.impl.type.QueryDataTypeUtils;
 
 import java.io.IOException;
@@ -51,15 +52,25 @@ public final class ColumnExpression<T> implements Expression<T>, IdentifiedDataS
         // like QueryDataType.VARCHAR_CHARACTER, are canonicalized to values of
         // some other canonical type, like QueryDataType.VARCHAR. That kind of
         // changes the observed type of a column to a canonical one.
-        Class<?> canonicalClass = type.getConverter().getNormalizedValueClass();
-        QueryDataType canonicalType = QueryDataTypeUtils.resolveTypeForClass(canonicalClass);
+        if (type.getTypeFamily().equals(QueryDataTypeFamily.OBJECT)) {
+            return new ColumnExpression<>(index, type);
+        } else {
+            Class<?> canonicalClass = type.getConverter().getNormalizedValueClass();
+            QueryDataType canonicalType = QueryDataTypeUtils.resolveTypeForClass(canonicalClass);
 
-        return new ColumnExpression<>(index, canonicalType);
+            return new ColumnExpression<>(index, canonicalType);
+        }
     }
 
     @Override
-    public T evalTop(Row row, ExpressionEvalContext context) {
-        return row.get(index);
+    public Object evalTop(Row row, ExpressionEvalContext context) {
+        Object res = row.get(index);
+        if (res instanceof LazyTarget) {
+            assert type.equals(QueryDataType.OBJECT);
+            LazyTarget lazyTarget = (LazyTarget) res;
+            res = lazyTarget.getDeserialized() != null ? lazyTarget.getDeserialized() : lazyTarget.getSerialized();
+        }
+        return res;
     }
 
     @SuppressWarnings("unchecked")
@@ -68,16 +79,11 @@ public final class ColumnExpression<T> implements Expression<T>, IdentifiedDataS
         Object res = row.get(index);
 
         if (res instanceof LazyTarget) {
-            res = unwrapLazyValue((LazyTarget) res, context);
+            assert type.equals(QueryDataType.OBJECT);
+            res = ((LazyTarget) res).deserialize(context.getSerializationService());
         }
 
         return (T) res;
-    }
-
-    private Object unwrapLazyValue(LazyTarget lazyValue, ExpressionEvalContext context) {
-        assert type.equals(QueryDataType.OBJECT);
-
-        return lazyValue.deserialize(context.getSerializationService());
     }
 
     @Override
@@ -127,5 +133,10 @@ public final class ColumnExpression<T> implements Expression<T>, IdentifiedDataS
         ColumnExpression<?> that = (ColumnExpression<?>) o;
 
         return index == that.index && type.equals(that.type);
+    }
+
+    @Override
+    public String toString() {
+        return "$" + index;
     }
 }

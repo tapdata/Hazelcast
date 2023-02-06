@@ -150,6 +150,8 @@ public final class UnsupportedOperationVisitor extends SqlBasicVisitor<Void> {
         SUPPORTED_KINDS.add(SqlKind.CREATE_INDEX);
         SUPPORTED_KINDS.add(SqlKind.DROP_VIEW);
         SUPPORTED_KINDS.add(SqlKind.COLUMN_DECL);
+        SUPPORTED_KINDS.add(SqlKind.CREATE_TYPE);
+        SUPPORTED_KINDS.add(SqlKind.DROP_TYPE);
 
         SUPPORTED_KINDS.add(SqlKind.ROW);
         SUPPORTED_KINDS.add(SqlKind.VALUES);
@@ -162,6 +164,13 @@ public final class UnsupportedOperationVisitor extends SqlBasicVisitor<Void> {
 
         // Ordering
         SUPPORTED_KINDS.add(SqlKind.DESCENDING);
+
+        SUPPORTED_KINDS.add(SqlKind.JSON_ARRAYAGG);
+        SUPPORTED_KINDS.add(SqlKind.JSON_OBJECTAGG);
+        SUPPORTED_KINDS.add(SqlKind.WITHIN_GROUP);
+
+        // Nested Fields
+        SUPPORTED_KINDS.add(SqlKind.DOT);
 
         // Supported operators
         SUPPORTED_OPERATORS = new HashSet<>();
@@ -217,17 +226,26 @@ public final class UnsupportedOperationVisitor extends SqlBasicVisitor<Void> {
         // Windowing
         SUPPORTED_OPERATORS.add(HazelcastSqlOperatorTable.IMPOSE_ORDER);
         SUPPORTED_OPERATORS.add(HazelcastSqlOperatorTable.TUMBLE);
+        SUPPORTED_OPERATORS.add(HazelcastSqlOperatorTable.HOP);
 
         // JSON
         SUPPORTED_OPERATORS.add(HazelcastSqlOperatorTable.JSON_QUERY);
         SUPPORTED_OPERATORS.add(HazelcastSqlOperatorTable.JSON_VALUE);
         SUPPORTED_OPERATORS.add(HazelcastSqlOperatorTable.JSON_OBJECT);
         SUPPORTED_OPERATORS.add(HazelcastSqlOperatorTable.JSON_ARRAY);
+        SUPPORTED_OPERATORS.add(HazelcastSqlOperatorTable.JSON_ARRAYAGG_ABSENT_ON_NULL);
+        SUPPORTED_OPERATORS.add(HazelcastSqlOperatorTable.JSON_ARRAYAGG_NULL_ON_NULL);
+        SUPPORTED_OPERATORS.add(HazelcastSqlOperatorTable.JSON_OBJECTAGG_ABSENT_ON_NULL);
+        SUPPORTED_OPERATORS.add(HazelcastSqlOperatorTable.JSON_OBJECTAGG_NULL_ON_NULL);
+
+        SUPPORTED_OPERATORS.add(HazelcastSqlOperatorTable.WITHIN_GROUP);
 
         // Extensions
         SUPPORTED_OPERATORS.add(SqlOption.OPERATOR);
         SUPPORTED_OPERATORS.add(SqlShowStatement.SHOW_MAPPINGS);
+        SUPPORTED_OPERATORS.add(SqlShowStatement.SHOW_VIEWS);
         SUPPORTED_OPERATORS.add(SqlShowStatement.SHOW_JOBS);
+        SUPPORTED_OPERATORS.add(SqlShowStatement.SHOW_TYPES);
 
         SUPPORTED_OPERATORS.add(HazelcastSqlOperatorTable.GENERATE_SERIES);
         SUPPORTED_OPERATORS.add(HazelcastSqlOperatorTable.GENERATE_STREAM);
@@ -236,6 +254,8 @@ public final class UnsupportedOperationVisitor extends SqlBasicVisitor<Void> {
         SUPPORTED_OPERATORS.add(HazelcastSqlOperatorTable.JSON_FLAT_FILE);
         SUPPORTED_OPERATORS.add(HazelcastSqlOperatorTable.AVRO_FILE);
         SUPPORTED_OPERATORS.add(HazelcastSqlOperatorTable.PARQUET_FILE);
+        SUPPORTED_OPERATORS.add(HazelcastSqlOperatorTable.DOT);
+        SUPPORTED_OPERATORS.add(HazelcastSqlOperatorTable.TO_ROW);
 
         // SYMBOLS
         SUPPORTED_SYMBOLS = new HashSet<>();
@@ -280,8 +300,14 @@ public final class UnsupportedOperationVisitor extends SqlBasicVisitor<Void> {
         SUPPORTED_SYMBOLS.add(SqlJsonConstructorNullClause.ABSENT_ON_NULL);
     }
 
+    private final boolean isValidated;
+
     // The top level select is used to filter out nested selects with FETCH/OFFSET
     private SqlSelect topLevelSelect;
+
+    public UnsupportedOperationVisitor(boolean isValidated) {
+        this.isValidated = isValidated;
+    }
 
     @Override
     public Void visit(SqlCall call) {
@@ -416,6 +442,15 @@ public final class UnsupportedOperationVisitor extends SqlBasicVisitor<Void> {
                 processOtherDdl(call);
                 break;
 
+            case ORDER_BY:
+            case EXPLICIT_TABLE:
+            case MAP_VALUE_CONSTRUCTOR:
+                // these kinds do not occur after validation
+                if (isValidated) {
+                    throw unsupported(call, kind);
+                }
+                break;
+
             default:
                 throw unsupported(call, kind);
         }
@@ -446,6 +481,13 @@ public final class UnsupportedOperationVisitor extends SqlBasicVisitor<Void> {
     }
 
     private void processOther(SqlCall call) {
+        // Before the validation, some function calls are SqlUnresolvedFunction, some have the calcite
+        // representation, such as SqlJsonValueFunction instead of HazelcastJsonValueFunction etc.
+        // They will be validated after validation, ignore it in the pre-validation check.
+        if (!isValidated) {
+            return;
+        }
+
         SqlOperator operator = call.getOperator();
 
         if (SUPPORTED_OPERATORS.contains(operator)) {

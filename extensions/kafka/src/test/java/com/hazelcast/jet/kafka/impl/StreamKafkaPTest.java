@@ -72,6 +72,7 @@ import java.util.concurrent.Future;
 import static com.hazelcast.jet.Util.entry;
 import static com.hazelcast.jet.config.ProcessingGuarantee.EXACTLY_ONCE;
 import static com.hazelcast.jet.core.EventTimePolicy.eventTimePolicy;
+import static com.hazelcast.jet.core.JobStatus.RUNNING;
 import static com.hazelcast.jet.core.WatermarkPolicy.limitingLag;
 import static com.hazelcast.jet.impl.execution.WatermarkCoalescer.IDLE_MESSAGE;
 import static java.util.Arrays.asList;
@@ -100,7 +101,7 @@ public class StreamKafkaPTest extends SimpleTestInClusterSupport {
 
     @BeforeClass
     public static void beforeClass() throws IOException {
-        kafkaTestSupport = new KafkaTestSupport();
+        kafkaTestSupport = KafkaTestSupport.create();
         kafkaTestSupport.createKafkaCluster();
         initialize(2, null);
     }
@@ -117,6 +118,20 @@ public class StreamKafkaPTest extends SimpleTestInClusterSupport {
     public static void afterClass() {
         kafkaTestSupport.shutdownKafkaCluster();
         kafkaTestSupport = null;
+    }
+
+    // test for https://github.com/hazelcast/hazelcast/issues/21455
+    @Test
+    public void test_nonExistentTopic() {
+        Pipeline p = Pipeline.create();
+        p.readFrom(KafkaSources.kafka(properties(), "nonExistentTopic"))
+                .withoutTimestamps()
+                .writeTo(Sinks.list("sink"));
+
+        Job job = instance().getJet().newJob(p);
+
+        assertJobStatusEventually(job, RUNNING);
+        assertTrueAllTheTime(() -> assertEquals(RUNNING, job.getStatus()), 3);
     }
 
     @Test
@@ -210,8 +225,8 @@ public class StreamKafkaPTest extends SimpleTestInClusterSupport {
                 for (int i = 0; i < 2 * messageCount; i++) {
                     Entry<Integer, String> entry1 = createEntry(i);
                     Entry<Integer, String> entry2 = createEntry(i - messageCount);
-                    assertTrue("missing entry: " + entry1.toString(), list.contains(entry1));
-                    assertTrue("missing entry: " + entry2.toString(), list.contains(entry2));
+                    assertTrue("missing entry: " + entry1, list.contains(entry1));
+                    assertTrue("missing entry: " + entry2, list.contains(entry2));
                 }
             }, 10);
         }
@@ -232,7 +247,8 @@ public class StreamKafkaPTest extends SimpleTestInClusterSupport {
         for (int i = 0; i < INITIAL_PARTITION_COUNT; i++) {
             Entry<Integer, String> event = entry(i + 100, Integer.toString(i));
             System.out.println("produced event " + event);
-            kafkaTestSupport.produce(topic1Name, i, null, event.getKey(), event.getValue());
+            //Wait for the event to be published to Kafka, the processor can access Kafka metadata
+            kafkaTestSupport.produce(topic1Name, i, null, event.getKey(), event.getValue()).get();
             if (i == INITIAL_PARTITION_COUNT - 1) {
                 assertEquals(new Watermark(100 - LAG), consumeEventually(processor, outbox));
             }
@@ -314,6 +330,43 @@ public class StreamKafkaPTest extends SimpleTestInClusterSupport {
         assertEquals(entry(1, "1"), consumeEventually(processor, outbox));
 
         assertNoMoreItems(processor, outbox);
+    }
+
+    @Test
+    public void when_duplicateTopicsProvide_then_uniqueTopicsSubscribed() {
+        HazelcastInstance[] instances = instances();
+        assertClusterSizeEventually(2, instances);
+
+        // need new topic because we want 2 partitions only
+        String topic = randomString();
+        kafkaTestSupport.createTopic(topic, 2);
+
+        Pipeline p = Pipeline.create();
+        // Pass the same topic twice
+        p.readFrom(KafkaSources.kafka(properties(), topic, topic))
+         .withoutTimestamps()
+         .setLocalParallelism(1)
+         .writeTo(Sinks.list("sink"));
+
+        JobConfig config = new JobConfig();
+        Job job = instances[0].getJet().newJob(p, config);
+
+        assertJobStatusEventually(job, RUNNING, 10);
+
+        int messageCount = 1000;
+        for (int i = 0; i < messageCount; i++) {
+            kafkaTestSupport.produce(topic, i, Integer.toString(i));
+        }
+
+        IList<Object> list = instances[0].getList("sink");
+        try {
+            // Wait for all messages
+            assertTrueEventually(() -> assertThat(list).hasSize(messageCount), 15);
+            // Check there are no more messages (duplicates..)
+            assertTrueAllTheTime(() -> assertThat(list).hasSize(messageCount), 1);
+        } finally {
+            job.cancel();
+        }
     }
 
     private <T> StreamKafkaP<Integer, String, T> createProcessor(

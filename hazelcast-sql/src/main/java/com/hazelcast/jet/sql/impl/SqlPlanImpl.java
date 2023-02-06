@@ -25,6 +25,7 @@ import com.hazelcast.jet.sql.impl.connector.map.UpdatingEntryProcessor;
 import com.hazelcast.jet.sql.impl.opt.physical.PhysicalRel;
 import com.hazelcast.jet.sql.impl.parse.SqlAlterJob.AlterJobOperation;
 import com.hazelcast.jet.sql.impl.parse.SqlShowStatement.ShowStatementTarget;
+import com.hazelcast.jet.sql.impl.schema.TypeDefinitionColumn;
 import com.hazelcast.security.permission.MapPermission;
 import com.hazelcast.security.permission.SqlPermission;
 import com.hazelcast.sql.SqlResult;
@@ -52,8 +53,10 @@ import java.util.Set;
 import java.util.function.Function;
 
 import static com.hazelcast.security.permission.ActionConstants.ACTION_CREATE;
+import static com.hazelcast.security.permission.ActionConstants.ACTION_CREATE_TYPE;
 import static com.hazelcast.security.permission.ActionConstants.ACTION_CREATE_VIEW;
 import static com.hazelcast.security.permission.ActionConstants.ACTION_DESTROY;
+import static com.hazelcast.security.permission.ActionConstants.ACTION_DROP_TYPE;
 import static com.hazelcast.security.permission.ActionConstants.ACTION_DROP_VIEW;
 import static com.hazelcast.security.permission.ActionConstants.ACTION_INDEX;
 import static com.hazelcast.security.permission.ActionConstants.ACTION_PUT;
@@ -321,6 +324,8 @@ abstract class SqlPlanImpl extends SqlPlan {
         private final JobConfig jobConfig;
         private final boolean ifNotExists;
         private final DmlPlan dmlPlan;
+        private final String query;
+        private final boolean infiniteRows;
         private final PlanExecutor planExecutor;
 
         CreateJobPlan(
@@ -328,6 +333,8 @@ abstract class SqlPlanImpl extends SqlPlan {
                 JobConfig jobConfig,
                 boolean ifNotExists,
                 DmlPlan dmlPlan,
+                String query,
+                boolean infiniteRows,
                 PlanExecutor planExecutor
         ) {
             super(planKey);
@@ -336,7 +343,17 @@ abstract class SqlPlanImpl extends SqlPlan {
             this.jobConfig = jobConfig;
             this.ifNotExists = ifNotExists;
             this.dmlPlan = dmlPlan;
+            this.query = query;
+            this.infiniteRows = infiniteRows;
             this.planExecutor = planExecutor;
+        }
+
+        public boolean isInfiniteRows() {
+            return infiniteRows;
+        }
+
+        public String getQuery() {
+            return query;
         }
 
         JobConfig getJobConfig() {
@@ -569,7 +586,6 @@ abstract class SqlPlanImpl extends SqlPlan {
         private final OptimizerContext context;
         private final String viewName;
         private final String viewQuery;
-        private final boolean viewIsStream;
         private final boolean replace;
         private final boolean ifNotExists;
         private final PlanExecutor planExecutor;
@@ -579,7 +595,6 @@ abstract class SqlPlanImpl extends SqlPlan {
                 final OptimizerContext context,
                 String viewName,
                 String viewQuery,
-                boolean viewIsStream,
                 boolean replace,
                 boolean ifNotExists,
                 PlanExecutor planExecutor
@@ -589,7 +604,6 @@ abstract class SqlPlanImpl extends SqlPlan {
             this.context = context;
             this.viewName = viewName;
             this.viewQuery = viewQuery;
-            this.viewIsStream = viewIsStream;
             this.replace = replace;
             this.ifNotExists = ifNotExists;
             this.planExecutor = planExecutor;
@@ -605,10 +619,6 @@ abstract class SqlPlanImpl extends SqlPlan {
 
         public String viewQuery() {
             return viewQuery;
-        }
-
-        public boolean isStream() {
-            return viewIsStream;
         }
 
         boolean isReplace() {
@@ -691,6 +701,55 @@ abstract class SqlPlanImpl extends SqlPlan {
         }
     }
 
+    static class DropTypePlan extends SqlPlanImpl {
+        private final String typeName;
+        private final boolean ifExists;
+        private final PlanExecutor planExecutor;
+
+        DropTypePlan(
+                PlanKey planKey,
+                String typeName,
+                boolean ifExists,
+                PlanExecutor planExecutor
+        ) {
+            super(planKey);
+
+            this.typeName = typeName;
+            this.ifExists = ifExists;
+            this.planExecutor = planExecutor;
+        }
+
+        String typeName() {
+            return typeName;
+        }
+
+        boolean isIfExists() {
+            return ifExists;
+        }
+
+        @Override
+        public boolean isCacheable() {
+            return false;
+        }
+
+        @Override
+        public boolean producesRows() {
+            return false;
+        }
+
+        @Override
+        public void checkPermissions(SqlSecurityContext context) {
+            context.checkPermission(new SqlPermission(typeName, ACTION_DROP_TYPE));
+        }
+
+        @Override
+        public SqlResult execute(QueryId queryId, List<Object> arguments, long timeout) {
+            SqlPlanImpl.ensureNoArguments("DROP TYPE", arguments);
+            SqlPlanImpl.ensureNoTimeout("DROP TYPE", timeout);
+            return planExecutor.execute(this);
+        }
+    }
+
     static class ShowStatementPlan extends SqlPlanImpl {
         private final ShowStatementTarget showTarget;
         private final PlanExecutor planExecutor;
@@ -767,6 +826,7 @@ abstract class SqlPlanImpl extends SqlPlan {
         private final Set<PlanObjectKey> objectKeys;
         private final QueryParameterMetadata parameterMetadata;
         private final DAG dag;
+        private final String query;
         private final boolean isStreaming;
         private final SqlRowMetadata rowMetadata;
         private final PlanExecutor planExecutor;
@@ -777,6 +837,7 @@ abstract class SqlPlanImpl extends SqlPlan {
                 QueryParameterMetadata parameterMetadata,
                 Set<PlanObjectKey> objectKeys,
                 DAG dag,
+                String query,
                 boolean isStreaming,
                 SqlRowMetadata rowMetadata,
                 PlanExecutor planExecutor,
@@ -787,6 +848,7 @@ abstract class SqlPlanImpl extends SqlPlan {
             this.objectKeys = objectKeys;
             this.parameterMetadata = parameterMetadata;
             this.dag = dag;
+            this.query = query;
             this.isStreaming = isStreaming;
             this.rowMetadata = rowMetadata;
             this.planExecutor = planExecutor;
@@ -807,6 +869,10 @@ abstract class SqlPlanImpl extends SqlPlan {
 
         SqlRowMetadata getRowMetadata() {
             return rowMetadata;
+        }
+
+        public String getQuery() {
+            return query;
         }
 
         @Override
@@ -841,15 +907,19 @@ abstract class SqlPlanImpl extends SqlPlan {
         private final Set<PlanObjectKey> objectKeys;
         private final QueryParameterMetadata parameterMetadata;
         private final DAG dag;
+        private final String query;
+        private final boolean infiniteRows;
         private final PlanExecutor planExecutor;
         private final List<Permission> permissions;
 
         DmlPlan(
-                TableModify.Operation operation,
+                Operation operation,
                 PlanKey planKey,
                 QueryParameterMetadata parameterMetadata,
                 Set<PlanObjectKey> objectKeys,
                 DAG dag,
+                String query,
+                boolean infiniteRows,
                 PlanExecutor planExecutor,
                 List<Permission> permissions
         ) {
@@ -859,6 +929,8 @@ abstract class SqlPlanImpl extends SqlPlan {
             this.objectKeys = objectKeys;
             this.parameterMetadata = parameterMetadata;
             this.dag = dag;
+            this.query = query;
+            this.infiniteRows = infiniteRows;
             this.planExecutor = planExecutor;
             this.permissions = permissions;
         }
@@ -873,6 +945,14 @@ abstract class SqlPlanImpl extends SqlPlan {
 
         DAG getDag() {
             return dag;
+        }
+
+        public String getQuery() {
+            return query;
+        }
+
+        public boolean isInfiniteRows() {
+            return infiniteRows;
         }
 
         @Override
@@ -1252,6 +1332,79 @@ abstract class SqlPlanImpl extends SqlPlan {
         @Override
         public SqlResult execute(QueryId queryId, List<Object> arguments, long timeout) {
             return planExecutor.execute(this, arguments, timeout);
+        }
+    }
+
+    static class CreateTypePlan extends SqlPlanImpl {
+        private final String name;
+        private final boolean replace;
+        private final boolean ifNotExists;
+        private final List<TypeDefinitionColumn> columns;
+        private final Map<String, String> options;
+        private final PlanExecutor planExecutor;
+
+        CreateTypePlan(
+                final PlanKey planKey,
+                final String name,
+                final boolean replace,
+                final boolean ifNotExists,
+                final List<TypeDefinitionColumn> columns,
+                final Map<String, String> options,
+                final PlanExecutor planExecutor
+        ) {
+            super(planKey);
+            this.name = name;
+            this.replace = replace;
+            this.ifNotExists = ifNotExists;
+            this.columns = columns;
+            this.options = options;
+            this.planExecutor = planExecutor;
+        }
+
+        public String name() {
+            return name;
+        }
+
+        public Map<String, String> options() {
+            return options;
+        }
+
+        public String option(String name) {
+            return options.get(name);
+        }
+
+        public boolean replace() {
+            return replace;
+        }
+
+        public boolean ifNotExists() {
+            return ifNotExists;
+        }
+
+        public List<TypeDefinitionColumn> columns() {
+            return columns;
+        }
+
+        @Override
+        public boolean isCacheable() {
+            return false;
+        }
+
+        @Override
+        public void checkPermissions(SqlSecurityContext context) {
+            context.checkPermission(new SqlPermission(name, ACTION_CREATE_TYPE));
+        }
+
+        @Override
+        public boolean producesRows() {
+            return false;
+        }
+
+        @Override
+        public SqlResult execute(QueryId queryId, List<Object> arguments, long timeout) {
+            SqlPlanImpl.ensureNoArguments("CREATE TYPE", arguments);
+            SqlPlanImpl.ensureNoTimeout("CREATE TYPE", timeout);
+            return planExecutor.execute(this);
         }
     }
 

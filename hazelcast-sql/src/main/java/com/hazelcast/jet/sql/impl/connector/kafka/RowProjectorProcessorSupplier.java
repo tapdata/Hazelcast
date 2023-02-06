@@ -30,6 +30,7 @@ import com.hazelcast.sql.impl.expression.Expression;
 import com.hazelcast.sql.impl.expression.ExpressionEvalContext;
 import com.hazelcast.sql.impl.extract.QueryPath;
 import com.hazelcast.sql.impl.extract.QueryTargetDescriptor;
+import com.hazelcast.sql.impl.row.JetSqlRow;
 import com.hazelcast.sql.impl.type.QueryDataType;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
@@ -50,11 +51,11 @@ final class RowProjectorProcessorSupplier implements ProcessorSupplier, DataSeri
 
     private Properties properties;
     private String topic;
-    private FunctionEx<ExpressionEvalContext, EventTimePolicy<Object[]>> eventTimePolicyProvider;
+    private FunctionEx<ExpressionEvalContext, EventTimePolicy<JetSqlRow>> eventTimePolicyProvider;
     private KvRowProjector.Supplier projectorSupplier;
 
     private transient ExpressionEvalContext evalContext;
-    private transient EventTimePolicy<Object[]> eventTimePolicy;
+    private transient EventTimePolicy<JetSqlRow> eventTimePolicy;
     private transient Extractors extractors;
 
     @SuppressWarnings("unused")
@@ -64,7 +65,7 @@ final class RowProjectorProcessorSupplier implements ProcessorSupplier, DataSeri
     RowProjectorProcessorSupplier(
             Properties properties,
             String topic,
-            FunctionEx<ExpressionEvalContext, EventTimePolicy<Object[]>> eventTimePolicyProvider,
+            FunctionEx<ExpressionEvalContext, EventTimePolicy<JetSqlRow>> eventTimePolicyProvider,
             QueryPath[] paths,
             QueryDataType[] types,
             QueryTargetDescriptor keyDescriptor,

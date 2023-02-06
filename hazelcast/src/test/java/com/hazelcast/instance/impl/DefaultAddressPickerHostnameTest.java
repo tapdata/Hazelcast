@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,8 +21,9 @@ import com.hazelcast.config.InterfacesConfig;
 import com.hazelcast.config.NetworkConfig;
 import com.hazelcast.instance.AddressPicker;
 import com.hazelcast.instance.impl.DefaultAddressPicker.HostnameResolver;
-import com.hazelcast.instance.impl.DefaultAddressPicker.NetworkInterfaceInfo;
 import com.hazelcast.internal.nio.IOUtil;
+import com.hazelcast.internal.util.DummyNetworkInterfacesEnumerator;
+import com.hazelcast.internal.util.NetworkInterfaceInfo;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.logging.Logger;
 import com.hazelcast.test.HazelcastParallelClassRunner;

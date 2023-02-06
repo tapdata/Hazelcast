@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,15 +37,18 @@ import com.hazelcast.internal.networking.InboundHandler;
 import com.hazelcast.internal.networking.OutboundHandler;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.internal.serialization.SerializationService;
+import com.hazelcast.internal.serialization.impl.compact.schema.MemberSchemaService;
 import com.hazelcast.internal.server.ServerConnection;
 import com.hazelcast.internal.server.ServerContext;
 import com.hazelcast.internal.util.ByteArrayProcessor;
 import com.hazelcast.jet.JetService;
+import com.hazelcast.jet.impl.JetServiceBackend;
 import com.hazelcast.nio.MemberSocketInterceptor;
 import com.hazelcast.security.SecurityContext;
 import com.hazelcast.security.SecurityService;
 import com.hazelcast.version.Version;
 
+import javax.annotation.Nullable;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
@@ -72,6 +75,11 @@ public class SamplingNodeExtension implements NodeExtension {
     public InternalSerializationService createCompatibilitySerializationService() {
         InternalSerializationService serializationService = nodeExtension.createCompatibilitySerializationService();
         return new SamplingSerializationService(serializationService);
+    }
+
+    @Override
+    public MemberSchemaService createSchemaService() {
+        return nodeExtension.createSchemaService();
     }
 
     @Override
@@ -110,6 +118,11 @@ public class SamplingNodeExtension implements NodeExtension {
     }
 
     @Override
+    public boolean isReady() {
+        return nodeExtension.isReady();
+    }
+
+    @Override
     public void beforeShutdown(boolean terminate) {
         nodeExtension.beforeShutdown(terminate);
     }
@@ -131,7 +144,7 @@ public class SamplingNodeExtension implements NodeExtension {
 
     @Override
     public <T> T createService(Class<T> type, Object... params) {
-        return nodeExtension.createService(type);
+        return nodeExtension.createService(type, params);
     }
 
     @Override
@@ -292,6 +305,12 @@ public class SamplingNodeExtension implements NodeExtension {
 
     @Override
     public JetService getJet() {
-        throw new IllegalArgumentException();
+        return nodeExtension.getJet();
+    }
+
+    @Nullable
+    @Override
+    public JetServiceBackend getJetServiceBackend() {
+        return nodeExtension.getJetServiceBackend();
     }
 }

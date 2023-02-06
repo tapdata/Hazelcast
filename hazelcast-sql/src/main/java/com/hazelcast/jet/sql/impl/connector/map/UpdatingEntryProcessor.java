@@ -31,6 +31,7 @@ import com.hazelcast.sql.impl.expression.ColumnExpression;
 import com.hazelcast.sql.impl.expression.ConstantExpression;
 import com.hazelcast.sql.impl.expression.Expression;
 import com.hazelcast.sql.impl.expression.ExpressionEvalContext;
+import com.hazelcast.sql.impl.row.JetSqlRow;
 import com.hazelcast.sql.impl.schema.TableField;
 import com.hazelcast.sql.impl.schema.map.MapTableField;
 import com.hazelcast.sql.impl.schema.map.PartitionedMapTable;
@@ -72,7 +73,7 @@ public final class UpdatingEntryProcessor
         if (entry.getValue() == null) {
             return 0L;
         } else {
-            Object[] row = rowProjectorSupplier.get(evalContext, extractors).project(entry.getKey(), entry.getValue());
+            JetSqlRow row = rowProjectorSupplier.get(evalContext, extractors).project(entry.getKey(), entry.getValue());
             Object value = valueProjectorSupplier.get(evalContext).project(row);
             if (value == null) {
                 throw QueryException.error("Cannot assign null to value");

@@ -27,6 +27,7 @@ import com.hazelcast.sql.impl.expression.ConstantExpression;
 import com.hazelcast.sql.impl.expression.Expression;
 import com.hazelcast.sql.impl.extract.GenericQueryTargetDescriptor;
 import com.hazelcast.sql.impl.extract.QueryPath;
+import com.hazelcast.sql.impl.row.JetSqlRow;
 import com.hazelcast.sql.impl.type.QueryDataType;
 import org.junit.Before;
 import org.junit.BeforeClass;
@@ -68,14 +69,14 @@ public class JoinByPrimitiveKeyProcessorTest extends SqlTestSupport {
     @Test
     public void when_innerJoinLeftKeyIsNull_then_emptyResult() {
         runTest(TRUE_PREDICATE, PROJECTION, TRUE_PREDICATE, true,
-                singletonList(new Object[]{null}),
+                singletonList(jetRow((Object) null)),
                 emptyList());
     }
 
     @Test
     public void when_innerJoinRightValueIsNull_then_emptyResult() {
         runTest(TRUE_PREDICATE, PROJECTION, TRUE_PREDICATE, true,
-                singletonList(new Object[]{1}),
+                singletonList(jetRow(1)),
                 emptyList());
     }
 
@@ -83,7 +84,7 @@ public class JoinByPrimitiveKeyProcessorTest extends SqlTestSupport {
     public void when_innerJoinFilteredOutByProjector_then_emptyResult() {
         map.put(1, "value");
         runTest(FALSE_PREDICATE, PROJECTION, TRUE_PREDICATE, true,
-                singletonList(new Object[]{1}),
+                singletonList(jetRow(1)),
                 emptyList());
     }
 
@@ -91,54 +92,54 @@ public class JoinByPrimitiveKeyProcessorTest extends SqlTestSupport {
     public void when_innerJoinProjectedByProjector_then_modified() {
         map.put(1, "value");
         runTest(TRUE_PREDICATE, ConstantExpression.create("modified", VARCHAR), TRUE_PREDICATE, true,
-                singletonList(new Object[]{1}),
-                singletonList(new Object[]{1, "modified"}));
+                singletonList(jetRow(1)),
+                singletonList(jetRow(1, "modified")));
     }
 
     @Test
     public void when_innerJoinFilteredOutByCondition_then_absent() {
         map.put(1, "value-1");
         runTest(TRUE_PREDICATE, PROJECTION, FALSE_PREDICATE, true,
-                singletonList(new Object[]{1}),
+                singletonList(jetRow(1)),
                 emptyList());
     }
 
     @Test
     public void when_outerJoinLeftKeyIsNull_then_nulls() {
         runTest(TRUE_PREDICATE, PROJECTION, TRUE_PREDICATE, false,
-                singletonList(new Object[]{null}),
-                singletonList(new Object[]{null, null}));
+                singletonList(jetRow((Object) null)),
+                singletonList(jetRow(null, null)));
     }
 
     @Test
     public void when_outerJoinRightValueIsNull_then_nulls() {
         runTest(TRUE_PREDICATE, PROJECTION, TRUE_PREDICATE, false,
-                singletonList(new Object[]{1}),
-                singletonList(new Object[]{1, null}));
+                singletonList(jetRow(1)),
+                singletonList(jetRow(1, null)));
     }
 
     @Test
     public void when_outerJoinFilteredOutByProjector_then_nulls() {
         map.put(1, "value");
         runTest(FALSE_PREDICATE, PROJECTION, TRUE_PREDICATE, false,
-                singletonList(new Object[]{1}),
-                singletonList(new Object[]{1, null}));
+                singletonList(jetRow(1)),
+                singletonList(jetRow(1, null)));
     }
 
     @Test
     public void when_outerJoinProjectedByProjector_then_modified() {
         map.put(1, "value");
         runTest(TRUE_PREDICATE, ConstantExpression.create("modified", VARCHAR), TRUE_PREDICATE, false,
-                singletonList(new Object[]{1}),
-                singletonList(new Object[]{1, "modified"}));
+                singletonList(jetRow(1)),
+                singletonList(jetRow(1, "modified")));
     }
 
     @Test
     public void when_outerJoinFilteredOutByCondition_then_nulls() {
         map.put(1, "value-1");
         runTest(TRUE_PREDICATE, PROJECTION, FALSE_PREDICATE, false,
-                singletonList(new Object[]{1}),
-                singletonList(new Object[]{1, null}));
+                singletonList(jetRow(1)),
+                singletonList(jetRow(1, null)));
     }
 
     private void runTest(
@@ -146,8 +147,8 @@ public class JoinByPrimitiveKeyProcessorTest extends SqlTestSupport {
             Expression<?> rowProjectorProjection,
             Expression<Boolean> joinCondition,
             boolean inner,
-            List<Object[]> input,
-            List<Object[]> output
+            List<JetSqlRow> input,
+            List<JetSqlRow> output
     ) {
         KvRowProjector.Supplier projectorSupplier = KvRowProjector.supplier(
                 new QueryPath[]{QueryPath.KEY_PATH, QueryPath.VALUE_PATH},

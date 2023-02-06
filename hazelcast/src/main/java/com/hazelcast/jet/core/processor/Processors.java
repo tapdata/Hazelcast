@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,6 +43,7 @@ import com.hazelcast.jet.impl.processor.AsyncTransformUsingServiceUnorderedP;
 import com.hazelcast.jet.impl.processor.GroupP;
 import com.hazelcast.jet.impl.processor.InsertWatermarksP;
 import com.hazelcast.jet.impl.processor.NoopP;
+import com.hazelcast.jet.impl.processor.ProcessorSuppliers;
 import com.hazelcast.jet.impl.processor.SessionWindowP;
 import com.hazelcast.jet.impl.processor.SlidingWindowP;
 import com.hazelcast.jet.impl.processor.SortP;
@@ -261,7 +262,7 @@ public final class Processors {
      */
     @Nonnull
     public static <A, R> SupplierEx<Processor> accumulateP(@Nonnull AggregateOperation<A, R> aggrOp) {
-        return () -> new AggregateP<>(aggrOp.withIdentityFinish());
+        return new ProcessorSuppliers.AggregatePSupplier<>(aggrOp.withIdentityFinish());
     }
 
     /**
@@ -289,7 +290,7 @@ public final class Processors {
     public static <A, R> SupplierEx<Processor> combineP(
             @Nonnull AggregateOperation<A, R> aggrOp
     ) {
-        return () -> new AggregateP<>(aggrOp.withCombiningAccumulateFn(identity()));
+        return new ProcessorSuppliers.AggregatePSupplier<>(aggrOp.withCombiningAccumulateFn(identity()));
     }
 
     /**
@@ -527,6 +528,52 @@ public final class Processors {
             @Nonnull AggregateOperation<A, ? extends R> aggrOp,
             @Nonnull KeyedWindowResultFunction<? super K, ? super R, ? extends OUT> mapToOutputFn
     ) {
+        return combineToSlidingWindowP(winPolicy, aggrOp, mapToOutputFn, (byte) 0);
+    }
+
+    /**
+     * Returns a supplier of processors for the second-stage vertex in a
+     * two-stage sliding window aggregation setup (see the {@link Processors
+     * class Javadoc} for an explanation of aggregation stages) with specified
+     * {@code windowWatermarkKey}.
+     * <p>
+     * Each processor applies the {@link AggregateOperation1#combineFn() combine}
+     * aggregation primitive to the frames received from several upstream
+     * instances of {@link #accumulateByFrameP accumulateByFrame()}.
+     * <p>
+     * When the processor receives a watermark with a given {@code wmVal},
+     * it emits the result of aggregation for all positions of the sliding
+     * window with {@code windowTimestamp <= wmVal}. It computes the window
+     * result by combining the partial results of the frames belonging to it
+     * and finally applying the {@code finish} aggregation primitive. After
+     * this it deletes from storage all the frames that trail behind the
+     * emitted windows. To compute the item to emit, it calls {@code
+     * mapToOutputFn} with the window's start and end timestamps, the key and
+     * the aggregation result. The window end time is the exclusive upper bound
+     * of the timestamps belonging to the window.
+     * <p>
+     * <i>Behavior on job restart</i><br>
+     * This processor saves its state to snapshot. After restart, it can
+     * continue accumulating where it left off.
+     * <p>
+     * After a restart in at-least-once mode, watermarks are allowed to go back
+     * in time. If such a watermark is received, some windows that were emitted
+     * in previous execution will be re-emitted. These windows might miss
+     * events as some of them had already been evicted before the snapshot was
+     * done in previous execution.
+     *
+     * @param <A> type of the accumulator
+     * @param <R> type of the finished result returned from {@code aggrOp.
+     *            finishAccumulationFn()}
+     * @param <OUT> type of the item to emit
+     */
+    @Nonnull
+    public static <K, A, R, OUT> SupplierEx<Processor> combineToSlidingWindowP(
+            @Nonnull SlidingWindowPolicy winPolicy,
+            @Nonnull AggregateOperation<A, ? extends R> aggrOp,
+            @Nonnull KeyedWindowResultFunction<? super K, ? super R, ? extends OUT> mapToOutputFn,
+            byte windowWatermarkKey
+    ) {
         FunctionEx<KeyedWindowResult<K, A>, K> keyFn = KeyedWindowResult::key;
         ToLongFunctionEx<KeyedWindowResult<K, A>> timestampFn = KeyedWindowResult::end;
         return aggregateByKeyAndWindowP(
@@ -537,7 +584,8 @@ public final class Processors {
                 0L,
                 aggrOp.withCombiningAccumulateFn(KeyedWindowResult<Object, A>::result),
                 mapToOutputFn,
-                true
+                true,
+                windowWatermarkKey
         );
     }
 
@@ -546,7 +594,7 @@ public final class Processors {
      * group-by-key-and-window operation and applies the provided aggregate
      * operation on groups.
      *
-     * @param keyFns functions that extracts the grouping key from the input item
+     * @param keyFns functions that extract the grouping key from the input item
      * @param timestampFns function that extracts the timestamp from the input item
      * @param timestampKind the kind of timestamp extracted by {@code timestampFns}: either the
      *                      event timestamp or the frame timestamp
@@ -572,6 +620,44 @@ public final class Processors {
             @Nonnull KeyedWindowResultFunction<? super K, ? super R, ? extends OUT> mapToOutputFn,
             boolean isLastStage
     ) {
+        return aggregateByKeyAndWindowP(keyFns, timestampFns, timestampKind, winPolicy, earlyResultsPeriod,
+                aggrOp, mapToOutputFn, isLastStage, (byte) 0);
+    }
+
+    /**
+     * Returns a supplier of processors for a vertex that performs a general
+     * group-by-key-and-window operation and applies the provided aggregate
+     * operation on groups.
+     *
+     * @param keyFns functions that extract the grouping key from the input item
+     * @param timestampFns function that extracts the timestamp from the input item
+     * @param timestampKind the kind of timestamp extracted by {@code timestampFns}: either the
+     *                      event timestamp or the frame timestamp
+     * @param winPolicy definition of the window to compute
+     * @param earlyResultsPeriod the period (milliseconds) at which to emit the preliminary results of
+     *                           windows before the watermark has advanced past them. Zero means "don't
+     *                           emit early results"
+     * @param aggrOp aggregate operation to perform on each group in a window
+     * @param isLastStage if this is the last stage of multi-stage setup
+     * @param windowWatermarkKey processor will care only about given watermark key
+     *
+     * @param <K> type of the grouping key
+     * @param <A> type of the aggregate operation's accumulator
+     * @param <R> type of the aggregated result
+     */
+    @SuppressWarnings("checkstyle:ParameterNumber")
+    @Nonnull
+    private static <K, A, R, OUT> SupplierEx<Processor> aggregateByKeyAndWindowP(
+            @Nonnull List<FunctionEx<?, ? extends K>> keyFns,
+            @Nonnull List<ToLongFunctionEx<?>> timestampFns,
+            @Nonnull TimestampKind timestampKind,
+            @Nonnull SlidingWindowPolicy winPolicy,
+            long earlyResultsPeriod,
+            @Nonnull AggregateOperation<A, ? extends R> aggrOp,
+            @Nonnull KeyedWindowResultFunction<? super K, ? super R, ? extends OUT> mapToOutputFn,
+            boolean isLastStage,
+            byte windowWatermarkKey
+    ) {
         return () -> new SlidingWindowP<>(
                 keyFns,
                 toList(timestampFns, f -> toFrameTimestampFn(f, timestampKind, winPolicy)),
@@ -579,7 +665,8 @@ public final class Processors {
                 earlyResultsPeriod,
                 aggrOp,
                 mapToOutputFn,
-                isLastStage);
+                isLastStage,
+                windowWatermarkKey);
     }
 
     private static ToLongFunctionEx<Object> toFrameTimestampFn(
@@ -643,7 +730,7 @@ public final class Processors {
             @Nonnull KeyedWindowResultFunction<? super K, ? super R, ? extends OUT> mapToOutputFn
     ) {
         return () -> new SessionWindowP<>(
-                sessionTimeout, earlyResultsPeriod, timestampFns, keyFns, aggrOp, mapToOutputFn);
+                sessionTimeout, earlyResultsPeriod, timestampFns, keyFns, aggrOp, mapToOutputFn, (byte) 0);
     }
 
     /**
@@ -689,13 +776,7 @@ public final class Processors {
      */
     @Nonnull
     public static <T, R> SupplierEx<Processor> mapP(@Nonnull FunctionEx<? super T, ? extends R> mapFn) {
-        return () -> {
-            final ResettableSingletonTraverser<R> trav = new ResettableSingletonTraverser<>();
-            return new TransformP<T, R>(item -> {
-                trav.accept(mapFn.apply(item));
-                return trav;
-            });
-        };
+        return new ProcessorSuppliers.ProcessorMapPSupplier<>(mapFn);
     }
 
     /**

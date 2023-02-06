@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
 package com.hazelcast.sql.impl;
 
 import com.hazelcast.core.HazelcastException;
-import com.hazelcast.internal.cluster.Versions;
 import com.hazelcast.internal.util.Preconditions;
 import com.hazelcast.internal.util.counters.Counter;
 import com.hazelcast.internal.util.counters.MwCounter;
@@ -84,6 +83,7 @@ public class SqlServiceImpl implements SqlService {
     private SqlInternalService internalService;
 
     private final Counter sqlQueriesSubmitted = MwCounter.newMwCounter();
+    private final Counter sqlStreamingQueriesExecuted = MwCounter.newMwCounter();
 
     public SqlServiceImpl(NodeEngineImpl nodeEngine) {
         this.logger = nodeEngine.getLogger(getClass());
@@ -96,6 +96,9 @@ public class SqlServiceImpl implements SqlService {
     }
 
     public void start() {
+        if (!Util.isJetEnabled(nodeEngine)) {
+            return;
+        }
         QueryResultRegistry resultRegistry = new QueryResultRegistry();
         optimizer = createOptimizer(nodeEngine, resultRegistry);
 
@@ -116,10 +119,16 @@ public class SqlServiceImpl implements SqlService {
     }
 
     public void reset() {
+        if (!Util.isJetEnabled(nodeEngine)) {
+            return;
+        }
         planCache.clear();
     }
 
     public void shutdown() {
+        if (!Util.isJetEnabled(nodeEngine)) {
+            return;
+        }
         planCache.clear();
         if (internalService != null) {
             internalService.shutdown();
@@ -132,6 +141,10 @@ public class SqlServiceImpl implements SqlService {
 
     public long getSqlQueriesSubmittedCount() {
         return sqlQueriesSubmitted.get();
+    }
+
+    public long getSqlStreamingQueriesExecutedCount() {
+        return sqlStreamingQueriesExecuted.get();
     }
 
     /**
@@ -175,10 +188,6 @@ public class SqlServiceImpl implements SqlService {
         }
 
         try {
-            if (nodeEngine.getClusterService().getClusterVersion().isLessThan(Versions.V5_0)) {
-                throw QueryException.error("SQL queries cannot be executed until the cluster fully updates to 5.0");
-            }
-
             if (nodeEngine.getLocalMember().isLiteMember()) {
                 throw QueryException.error("SQL queries cannot be executed on lite members");
             }
@@ -195,7 +204,7 @@ public class SqlServiceImpl implements SqlService {
                 queryId = QueryId.create(nodeServiceProvider.getLocalMemberId());
             }
 
-            return query0(
+            SqlResult sqlResult = query0(
                     queryId,
                     statement.getSchema(),
                     statement.getSql(),
@@ -205,10 +214,22 @@ public class SqlServiceImpl implements SqlService {
                     statement.getExpectedResultType(),
                     securityContext
             );
+            if (!skipStats) {
+                updateSqlStreamingQueriesExecuted(sqlResult);
+            }
+            return sqlResult;
         } catch (AccessControlException e) {
             throw e;
         } catch (Exception e) {
             throw QueryUtils.toPublicException(e, nodeServiceProvider.getLocalMemberId());
+        }
+    }
+
+    private void updateSqlStreamingQueriesExecuted(SqlResult sqlResult) {
+        if (sqlResult instanceof AbstractSqlResult) {
+            if (((AbstractSqlResult) sqlResult).isInfiniteRows()) {
+                sqlStreamingQueriesExecuted.inc();
+            }
         }
     }
 
@@ -250,23 +271,16 @@ public class SqlServiceImpl implements SqlService {
 
     private SqlPlan prepare(String schema, String sql, List<Object> arguments, SqlExpectedResultType expectedResultType) {
         List<List<String>> searchPaths = prepareSearchPaths(schema);
-
         PlanKey planKey = new PlanKey(searchPaths, sql);
-
         SqlPlan plan = planCache.get(planKey);
-
         if (plan == null) {
             SqlCatalog catalog = new SqlCatalog(optimizer.tableResolvers());
-
             plan = optimizer.prepare(new OptimizationTask(sql, arguments, searchPaths, catalog));
-
             if (plan.isCacheable()) {
                 planCache.put(planKey, plan);
             }
         }
-
         checkReturnType(plan, expectedResultType);
-
         return plan;
     }
 
@@ -346,5 +360,12 @@ public class SqlServiceImpl implements SqlService {
         } catch (ReflectiveOperationException e) {
             throw new HazelcastException("Failed to instantiate the optimizer class " + className + ": " + e.getMessage(), e);
         }
+    }
+
+    public void closeOnError(QueryId queryId) {
+        if (!Util.isJetEnabled(nodeEngine)) {
+            return;
+        }
+        getInternalService().getClientStateRegistry().closeOnError(queryId);
     }
 }

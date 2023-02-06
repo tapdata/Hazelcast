@@ -29,6 +29,7 @@ import com.hazelcast.nio.serialization.DataSerializable;
 import com.hazelcast.security.impl.function.SecuredFunctions;
 import com.hazelcast.security.permission.MapPermission;
 import com.hazelcast.sql.impl.expression.ExpressionEvalContext;
+import com.hazelcast.sql.impl.row.JetSqlRow;
 
 import javax.annotation.Nonnull;
 import java.io.IOException;
@@ -82,18 +83,18 @@ final class UpdateProcessorSupplier implements ProcessorSupplier, DataSerializab
                     null,
                     MAX_CONCURRENT_OPS,
                     MAX_BATCH_SIZE,
-                    (IMap<Object, Object> map, List<Object[]> rows) -> update(rows, map)
+                    (IMap<Object, Object> map, List<JetSqlRow> rows) -> update(rows, map)
             );
             processors.add(processor);
         }
         return processors;
     }
 
-    private CompletableFuture<Traverser<Integer>> update(List<Object[]> rows, IMap<Object, Object> map) {
+    private CompletableFuture<Traverser<Integer>> update(List<JetSqlRow> rows, IMap<Object, Object> map) {
         Set<Object> keys = new HashSet<>();
-        for (Object[] row : rows) {
-            assert row.length == 1;
-            keys.add(row[0]);
+        for (JetSqlRow row : rows) {
+            assert row.getFieldCount() == 1;
+            keys.add(row.get(0));
         }
         return map.submitToKeys(keys, updaterSupplier.get(evalContext.getArguments()))
                 .toCompletableFuture()

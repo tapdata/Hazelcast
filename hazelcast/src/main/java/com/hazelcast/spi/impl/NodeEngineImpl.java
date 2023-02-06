@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,11 +23,13 @@ import com.hazelcast.config.MapConfig;
 import com.hazelcast.config.WanReplicationRef;
 import com.hazelcast.core.HazelcastException;
 import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.datastore.ExternalDataStoreService;
+import com.hazelcast.datastore.impl.ExternalDataStoreServiceImpl;
 import com.hazelcast.instance.impl.Node;
-import com.hazelcast.instance.impl.NodeExtension;
 import com.hazelcast.internal.cluster.ClusterService;
 import com.hazelcast.internal.diagnostics.Diagnostics;
 import com.hazelcast.internal.dynamicconfig.ClusterWideConfigurationService;
+import com.hazelcast.internal.dynamicconfig.ConfigurationService;
 import com.hazelcast.internal.management.ManagementCenterService;
 import com.hazelcast.internal.metrics.MetricsRegistry;
 import com.hazelcast.internal.metrics.impl.MetricsConfigHelper;
@@ -49,6 +51,7 @@ import com.hazelcast.internal.services.PreJoinAwareService;
 import com.hazelcast.internal.usercodedeployment.UserCodeDeploymentClassLoader;
 import com.hazelcast.internal.usercodedeployment.UserCodeDeploymentService;
 import com.hazelcast.internal.util.ConcurrencyDetection;
+import com.hazelcast.jet.impl.JetServiceBackend;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.logging.LoggingService;
 import com.hazelcast.logging.impl.LoggingServiceImpl;
@@ -129,6 +132,7 @@ public class NodeEngineImpl implements NodeEngine {
     private final SplitBrainMergePolicyProvider splitBrainMergePolicyProvider;
     private final ConcurrencyDetection concurrencyDetection;
     private final TenantControlServiceImpl tenantControlService;
+    private final ExternalDataStoreService externalDataStoreService;
 
     @SuppressWarnings("checkstyle:executablestatementcount")
     public NodeEngineImpl(Node node) {
@@ -155,13 +159,14 @@ public class NodeEngineImpl implements NodeEngine {
             this.transactionManagerService = new TransactionManagerServiceImpl(this);
             this.wanReplicationService = node.getNodeExtension().createService(WanReplicationService.class);
             this.sqlService = new SqlServiceImpl(this);
+            this.externalDataStoreService = new ExternalDataStoreServiceImpl(node, configClassLoader);
             this.packetDispatcher = new PacketDispatcher(
                     logger,
                     operationService.getOperationExecutor(),
                     operationService.getInboundResponseHandlerSupplier().get(),
                     operationService.getInvocationMonitor(),
                     eventService,
-                    getJetPacketConsumer(node.getNodeExtension())
+                    getJetPacketConsumer()
             );
             this.splitBrainProtectionService = new SplitBrainProtectionServiceImpl(this);
             this.diagnostics = newDiagnostics();
@@ -170,11 +175,12 @@ public class NodeEngineImpl implements NodeEngine {
             checkMapMergePolicies(node);
 
             this.tenantControlService = new TenantControlServiceImpl(this);
+
             serviceManager.registerService(OperationServiceImpl.SERVICE_NAME, operationService);
             serviceManager.registerService(OperationParker.SERVICE_NAME, operationParker);
             serviceManager.registerService(UserCodeDeploymentService.SERVICE_NAME, userCodeDeploymentService);
-            serviceManager.registerService(MemberSchemaService.SERVICE_NAME, node.memberSchemaService);
-            serviceManager.registerService(ClusterWideConfigurationService.SERVICE_NAME, configurationService);
+            serviceManager.registerService(MemberSchemaService.SERVICE_NAME, node.getSchemaService());
+            serviceManager.registerService(ConfigurationService.SERVICE_NAME, configurationService);
             serviceManager.registerService(TenantControlServiceImpl.SERVICE_NAME, tenantControlService);
         } catch (Throwable e) {
             try {
@@ -370,6 +376,11 @@ public class NodeEngineImpl implements NodeEngine {
     }
 
     @Override
+    public ExternalDataStoreService getExternalDataStoreService() {
+        return externalDataStoreService;
+    }
+
+    @Override
     public TransactionManagerService getTransactionManagerService() {
         return transactionManagerService;
     }
@@ -392,6 +403,11 @@ public class NodeEngineImpl implements NodeEngine {
     @Override
     public boolean isRunning() {
         return node.isRunning();
+    }
+
+    @Override
+    public boolean isStartCompleted() {
+        return node.getNodeExtension().isStartCompleted();
     }
 
     @Override
@@ -528,7 +544,7 @@ public class NodeEngineImpl implements NodeEngine {
         operationService.reset();
     }
 
-    @SuppressWarnings("checkstyle:npathcomplexity")
+    @SuppressWarnings({"checkstyle:npathcomplexity", "cyclomaticcomplexity"})
     public void shutdown(boolean terminate) {
         logger.finest("Shutting down services...");
         if (sqlService != null) {
@@ -565,22 +581,25 @@ public class NodeEngineImpl implements NodeEngine {
         if (diagnostics != null) {
             diagnostics.shutdown();
         }
+        if (externalDataStoreService != null) {
+            externalDataStoreService.close();
+        }
     }
 
-    // has to be public, it's used by Jet
-    public interface JetPacketConsumer extends Consumer<Packet> {
+    @Override
+    public MemberSchemaService getSchemaService() {
+        return node.getSchemaService();
     }
 
     @Nonnull
-    private Consumer<Packet> getJetPacketConsumer(NodeExtension nodeExtension) {
-        if (nodeExtension instanceof JetPacketConsumer) {
-            return (JetPacketConsumer) nodeExtension;
+    private Consumer<Packet> getJetPacketConsumer() {
+        // Here, JetServiceBackend is not registered to service manager yet
+        JetServiceBackend jetServiceBackend = node.getNodeExtension().getJetServiceBackend();
+        if (jetServiceBackend != null) {
+            return jetServiceBackend;
         } else {
-            return new JetPacketConsumer() {
-                @Override
-                public void accept(Packet packet) {
-                    throw new UnsupportedOperationException("Jet is not registered on this node");
-                }
+            return packet -> {
+                throw new UnsupportedOperationException("Jet is not enabled on this node");
             };
         }
     }

@@ -50,7 +50,7 @@ public class JsonQueryFunctionIntegrationTest extends SqlJsonTestSupport {
         final IMap<Long, String> test = instance().getMap("test");
         test.put(1L, "[1,2,3]");
         createMapping("test", Long.class, String.class);
-        assertRowsAnyOrder("SELECT JSON_QUERY(this, '$[?(@ > 1)]' WITH ARRAY WRAPPER) FROM test",
+        assertRowsAnyOrder("SELECT JSON_QUERY(this, '$[*]?(@ > 1)' WITH ARRAY WRAPPER) FROM test",
                 rows(1, json("[2,3]")));
     }
 
@@ -59,7 +59,7 @@ public class JsonQueryFunctionIntegrationTest extends SqlJsonTestSupport {
         final IMap<Long, HazelcastJsonValue> test = instance().getMap("test");
         test.put(1L, json("[1,2,3]"));
         createMapping("test", "bigint", "json");
-        assertRowsAnyOrder("SELECT JSON_QUERY(this, '$[?(@ > 1)]' WITH ARRAY WRAPPER) FROM test",
+        assertRowsAnyOrder("SELECT JSON_QUERY(this, '$[*]?(@ > 1)' WITH ARRAY WRAPPER) FROM test",
                 rows(1, json("[2,3]")));
     }
 
@@ -193,7 +193,7 @@ public class JsonQueryFunctionIntegrationTest extends SqlJsonTestSupport {
         final IMap<Long, String> test = instance().getMap("test");
         test.put(1L, "[1,2,3]");
         createMapping("test", Long.class, String.class);
-        assertRowsAnyOrder("SELECT JSON_QUERY(this, 'lax $[?(@ > 1)]' WITH ARRAY WRAPPER) FROM test",
+        assertRowsAnyOrder("SELECT JSON_QUERY(this, 'lax $[*]?(@ > 1)' WITH ARRAY WRAPPER) FROM test",
             rows(1, json("[2,3]")));
     }
 
@@ -201,10 +201,10 @@ public class JsonQueryFunctionIntegrationTest extends SqlJsonTestSupport {
     public void test_nullLiteral() {
         assertThatThrownBy(() -> query("SELECT JSON_QUERY(null, null)"))
                 .isInstanceOf(HazelcastSqlException.class)
-                .hasMessageContaining("SQL/JSON path expression cannot be null");
+                .hasRootCauseMessage("SQL/JSON path expression cannot be null");
         assertThatThrownBy(() -> query("SELECT JSON_QUERY('foo', null)"))
                 .isInstanceOf(HazelcastSqlException.class)
-                .hasMessageContaining("SQL/JSON path expression cannot be null");
+                .hasRootCauseMessage("SQL/JSON path expression cannot be null");
         assertNull(querySingleValue("SELECT JSON_QUERY(null, '$.a')"));
         // this query returns null JSON value, not a null SQL value
         assertEquals(json("null"), querySingleValue("SELECT JSON_QUERY('{\"a\":null}', '$.a')"));
@@ -217,7 +217,7 @@ public class JsonQueryFunctionIntegrationTest extends SqlJsonTestSupport {
         createMapping("test", Long.class, String.class);
         assertRowsAnyOrder("SELECT JSON_QUERY(this, '$[0 to 2]' WITH ARRAY WRAPPER) FROM test",
             rows(1, json("[1,2,3]")));
-        assertRowsAnyOrder("SELECT JSON_QUERY(this, '$[0:2]' WITH ARRAY WRAPPER) FROM test",
+        assertRowsAnyOrder("SELECT JSON_QUERY(this, '$[0 to 1]' WITH ARRAY WRAPPER) FROM test",
             rows(1, json("[1,2]")));
     }
 
@@ -293,6 +293,37 @@ public class JsonQueryFunctionIntegrationTest extends SqlJsonTestSupport {
         assertRowsAnyOrder("SELECT JSON_QUERY(this, '$[4]' EMPTY OBJECT ON ERROR) from test", rows(1, json("{}")));
 
         assertRowsAnyOrder("SELECT JSON_QUERY(this, '$[4]' EMPTY ARRAY ON ERROR) from test", rows(1, json("[]")));
+    }
+
+    @Test
+    public void test_jsonPathLikeRegex() {
+        final IMap<Long, HazelcastJsonValue> test = instance().getMap("test");
+        createMapping("test", "bigint", "json");
+        test.put(1L, json("["
+            + "\"alpha\","
+            + "\"alpha1\","
+            + "\"beta\","
+            + "\"BETA\","
+            + "1,"
+            + "22,"
+            + "\"foo\","
+            + "\"\\\"quoted \\\"\""
+            + "]"));
+
+        assertEquals(json("[\"alpha\",\"alpha1\"]"),
+            querySingleValue("SELECT JSON_QUERY(this, '$[*]?(@ like_regex \"alpha\")' WITH CONDITIONAL WRAPPER) FROM test"));
+        assertEquals(json("\"alpha\""),
+            querySingleValue("SELECT JSON_QUERY(this, '$[*]?(@ like_regex \"(alpha)$\")' WITH CONDITIONAL WRAPPER) FROM test"));
+        assertEquals(json("[\"beta\",\"BETA\"]"),
+            querySingleValue("SELECT JSON_QUERY(this, '$[*]?(@ like_regex \"(?i)beta\")' WITH CONDITIONAL WRAPPER) FROM test"));
+        assertEquals(json("[\"alpha1\",1,22]"),
+            querySingleValue("SELECT JSON_QUERY(this, '$[*]?(@ like_regex \"\\\\d\")' WITH CONDITIONAL WRAPPER) FROM test"));
+        assertEquals(json("22"),
+            querySingleValue("SELECT JSON_QUERY(this, '$[*]?(@ like_regex \"\\\\d{2}\")' WITH CONDITIONAL WRAPPER) FROM test"));
+        assertEquals(json("[\"alpha\",\"alpha1\",\"beta\",\"BETA\",1,22,\"foo\",\"\\\"quoted \\\"\"]"),
+            querySingleValue("SELECT JSON_QUERY(this, '$[*]?(@ like_regex \"\")' WITH CONDITIONAL WRAPPER) FROM test"));
+        assertEquals(json("\"\\\"quoted \\\"\""),
+            querySingleValue("SELECT JSON_QUERY(this, '$[*]?(@ like_regex \"\\\"quoted\\\\s\\\"\")' WITH CONDITIONAL WRAPPER) FROM test"));
     }
 
     protected void initComplexObject() {

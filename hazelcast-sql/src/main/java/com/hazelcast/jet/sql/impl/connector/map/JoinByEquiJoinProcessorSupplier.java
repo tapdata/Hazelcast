@@ -24,7 +24,6 @@ import com.hazelcast.jet.core.Processor;
 import com.hazelcast.jet.core.ProcessorMetaSupplier;
 import com.hazelcast.jet.core.ProcessorSupplier;
 import com.hazelcast.jet.impl.processor.TransformP;
-import com.hazelcast.jet.impl.util.Util;
 import com.hazelcast.jet.sql.impl.ExpressionUtil;
 import com.hazelcast.jet.sql.impl.JetJoinInfo;
 import com.hazelcast.jet.sql.impl.connector.keyvalue.KvRowProjector;
@@ -32,14 +31,13 @@ import com.hazelcast.map.impl.proxy.MapProxyImpl;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.DataSerializable;
-import com.hazelcast.partition.Partition;
-import com.hazelcast.partition.PartitionService;
 import com.hazelcast.query.Predicate;
 import com.hazelcast.query.impl.getters.Extractors;
 import com.hazelcast.security.permission.MapPermission;
 import com.hazelcast.sql.impl.expression.Expression;
 import com.hazelcast.sql.impl.expression.ExpressionEvalContext;
 import com.hazelcast.sql.impl.extract.QueryPath;
+import com.hazelcast.sql.impl.row.JetSqlRow;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 import javax.annotation.Nonnull;
@@ -57,13 +55,9 @@ import java.util.function.Function;
 import static com.hazelcast.jet.Traversers.empty;
 import static com.hazelcast.jet.Traversers.singleton;
 import static com.hazelcast.jet.Traversers.traverseIterable;
-import static com.hazelcast.jet.impl.util.Util.extendArray;
 import static com.hazelcast.security.permission.ActionConstants.ACTION_CREATE;
 import static com.hazelcast.security.permission.ActionConstants.ACTION_READ;
 import static java.util.Collections.singletonList;
-import static java.util.stream.Collectors.groupingBy;
-import static java.util.stream.Collectors.mapping;
-import static java.util.stream.Collectors.toList;
 
 @SuppressFBWarnings(
         value = {"SE_BAD_FIELD", "SE_NO_SERIALVERSIONID"},
@@ -74,7 +68,7 @@ final class JoinByEquiJoinProcessorSupplier implements ProcessorSupplier, DataSe
     private JetJoinInfo joinInfo;
     private String mapName;
     private int partitionCount;
-    private List<Integer> partitions;
+    private int[] partitions;
     private KvRowProjector.Supplier rightRowProjectorSupplier;
 
     private transient MapProxyImpl<Object, Object> map;
@@ -89,7 +83,7 @@ final class JoinByEquiJoinProcessorSupplier implements ProcessorSupplier, DataSe
             @Nonnull JetJoinInfo joinInfo,
             @Nonnull String mapName,
             int partitionCount,
-            @Nullable List<Integer> partitions,
+            @Nullable int[] partitions,
             @Nonnull KvRowProjector.Supplier rightRowProjectorSupplier
     ) {
         assert joinInfo.isEquiJoin() && (joinInfo.isInner() || joinInfo.isLeftOuter());
@@ -118,7 +112,7 @@ final class JoinByEquiJoinProcessorSupplier implements ProcessorSupplier, DataSe
                     : new PartitionIdSet(partitionCount, this.partitions);
             QueryPath[] rightPaths = rightRowProjectorSupplier.paths();
             KvRowProjector rightProjector = rightRowProjectorSupplier.get(evalContext, extractors);
-            Processor processor = new TransformP<Object[], Object[]>(
+            Processor processor = new TransformP<JetSqlRow, JetSqlRow>(
                     joinFn(joinInfo, map, partitions, rightPaths, rightProjector, evalContext)
             ) {
                 @Override
@@ -131,7 +125,7 @@ final class JoinByEquiJoinProcessorSupplier implements ProcessorSupplier, DataSe
         return processors;
     }
 
-    private static FunctionEx<Object[], Traverser<Object[]>> joinFn(
+    private static FunctionEx<JetSqlRow, Traverser<JetSqlRow>> joinFn(
             JetJoinInfo joinInfo,
             MapProxyImpl<Object, Object> map,
             PartitionIdSet partitions,
@@ -149,34 +143,34 @@ final class JoinByEquiJoinProcessorSupplier implements ProcessorSupplier, DataSe
             if (predicate == null) {
                 return joinInfo.isInner()
                         ? empty()
-                        : singleton(extendArray(left, rightRowProjector.getColumnCount()));
+                        : singleton(left.extendedRow(rightRowProjector.getColumnCount()));
             }
 
             Set<Entry<Object, Object>> matchingRows = joinInfo.isInner()
                     ? map.entrySet(predicate, partitions.copy())
                     : map.entrySet(predicate);
-            List<Object[]> joined = join(left, matchingRows, rightRowProjector, joinInfo.nonEquiCondition(), evalContext);
+            List<JetSqlRow> joined = join(left, matchingRows, rightRowProjector, joinInfo.nonEquiCondition(), evalContext);
             return joined.isEmpty() && joinInfo.isLeftOuter()
-                    ? singleton(extendArray(left, rightRowProjector.getColumnCount()))
+                    ? singleton(left.extendedRow(rightRowProjector.getColumnCount()))
                     : traverseIterable(joined);
         };
     }
 
-    private static List<Object[]> join(
-            Object[] left,
+    private static List<JetSqlRow> join(
+            JetSqlRow left,
             Set<Entry<Object, Object>> entries,
             KvRowProjector rightRowProjector,
             Expression<Boolean> condition,
             ExpressionEvalContext evalContext
     ) {
-        List<Object[]> rows = new ArrayList<>();
+        List<JetSqlRow> rows = new ArrayList<>();
         for (Entry<Object, Object> entry : entries) {
-            Object[] right = rightRowProjector.project(entry.getKey(), entry.getValue());
+            JetSqlRow right = rightRowProjector.project(entry.getKey(), entry.getValue());
             if (right == null) {
                 continue;
             }
 
-            Object[] joined = ExpressionUtil.join(left, right, condition, evalContext);
+            JetSqlRow joined = ExpressionUtil.join(left, right, condition, evalContext);
             if (joined != null) {
                 rows.add(joined);
             }
@@ -225,7 +219,7 @@ final class JoinByEquiJoinProcessorSupplier implements ProcessorSupplier, DataSe
         private String mapName;
         private KvRowProjector.Supplier rightRowProjectorSupplier;
 
-        private transient PartitionService partitionService;
+        private transient Map<Address, int[]> partitionAssignment;
 
         @SuppressWarnings("unused")
         private Supplier() {
@@ -245,29 +239,20 @@ final class JoinByEquiJoinProcessorSupplier implements ProcessorSupplier, DataSe
 
         @Override
         public void init(@Nonnull Context context) {
-            this.partitionService = context.hazelcastInstance().getPartitionService();
+            partitionAssignment = context.partitionAssignment();
         }
 
         @Nonnull
         @Override
         public Function<? super Address, ? extends ProcessorSupplier> get(@Nonnull List<Address> addresses) {
             if (joinInfo.isInner()) {
-                Set<Partition> partitions = partitionService.getPartitions();
-                int partitionCount = partitions.size();
-                Map<Address, List<Integer>> partitionsByMember = Util.assignPartitions(
-                        addresses,
-                        partitions.stream()
-                                  .collect(groupingBy(
-                                          partition -> partition.getOwner().getAddress(),
-                                          mapping(Partition::getPartitionId, toList()))
-                                  )
-                );
+                int partitionCount = partitionAssignment.values().stream().mapToInt(a -> a.length).sum();
 
                 return address -> new JoinByEquiJoinProcessorSupplier(
                         joinInfo,
                         mapName,
                         partitionCount,
-                        partitionsByMember.get(address),
+                        partitionAssignment.get(address),
                         rightRowProjectorSupplier
                 );
             } else {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -128,11 +128,13 @@ public class JobSummaryTest extends JetTestSupport {
     }
 
     @Test
-    public void when_lightJob() {
+    public void when_lightJob() throws InterruptedException {
         Job job = instance.getJet().newLightJob(newStreamPipeline());
+        // wait till jobs are scanned
+        Thread.sleep(200);
 
+        assertTrueEventually(() -> assertEquals(1, getJetClientInstanceImpl(client).getJobSummaryList().size()));
         List<JobSummary> list = getJetClientInstanceImpl(client).getJobSummaryList();
-        assertEquals(1, list.size());
         JobSummary jobSummary = list.get(0);
 
         assertTrue(jobSummary.isLightJob());

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,6 +37,7 @@ import com.hazelcast.spi.impl.NodeEngineImpl;
 import com.hazelcast.spi.impl.executionservice.ExecutionService;
 import com.hazelcast.spi.properties.HazelcastProperties;
 import com.hazelcast.spi.properties.HazelcastProperty;
+import com.hazelcast.sql.impl.ResultLimitReachedException;
 
 import javax.annotation.Nonnull;
 import java.util.ArrayList;
@@ -206,7 +207,7 @@ public class TaskletExecutionService {
             }
         }
         for (int i = 0; i < trackersByThread.length; i++) {
-            cooperativeWorkers[i].trackers.addAll(trackersByThread[i]);
+            cooperativeWorkers[i].trackers.addAll(0, trackersByThread[i]);
             cooperativeWorkers[i].newTaskletSemaphore.release();
         }
         Arrays.stream(cooperativeThreadPool).forEach(LockSupport::unpark);
@@ -273,6 +274,19 @@ public class TaskletExecutionService {
         );
     }
 
+    private void handleTaskletExecutionError(TaskletTracker t, Throwable e) {
+        if (e instanceof CancellationException) {
+            logger.fine("Job was cancelled by the user.");
+            t.executionTracker.exception(e);
+        } else if (e instanceof ResultLimitReachedException) {
+            logger.fine("SQL LIMIT reached.");
+            t.executionTracker.exception(e);
+        } else {
+            logger.info("Exception in " + t.tasklet, e);
+            t.executionTracker.exception(new JetException("Exception in " + t.tasklet + ": " + e, e));
+        }
+    }
+
     private final class BlockingWorker implements Runnable {
         private final TaskletTracker tracker;
         private final CountDownLatch startedLatch;
@@ -308,8 +322,7 @@ public class TaskletExecutionService {
                         && !tracker.executionTracker.executionCompletedExceptionally()
                         && !isShutdown);
             } catch (Throwable e) {
-                logger.warning("Exception in " + t, e);
-                tracker.executionTracker.exception(new JetException("Exception in " + t + ": " + e, e));
+                handleTaskletExecutionError(tracker, e);
             } finally {
                 blockingWorkerCount.inc(-1L);
                 contextContainer.setContext(null);
@@ -355,6 +368,9 @@ public class TaskletExecutionService {
                 // garbage-free iteration -- relies on implementation in COWArrayList that doesn't use an Iterator
                 trackers.forEach(runTasklet);
                 iterationCount.inc();
+                if (!progressTracker.isMadeProgress() && newTaskletSemaphore.drainPermits() > 0) {
+                    progressTracker.madeProgress();
+                }
                 if (progressTracker.isMadeProgress()) {
                     idleCount = 0;
                 } else {
@@ -391,14 +407,7 @@ public class TaskletExecutionService {
                 }
                 progressTracker.mergeWith(result);
             } catch (Throwable e) {
-                if (e instanceof CancellationException) {
-                    logger.info("Job was cancelled by the user.");
-                    CancellationException ex = (CancellationException) e;
-                    t.executionTracker.exception(ex);
-                } else {
-                    logger.warning("Exception in " + t.tasklet, e);
-                    t.executionTracker.exception(new JetException("Exception in " + t.tasklet + ": " + e, e));
-                }
+                handleTaskletExecutionError(t, e);
             } finally {
                 contextContainer.setContext(null);
             }

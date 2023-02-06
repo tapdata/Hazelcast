@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -62,7 +62,7 @@ public class MapReplicationOperation extends Operation
 
         this.mapNearCacheStateHolder = new MapNearCacheStateHolder();
         this.mapNearCacheStateHolder.setMapReplicationOperation(this);
-        this.mapNearCacheStateHolder.prepare(container, namespaces, replicaIndex);
+        this.mapNearCacheStateHolder.prepare(container, namespaces);
     }
 
     @Override
@@ -74,7 +74,8 @@ public class MapReplicationOperation extends Operation
                 mapNearCacheStateHolder.applyState();
             }
         } catch (Throwable e) {
-            getLogger().severe("map replication operation failed for partitionId=" + getPartitionId(), e);
+            getLogger().severe("map replication operation failed for partitionId="
+                    + getPartitionId(), e);
 
             disposePartition();
 
@@ -86,12 +87,15 @@ public class MapReplicationOperation extends Operation
 
     @Override
     public void afterRun() throws Exception {
-        disposePartition();
+        try {
+            disposePartition();
 
-        if (oome != null) {
-            getLogger().warning(oome.getMessage());
+            if (oome != null) {
+                getLogger().warning(oome.getMessage());
+            }
+        } finally {
+            super.afterRun();
         }
-
     }
 
     private void disposePartition() {

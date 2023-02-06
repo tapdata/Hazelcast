@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -115,6 +115,7 @@ import com.hazelcast.client.impl.protocol.codec.DynamicConfigAddCacheConfigCodec
 import com.hazelcast.client.impl.protocol.codec.DynamicConfigAddCardinalityEstimatorConfigCodec;
 import com.hazelcast.client.impl.protocol.codec.DynamicConfigAddDurableExecutorConfigCodec;
 import com.hazelcast.client.impl.protocol.codec.DynamicConfigAddExecutorConfigCodec;
+import com.hazelcast.client.impl.protocol.codec.DynamicConfigAddExternalDataStoreConfigCodec;
 import com.hazelcast.client.impl.protocol.codec.DynamicConfigAddFlakeIdGeneratorConfigCodec;
 import com.hazelcast.client.impl.protocol.codec.DynamicConfigAddListConfigCodec;
 import com.hazelcast.client.impl.protocol.codec.DynamicConfigAddMapConfigCodec;
@@ -177,6 +178,7 @@ import com.hazelcast.client.impl.protocol.codec.MCPollMCEventsCodec;
 import com.hazelcast.client.impl.protocol.codec.MCPromoteLiteMemberCodec;
 import com.hazelcast.client.impl.protocol.codec.MCPromoteToCPMemberCodec;
 import com.hazelcast.client.impl.protocol.codec.MCReadMetricsCodec;
+import com.hazelcast.client.impl.protocol.codec.MCReloadConfigCodec;
 import com.hazelcast.client.impl.protocol.codec.MCRemoveCPMemberCodec;
 import com.hazelcast.client.impl.protocol.codec.MCResetCPSubsystemCodec;
 import com.hazelcast.client.impl.protocol.codec.MCResetQueueAgeStatisticsCodec;
@@ -188,6 +190,7 @@ import com.hazelcast.client.impl.protocol.codec.MCShutdownMemberCodec;
 import com.hazelcast.client.impl.protocol.codec.MCTriggerForceStartCodec;
 import com.hazelcast.client.impl.protocol.codec.MCTriggerHotRestartBackupCodec;
 import com.hazelcast.client.impl.protocol.codec.MCTriggerPartialStartCodec;
+import com.hazelcast.client.impl.protocol.codec.MCUpdateConfigCodec;
 import com.hazelcast.client.impl.protocol.codec.MCUpdateMapConfigCodec;
 import com.hazelcast.client.impl.protocol.codec.MapAddEntryListenerCodec;
 import com.hazelcast.client.impl.protocol.codec.MapAddEntryListenerToKeyCodec;
@@ -484,6 +487,7 @@ import com.hazelcast.client.impl.protocol.task.dynamicconfig.AddCacheConfigMessa
 import com.hazelcast.client.impl.protocol.task.dynamicconfig.AddCardinalityEstimatorConfigMessageTask;
 import com.hazelcast.client.impl.protocol.task.dynamicconfig.AddDurableExecutorConfigMessageTask;
 import com.hazelcast.client.impl.protocol.task.dynamicconfig.AddExecutorConfigMessageTask;
+import com.hazelcast.client.impl.protocol.task.dynamicconfig.AddExternalDataStoreConfigMessageTask;
 import com.hazelcast.client.impl.protocol.task.dynamicconfig.AddFlakeIdGeneratorConfigMessageTask;
 import com.hazelcast.client.impl.protocol.task.dynamicconfig.AddListConfigMessageTask;
 import com.hazelcast.client.impl.protocol.task.dynamicconfig.AddMapConfigMessageTask;
@@ -554,6 +558,7 @@ import com.hazelcast.client.impl.protocol.task.management.PollMCEventsMessageTas
 import com.hazelcast.client.impl.protocol.task.management.PromoteLiteMemberMessageTask;
 import com.hazelcast.client.impl.protocol.task.management.PromoteToCPMemberMessageTask;
 import com.hazelcast.client.impl.protocol.task.management.QueueResetAgeStatisticsMessageTask;
+import com.hazelcast.client.impl.protocol.task.management.ReloadConfigMessageTask;
 import com.hazelcast.client.impl.protocol.task.management.RemoveCPMemberMessageTask;
 import com.hazelcast.client.impl.protocol.task.management.ResetCPSubsystemMessageTask;
 import com.hazelcast.client.impl.protocol.task.management.RunConsoleCommandMessageTask;
@@ -561,6 +566,7 @@ import com.hazelcast.client.impl.protocol.task.management.RunGcMessageTask;
 import com.hazelcast.client.impl.protocol.task.management.RunScriptMessageTask;
 import com.hazelcast.client.impl.protocol.task.management.ShutdownClusterMessageTask;
 import com.hazelcast.client.impl.protocol.task.management.ShutdownMemberMessageTask;
+import com.hazelcast.client.impl.protocol.task.management.UpdateConfigMessageTask;
 import com.hazelcast.client.impl.protocol.task.management.UpdateMapConfigMessageTask;
 import com.hazelcast.client.impl.protocol.task.management.WanSyncMapMessageTask;
 import com.hazelcast.client.impl.protocol.task.map.MapAddEntryListenerMessageTask;
@@ -1654,6 +1660,8 @@ public class DefaultMessageTaskFactoryProvider implements MessageTaskFactoryProv
                 (cm, con) -> new AddFlakeIdGeneratorConfigMessageTask(cm, node, con));
         factories.put(DynamicConfigAddPNCounterConfigCodec.REQUEST_MESSAGE_TYPE,
                 (cm, con) -> new AddPNCounterConfigMessageTask(cm, node, con));
+        factories.put(DynamicConfigAddExternalDataStoreConfigCodec.REQUEST_MESSAGE_TYPE,
+                (cm, con) -> new AddExternalDataStoreConfigMessageTask(cm, node, con));
     }
 
     private void initializeFlakeIdGeneratorTaskFactories() {
@@ -1835,6 +1843,10 @@ public class DefaultMessageTaskFactoryProvider implements MessageTaskFactoryProv
                 (cm, con) -> new HotRestartInterruptBackupMessageTask(cm, node, con));
         factories.put(MCResetQueueAgeStatisticsCodec.REQUEST_MESSAGE_TYPE,
                 (cm, con) -> new QueueResetAgeStatisticsMessageTask(cm, node, con));
+        factories.put(MCReloadConfigCodec.REQUEST_MESSAGE_TYPE,
+                (cm, con) -> new ReloadConfigMessageTask(cm, node, con));
+        factories.put(MCUpdateConfigCodec.REQUEST_MESSAGE_TYPE,
+                (cm, con) -> new UpdateConfigMessageTask(cm, node, con));
     }
 
     private void initializeSqlTaskFactories() {

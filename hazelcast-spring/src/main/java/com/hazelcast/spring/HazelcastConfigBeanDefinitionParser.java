@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
 package com.hazelcast.spring;
 
 import com.hazelcast.config.AdvancedNetworkConfig;
-import com.hazelcast.config.AliasedDiscoveryConfig;
 import com.hazelcast.config.AttributeConfig;
 import com.hazelcast.config.AuditlogConfig;
 import com.hazelcast.config.CRDTReplicationConfig;
@@ -31,7 +30,6 @@ import com.hazelcast.config.CacheSimpleEntryListenerConfig;
 import com.hazelcast.config.CardinalityEstimatorConfig;
 import com.hazelcast.config.CredentialsFactoryConfig;
 import com.hazelcast.config.DataPersistenceConfig;
-import com.hazelcast.config.LocalDeviceConfig;
 import com.hazelcast.config.DiskTierConfig;
 import com.hazelcast.config.DurableExecutorConfig;
 import com.hazelcast.config.DynamicConfigurationConfig;
@@ -40,12 +38,14 @@ import com.hazelcast.config.EndpointConfig;
 import com.hazelcast.config.EntryListenerConfig;
 import com.hazelcast.config.EventJournalConfig;
 import com.hazelcast.config.ExecutorConfig;
+import com.hazelcast.config.ExternalDataStoreConfig;
 import com.hazelcast.config.FlakeIdGeneratorConfig;
 import com.hazelcast.config.HotRestartConfig;
 import com.hazelcast.config.HotRestartPersistenceConfig;
 import com.hazelcast.config.IcmpFailureDetectorConfig;
 import com.hazelcast.config.InMemoryFormat;
 import com.hazelcast.config.InstanceTrackingConfig;
+import com.hazelcast.config.IntegrityCheckerConfig;
 import com.hazelcast.config.InterfacesConfig;
 import com.hazelcast.config.InvalidConfigurationException;
 import com.hazelcast.config.ItemListenerConfig;
@@ -53,6 +53,7 @@ import com.hazelcast.config.JavaKeyStoreSecureStoreConfig;
 import com.hazelcast.config.JoinConfig;
 import com.hazelcast.config.ListConfig;
 import com.hazelcast.config.ListenerConfig;
+import com.hazelcast.config.LocalDeviceConfig;
 import com.hazelcast.config.LoginModuleConfig;
 import com.hazelcast.config.ManagementCenterConfig;
 import com.hazelcast.config.MapConfig;
@@ -140,6 +141,7 @@ import com.hazelcast.jet.config.InstanceConfig;
 import com.hazelcast.jet.config.JetConfig;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.logging.Logger;
+import com.hazelcast.memory.Capacity;
 import com.hazelcast.splitbrainprotection.SplitBrainProtectionOn;
 import com.hazelcast.spring.config.ConfigFactory;
 import org.springframework.beans.factory.config.BeanDefinition;
@@ -172,7 +174,6 @@ import static com.hazelcast.internal.config.DomConfigHelper.getIntegerValue;
 import static com.hazelcast.internal.config.DomConfigHelper.getLongValue;
 import static com.hazelcast.internal.util.StringUtil.isNullOrEmpty;
 import static com.hazelcast.internal.util.StringUtil.upperCaseInternal;
-import static com.hazelcast.memory.MemorySize.parseMemorySize;
 import static org.springframework.util.Assert.isTrue;
 
 /**
@@ -246,6 +247,7 @@ public class HazelcastConfigBeanDefinitionParser extends AbstractHazelcastBeanDe
         private ManagedMap<String, AbstractBeanDefinition> pnCounterManagedMap;
         private ManagedMap<EndpointQualifier, AbstractBeanDefinition> endpointConfigsMap;
         private ManagedMap<String, AbstractBeanDefinition> deviceConfigManagedMap;
+        private ManagedMap<String, AbstractBeanDefinition> externalDataStoreConfigMap;
 
         private boolean hasNetwork;
         private boolean hasAdvancedNetworkEnabled;
@@ -273,6 +275,7 @@ public class HazelcastConfigBeanDefinitionParser extends AbstractHazelcastBeanDe
             this.pnCounterManagedMap = createManagedMap("PNCounterConfigs");
             this.endpointConfigsMap = new ManagedMap<>();
             this.deviceConfigManagedMap = createManagedMap("deviceConfigs");
+            this.externalDataStoreConfigMap = createManagedMap("externalDataStoreConfigs");
         }
 
         private ManagedMap<String, AbstractBeanDefinition> createManagedMap(String configName) {
@@ -378,6 +381,10 @@ public class HazelcastConfigBeanDefinitionParser extends AbstractHazelcastBeanDe
                         handleLocalDevice(node);
                     } else if ("dynamic-configuration".equals(nodeName)) {
                         handleDynamicConfiguration(node);
+                    } else if ("integrity-checker".equals(nodeName)) {
+                        handleIntegrityChecker(node);
+                    } else if ("external-data-store".equals(nodeName)) {
+                        handleExternalDataStore(node);
                     }
                 }
             }
@@ -437,8 +444,6 @@ public class HazelcastConfigBeanDefinitionParser extends AbstractHazelcastBeanDe
                     if (persistenceEnabled) {
                         throw new InvalidConfigurationException("Dynamic Configuration Persistence isn't available for Spring.");
                     }
-                } else if ("persistence-file".equals(name)) {
-                    dynamicConfigBuilder.addPropertyValue("persistenceFile", getTextContent(n));
                 } else if ("backup-dir".equals(name)) {
                     dynamicConfigBuilder.addPropertyValue("backupDir", getTextContent(n));
                 } else if ("backup-count".equals(name)) {
@@ -461,6 +466,8 @@ public class HazelcastConfigBeanDefinitionParser extends AbstractHazelcastBeanDe
                 String name = cleanNodeName(n);
                 if ("base-dir".equals(name)) {
                     deviceConfigBuilder.addPropertyValue("baseDir", getTextContent(n));
+                } else if ("capacity".equals(name)) {
+                    handleCapacity(n, deviceConfigBuilder);
                 } else if ("block-size".equals(name)) {
                     deviceConfigBuilder.addPropertyValue("blockSize",
                             getIntegerValue("block-size", getTextContent(n)));
@@ -536,7 +543,7 @@ public class HazelcastConfigBeanDefinitionParser extends AbstractHazelcastBeanDe
             BeanDefinitionBuilder cpSubsystemConfigBuilder = createBeanBuilder(CPSubsystemConfig.class);
 
             fillValues(node, cpSubsystemConfigBuilder, "raftAlgorithm", "semaphores", "locks", "cpMemberCount",
-                    "missingCpMemberAutoRemovalSeconds");
+                    "missingCpMemberAutoRemovalSeconds", "cpMemberPriority");
 
             for (Node child : childElements(node)) {
                 String nodeName = cleanNodeName(child);
@@ -561,6 +568,9 @@ public class HazelcastConfigBeanDefinitionParser extends AbstractHazelcastBeanDe
                     } else if ("missing-cp-member-auto-removal-seconds".equals(nodeName)) {
                         cpSubsystemConfigBuilder.addPropertyValue("missingCPMemberAutoRemovalSeconds",
                                 getIntegerValue("missing-cp-member-auto-removal-seconds", value));
+                    } else if ("cp-member-priority".equals(nodeName)) {
+                        cpSubsystemConfigBuilder.addPropertyValue("CPMemberPriority",
+                                getIntegerValue("cp-member-priority", value));
                     }
                 }
             }
@@ -1122,11 +1132,6 @@ public class HazelcastConfigBeanDefinitionParser extends AbstractHazelcastBeanDe
             builder.addPropertyValue("members", members);
         }
 
-        private void handleAliasedDiscoveryStrategy(Node node, BeanDefinitionBuilder builder, String name) {
-            AliasedDiscoveryConfig config = AliasedDiscoveryConfigUtils.newConfigFor(name);
-            fillAttributesForAliasedDiscoveryStrategy(config, node, builder, name);
-        }
-
         public void handleReliableTopic(Node node) {
             BeanDefinitionBuilder builder = createBeanBuilder(ReliableTopicConfig.class);
             fillAttributeValues(node, builder);
@@ -1356,7 +1361,7 @@ public class HazelcastConfigBeanDefinitionParser extends AbstractHazelcastBeanDe
 
             BeanDefinitionBuilder tieredStoreConfigBuilder = createBeanBuilder(TieredStoreConfig.class);
             fillAttributeValues(node, tieredStoreConfigBuilder);
-            for (Node child: childElements(node)) {
+            for (Node child : childElements(node)) {
                 String name = cleanNodeName(child);
                 if ("memory-tier".equals(name)) {
                     handleMemoryTierConfig(tieredStoreConfigBuilder, child);
@@ -1374,13 +1379,21 @@ public class HazelcastConfigBeanDefinitionParser extends AbstractHazelcastBeanDe
             for (Node child : childElements(node)) {
                 String name = cleanNodeName(child);
                 if ("capacity".equals(name)) {
-                    memoryTierConfigBuilder.addPropertyValue("capacity",
-                            parseMemorySize(getTextContent(child))
-                    );
+                    handleCapacity(child, memoryTierConfigBuilder);
                 }
             }
 
             configBuilder.addPropertyValue("memoryTierConfig", memoryTierConfigBuilder.getBeanDefinition());
+        }
+
+        private void handleCapacity(Node node, BeanDefinitionBuilder nativeMemoryConfigBuilder) {
+            BeanDefinitionBuilder capacityConfigBuilder = createBeanBuilder(Capacity.class);
+            NamedNodeMap attributes = node.getAttributes();
+            Node value = attributes.getNamedItem("value");
+            Node unit = attributes.getNamedItem("unit");
+            capacityConfigBuilder.addConstructorArgValue(getTextContent(value));
+            capacityConfigBuilder.addConstructorArgValue(getTextContent(unit));
+            nativeMemoryConfigBuilder.addPropertyValue("capacity", capacityConfigBuilder.getBeanDefinition());
         }
 
         @SuppressWarnings("checkstyle:magicnumber")
@@ -1453,6 +1466,8 @@ public class HazelcastConfigBeanDefinitionParser extends AbstractHazelcastBeanDe
                     builder.addPropertyValue("coalesce", textContent);
                 } else if ("populate".equals(nodeName)) {
                     builder.addPropertyValue("populate", textContent);
+                } else if ("serialize-keys".equals(nodeName)) {
+                    builder.addPropertyValue("serializeKeys", textContent);
                 } else if ("indexes".equals(nodeName)) {
                     ManagedList<BeanDefinition> indexes = new ManagedList<>();
                     for (Node indexNode : childElements(node)) {
@@ -2297,6 +2312,26 @@ public class HazelcastConfigBeanDefinitionParser extends AbstractHazelcastBeanDe
                 }
             }
             return false;
+        }
+
+        private void handleIntegrityChecker(Node node) {
+            BeanDefinitionBuilder builder = createBeanBuilder(IntegrityCheckerConfig.class);
+            fillValues(node, builder);
+            configBuilder.addPropertyValue("integrityCheckerConfig", builder.getBeanDefinition());
+        }
+
+        private void handleExternalDataStore(Node node) {
+            BeanDefinitionBuilder builder = createBeanBuilder(ExternalDataStoreConfig.class);
+            builder.addPropertyValue("name", getAttribute(node, "name"));
+            fillValues(node, builder, "properties");
+            for (Node child : childElements(node)) {
+                String nodeName = cleanNodeName(child);
+                if ("properties".equals(nodeName)) {
+                    handleProperties(child, builder);
+                    break;
+                }
+            }
+            externalDataStoreConfigMap.put(getAttribute(node, "name"), builder.getBeanDefinition());
         }
     }
 }

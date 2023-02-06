@@ -19,7 +19,7 @@ to a large cluster of cloud instances.
 
 A cluster of Hazelcast nodes share both the data storage and computational load
 which can dynamically scale up and down. When you add new nodes to the cluster,
-the data is automatically rebalanced across the cluster and currently running
+the data is automatically rebalanced across the cluster, and currently running
 computational tasks (known as jobs) snapshot their state and scale with
 processing guarantees.
 
@@ -71,7 +71,7 @@ Hazelcast provides distributed in-memory data structures which are partitioned,
 replicated and queryable. One of the main use cases for Hazelcast is for storing
 a _working set_ of data for fast querying and access. 
 
-The main data structure underlying Hazelcast, called `IMap` is a key-value store
+The main data structure underlying Hazelcast, called `IMap`, is a key-value store
 which has a rich set of features, including:
 
 * Integration with [data
@@ -305,7 +305,7 @@ marked as good first issue for some guidance.
 
 ### Building From Source
 
-Building Hazelcast requires minimum JDK 1.8. Pull the latest source from the
+Building Hazelcast requires at minimum JDK 1.8. Pull the latest source from the
 repository and use Maven install (or package) to build:
 
 ```bash
@@ -329,6 +329,8 @@ take a considerable amount of time. Hazelcast has 3 testing profiles:
 * All Tests: Type `mvn test -P all-tests` to run all tests serially using
   network.
 
+Some tests require Docker to run. Set `-Dhazelcast.disable.docker.tests` system property to ignore them.
+
 ## Trigger Phrases in the Pull Request Conversation
 
 When you create a pull request (PR), it must pass a build-and-test
@@ -337,8 +339,11 @@ trigger the build using special comments. These are the phrases you may
 see used in the comments on your PR:
 
 * `run-lab-run` - run the default PR builder
-* `run-windows` - run the tests on a Windows machine (HighFive is not
-  supported here)
+* `run-lts-compilers` - compiles the sources with JDK 11 and JDK 17 (without running tests)
+* `run-ee-compile` - compile hazelcast-enterprise with this PR
+* `run-ee-tests` - run tests from hazelcast-enterprise with this PR
+* `run-windows` - run the tests on a Windows machine (HighFive is not supported here)
+* `run-with-jdk17` - run the tests with JDK 17
 * `run-with-ibm-jdk-8` - run the tests with IBM JDK 8
 * `run-cdc-debezium-tests` - run all tests in the
   `extensions/cdc-debezium` module
@@ -346,6 +351,9 @@ see used in the comments on your PR:
   module
 * `run-cdc-postgres-tests` - run all tests in the
   `extensions/cdc-postgres` module
+* `run-s3-tests` - run all tests in the `extensions/s3` module
+* *`run-nightly-tests` - run nightly (slow) tests. WARNING: Use with care as this is a resource consuming task.*
+
 
 Where not indicated, the builds run on a Linux machine with Oracle JDK
 8.
@@ -372,6 +380,6 @@ We owe (the good parts of) our CLI tool's user experience to
 
 ## Copyright
 
-Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
 
 Visit [www.hazelcast.com](http://www.hazelcast.com/) for more info.

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ package com.hazelcast.internal.partition.impl;
 
 import com.hazelcast.cluster.Member;
 import com.hazelcast.instance.impl.Node;
-import com.hazelcast.internal.cluster.Versions;
 import com.hazelcast.internal.metrics.Probe;
 import com.hazelcast.internal.partition.InternalPartition;
 import com.hazelcast.internal.partition.NonFragmentedServiceNamespace;
@@ -68,6 +67,11 @@ import static java.util.Collections.newSetFromMap;
  * Maintains the version values for the partition replicas and manages the replica-related operations for partitions
  */
 public class PartitionReplicaManager implements PartitionReplicaVersionManager {
+
+    /**
+     * Marker that indicates a particular backup replica index requires a sync with the primary replica.
+     */
+    public static final long REQUIRES_SYNC = -1;
 
     /**
      * Allow running partition replica sync on generic operation threads? Default is true.
@@ -248,17 +252,11 @@ public class PartitionReplicaManager implements PartitionReplicaVersionManager {
         }
         replicaSyncRequestsCounter.inc();
 
-        Operation syncRequest = shouldOffload()
+        Operation syncRequest = ALLOW_OFFLOAD
                 ? new PartitionReplicaSyncRequestOffloadable(namespaces, partitionId, replicaIndex)
                 : new PartitionReplicaSyncRequest(namespaces, partitionId, replicaIndex);
 
         nodeEngine.getOperationService().send(syncRequest, target.address());
-    }
-
-    private boolean shouldOffload() {
-        return ALLOW_OFFLOAD
-                && nodeEngine.getClusterService().getClusterVersion()
-                .isGreaterOrEqual(Versions.V5_0);
     }
 
     private Collection<ServiceNamespace> registerSyncInfoForNamespaces(int partitionId,
@@ -330,9 +328,27 @@ public class PartitionReplicaManager implements PartitionReplicaVersionManager {
     }
 
     @Override
+    public void markPartitionReplicaAsSyncRequired(int partitionId, ServiceNamespace namespace, int replicaIndex) {
+        replicaVersions[partitionId].markAsSyncRequired(namespace, replicaIndex);
+    }
+
+    @Override
     // Caution: Returning version array without copying for performance reasons. Callers must not modify this array!
     public long[] getPartitionReplicaVersions(int partitionId, ServiceNamespace namespace) {
         return replicaVersions[partitionId].get(namespace);
+    }
+
+    @Override
+    // Caution: Returning version array without copying for performance reasons. Callers must not modify this array!
+    // Mutates the replica version array, so that any replica indexes which require sync are reset to 0
+    public long[] getPartitionReplicaVersionsForSync(int partitionId, ServiceNamespace namespace) {
+        long[] replicas = replicaVersions[partitionId].get(namespace);
+        for (int i = 0; i < replicas.length; i++) {
+            if (replicas[i] == REQUIRES_SYNC) {
+                replicas[i] = 0;
+            }
+        }
+        return replicas;
     }
 
     // called in operation threads

@@ -22,6 +22,7 @@ import com.hazelcast.jet.core.Vertex;
 import com.hazelcast.jet.sql.impl.ObjectArrayKey;
 import com.hazelcast.sql.impl.QueryParameterMetadata;
 import com.hazelcast.sql.impl.plan.node.PlanNodeSchema;
+import com.hazelcast.sql.impl.row.JetSqlRow;
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelTraitSet;
 import org.apache.calcite.rel.RelNode;
@@ -34,14 +35,14 @@ import java.util.List;
 public class AggregateAccumulateByKeyPhysicalRel extends SingleRel implements PhysicalRel {
 
     private final ImmutableBitSet groupSet;
-    private final AggregateOperation<?, Object[]> aggrOp;
+    private final AggregateOperation<?, JetSqlRow> aggrOp;
 
     AggregateAccumulateByKeyPhysicalRel(
             RelOptCluster cluster,
             RelTraitSet traits,
             RelNode input,
             ImmutableBitSet groupSet,
-            AggregateOperation<?, Object[]> aggrOp
+            AggregateOperation<?, JetSqlRow> aggrOp
     ) {
         super(cluster, traits, input);
 
@@ -49,11 +50,11 @@ public class AggregateAccumulateByKeyPhysicalRel extends SingleRel implements Ph
         this.aggrOp = aggrOp;
     }
 
-    public FunctionEx<Object[], ObjectArrayKey> groupKeyFn() {
+    public FunctionEx<JetSqlRow, ObjectArrayKey> groupKeyFn() {
         return ObjectArrayKey.projectFn(groupSet.toArray());
     }
 
-    public AggregateOperation<?, Object[]> aggrOp() {
+    public AggregateOperation<?, JetSqlRow> aggrOp() {
         return aggrOp;
     }
 

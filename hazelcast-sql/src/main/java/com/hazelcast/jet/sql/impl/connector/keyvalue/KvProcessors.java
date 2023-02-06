@@ -27,6 +27,7 @@ import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.DataSerializable;
 import com.hazelcast.sql.impl.extract.QueryPath;
+import com.hazelcast.sql.impl.row.JetSqlRow;
 import com.hazelcast.sql.impl.type.QueryDataType;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
@@ -43,7 +44,7 @@ public final class KvProcessors {
 
     /**
      * Returns a supplier of processors that convert a row represented as
-     * {@code Object[]} to an entry represented as {@code Entry<Object,
+     * {@link JetSqlRow} to an entry represented as {@code Entry<Object,
      * Object>}.
      */
     public static ProcessorSupplier entryProjector(
@@ -92,7 +93,7 @@ public final class KvProcessors {
             for (int i = 0; i < count; i++) {
                 ResettableSingletonTraverser<Object> traverser = new ResettableSingletonTraverser<>();
                 KvProjector projector = projectorSupplier.get(serializationService);
-                Processor processor = new TransformP<Object[], Object>(row -> {
+                Processor processor = new TransformP<JetSqlRow, Object>(row -> {
                     traverser.accept(projector.project(row));
                     return traverser;
                 });

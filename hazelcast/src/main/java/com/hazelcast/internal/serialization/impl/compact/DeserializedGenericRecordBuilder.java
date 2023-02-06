@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,8 @@
 package com.hazelcast.internal.serialization.impl.compact;
 
 import com.hazelcast.nio.serialization.FieldKind;
-import com.hazelcast.nio.serialization.GenericRecord;
-import com.hazelcast.nio.serialization.GenericRecordBuilder;
+import com.hazelcast.nio.serialization.genericrecord.GenericRecord;
+import com.hazelcast.nio.serialization.genericrecord.GenericRecordBuilder;
 import com.hazelcast.nio.serialization.HazelcastSerializationException;
 
 import javax.annotation.Nonnull;
@@ -35,8 +35,8 @@ public class DeserializedGenericRecordBuilder extends AbstractGenericRecordBuild
     private final TreeMap<String, Object> objects = new TreeMap<>();
     private final SchemaWriter schemaWriter;
 
-    public DeserializedGenericRecordBuilder(String className) {
-        schemaWriter = new SchemaWriter(className);
+    public DeserializedGenericRecordBuilder(String typeName) {
+        schemaWriter = new SchemaWriter(typeName);
     }
 
     /**

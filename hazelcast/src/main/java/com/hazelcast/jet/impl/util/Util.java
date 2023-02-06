@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,8 @@ package com.hazelcast.jet.impl.util;
 
 import com.hazelcast.client.impl.clientside.HazelcastClientInstanceImpl;
 import com.hazelcast.client.impl.clientside.HazelcastClientProxy;
-import com.hazelcast.cluster.Address;
 import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.function.FunctionEx;
 import com.hazelcast.instance.impl.HazelcastInstanceImpl;
 import com.hazelcast.instance.impl.HazelcastInstanceProxy;
 import com.hazelcast.internal.cluster.impl.ClusterServiceImpl;
@@ -38,7 +38,10 @@ import com.hazelcast.jet.impl.JetEvent;
 import com.hazelcast.jet.impl.JetServiceBackend;
 import com.hazelcast.jet.impl.exception.JetDisabledException;
 import com.hazelcast.logging.ILogger;
+import com.hazelcast.nio.ObjectDataInput;
+import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.DataSerializable;
+import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import com.hazelcast.spi.impl.NodeEngine;
 import com.hazelcast.spi.impl.NodeEngineImpl;
 
@@ -62,13 +65,9 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
@@ -91,6 +90,7 @@ import static com.hazelcast.jet.core.processor.SourceProcessors.readMapP;
 import static com.hazelcast.jet.impl.util.ExceptionUtil.rethrow;
 import static com.hazelcast.jet.impl.util.ExceptionUtil.sneakyThrow;
 import static java.lang.Math.abs;
+import static java.lang.String.format;
 import static java.nio.file.LinkOption.NOFOLLOW_LINKS;
 import static java.util.Arrays.asList;
 import static java.util.Collections.emptyList;
@@ -99,21 +99,35 @@ import static java.util.stream.Collectors.mapping;
 import static java.util.stream.IntStream.range;
 
 public final class Util {
+    public static final String CONFIG_OVERRIDE_WARNING = "(for Hazelcast embedded, works only when " +
+            "loading config via Config.load)";
+    public static final String CONFIG_OVERRIDE_WARNING_ENV = "(recommended when running container image. " +
+            "For Hazelcast embedded, works only when loading config via Config.load)";
+
+    public static final String CONFIG_CHANGE_TEMPLATE =
+            "  - Change member config using Java API: %s\n" +
+                    "  - Change XML/YAML configuration property: Set %s\n" +
+                    "  - Add system property: %s " + CONFIG_OVERRIDE_WARNING + "\n" +
+                    "  - Add environment variable: %s " + CONFIG_OVERRIDE_WARNING_ENV;
 
     public static final String JET_IS_DISABLED_MESSAGE = "The Jet engine is disabled.\n" +
-            "To enable the Jet engine on the members, please do one of the following:\n" +
-            "  - Change member config using Java API: config.getJetConfig().setEnabled(true);\n" +
-            "  - Change XML/YAML configuration property: Set hazelcast.jet.enabled to true\n" +
-            "  - Add system property: -Dhz.jet.enabled=true\n" +
-            "  - Add environment variable: HZ_JET_ENABLED=true";
+            "To enable the Jet engine on the members, do one of the following:\n" +
+            format(CONFIG_CHANGE_TEMPLATE,
+                    "config.getJetConfig().setEnabled(true)",
+                    "hazelcast.jet.enabled to true",
+                    "-Dhz.jet.enabled=true",
+                    "HZ_JET_ENABLED=true"
+            );
 
     public static final String JET_RESOURCE_UPLOAD_DISABLED_MESSAGE = "A job is trying to upload resources to the " +
             "cluster, but this feature is disabled. Either remove the resources from the JobConfig object or enable " +
             "resource upload on the members, using one of the following:\n" +
-            "  - Change member config using Java API: config.getJetConfig().setResourceUploadEnabled(true);\n" +
-            "  - Change XML/YAML configuration property: Set hazelcast.jet.resource-upload-enabled to true\n" +
-            "  - Add system property: -Dhz.jet.resource-upload-enabled=true\n" +
-            "  - Add environment variable: HZ_JET_RESOURCEUPLOADENABLED=true";
+            format(CONFIG_CHANGE_TEMPLATE,
+                    "config.getJetConfig().setResourceUploadEnabled(true);",
+                    "hazelcast.jet.resource-upload-enabled to true",
+                    "-Dhz.jet.resource-upload-enabled=true",
+                    "HZ_JET_RESOURCEUPLOADENABLED=true"
+            );
 
     private static final DateTimeFormatter LOCAL_TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm:ss.SSS");
     private static final Pattern TRAILING_NUMBER_PATTERN = Pattern.compile("(.*)-([0-9]+)");
@@ -373,16 +387,6 @@ public final class Util {
     }
 
     /**
-     * Creates a copy of the {@code array} with length increased by {@code
-     * extendBy}. The added elements will contain {@code null}s. If {@code
-     * extendBy == 0}, no copy is created.
-     */
-    public static Object[] extendArray(Object[] array, int extendBy) {
-        assert extendBy > -1;
-        return extendBy == 0 ? array : Arrays.copyOf(array, array.length + extendBy);
-    }
-
-    /**
      * Returns a future which is already completed with the supplied exception.
      */
     // replace with CompletableFuture.failedFuture(e) once we depend on java9+
@@ -395,20 +399,20 @@ public final class Util {
     /**
      * Logs a late event that was dropped.
      */
-    public static void logLateEvent(ILogger logger, long currentWm, @Nonnull Object item) {
+    public static void logLateEvent(ILogger logger, byte key, long currentWm, @Nonnull Object item) {
         if (!logger.isInfoEnabled()) {
             return;
         }
         if (item instanceof JetEvent) {
             JetEvent event = (JetEvent) item;
             logger.info(
-                    String.format("Event dropped, late by %d ms. currentWatermark=%s, eventTime=%s, event=%s",
+                    format("Event dropped, late by %d ms. currentWatermark=%s, eventTime=%s, event=%s",
                             currentWm - event.timestamp(), toLocalTime(currentWm), toLocalTime(event.timestamp()),
                             event.payload()
                     ));
         } else {
-            logger.info(String.format(
-                    "Late event dropped. currentWatermark=%s, event=%s", new Watermark(currentWm), item
+            logger.info(format(
+                    "Late event dropped. currentWatermark=%s, event=%s", new Watermark(currentWm, key), item
             ));
         }
     }
@@ -460,6 +464,18 @@ public final class Util {
         int sum = 0;
         for (E e : collection) {
             sum += toIntF.applyAsInt(e);
+        }
+        return sum;
+    }
+
+    /**
+     * Adds items of an array. Creates no GC litter (if you use non-capturing lambda for
+     * {@code toIntF}, else new lambda instance is created for each call).
+     */
+    public static <E> int sum(E[] array, ToIntFunction<E> toIntF, int size) {
+        int sum = 0;
+        for (int i = 0; i < size; i++) {
+            sum += toIntF.applyAsInt(array[i]);
         }
         return sum;
     }
@@ -626,46 +642,8 @@ public final class Util {
         durationMs /= 60;
         long hours = durationMs % 24;
         durationMs /= 24;
-        String textUpToHours = String.format("%02d:%02d:%02d.%03d", hours, minutes, seconds, millis);
+        String textUpToHours = format("%02d:%02d:%02d.%03d", hours, minutes, seconds, millis);
         return sign + (durationMs > 0 ? durationMs + "d " : "") + textUpToHours;
-    }
-
-    /**
-     * Assigns given partitions to given {@code members}.
-     * Set of partitions belonging to non-members are assigned to
-     * {@code members} in a round robin fashion.
-     */
-    public static Map<Address, List<Integer>> assignPartitions(
-            Collection<Address> members0,
-            Map<Address, List<Integer>> partitionsByOwner
-    ) {
-        assert !members0.isEmpty();
-
-        LinkedHashSet<Address> members = new LinkedHashSet<>(members0);
-
-        Iterator<Address> iterator = members.iterator();
-
-        Map<Address, List<Integer>> partitionsByMember = new HashMap<>();
-        for (Entry<Address, List<Integer>> entry : partitionsByOwner.entrySet()) {
-            Address partitionOwner = entry.getKey();
-            List<Integer> partitions = entry.getValue();
-
-            Address target;
-            if (members.contains(partitionOwner)) {
-                target = partitionOwner;
-            } else {
-                if (!iterator.hasNext()) {
-                    iterator = members.iterator();
-                }
-                target = iterator.next();
-            }
-
-            partitionsByMember.merge(target, new ArrayList<>(partitions), (existing, incoming) -> {
-                existing.addAll(incoming);
-                return existing;
-            });
-        }
-        return partitionsByMember;
     }
 
     /**
@@ -768,8 +746,39 @@ public final class Util {
     }
 
     public static void checkJetIsEnabled(NodeEngine nodeEngine) {
-        if (!nodeEngine.getConfig().getJetConfig().isEnabled()) {
+        if (!isJetEnabled(nodeEngine)) {
             throw new JetDisabledException(JET_IS_DISABLED_MESSAGE);
+        }
+    }
+
+    public static boolean isJetEnabled(NodeEngine nodeEngine) {
+        return nodeEngine.getConfig().getJetConfig().isEnabled();
+    }
+
+    public static class Identity<T> implements IdentifiedDataSerializable, FunctionEx<T, T> {
+        public static final Identity INSTANCE = new Identity<>();
+
+        @Override
+        public T applyEx(T t) throws Exception {
+            return t;
+        }
+
+        @Override
+        public void writeData(ObjectDataOutput out) throws IOException {
+        }
+
+        @Override
+        public void readData(ObjectDataInput in) throws IOException {
+        }
+
+        @Override
+        public int getFactoryId() {
+            return FunctionsSerializerHook.F_ID;
+        }
+
+        @Override
+        public int getClassId() {
+            return FunctionsSerializerHook.FUNCTION_IDENTITY;
         }
     }
 }

@@ -18,7 +18,6 @@ package com.hazelcast.jet.sql.impl;
 
 import com.hazelcast.jet.sql.SqlTestSupport;
 import com.hazelcast.map.IMap;
-import com.hazelcast.replicatedmap.ReplicatedMap;
 import com.hazelcast.sql.impl.schema.view.View;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.annotation.ParallelJVMTest;
@@ -29,8 +28,7 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Collections;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -59,16 +57,29 @@ public class CreateViewStatementTest extends SqlTestSupport {
         String sql = "CREATE VIEW v AS SELECT * FROM map";
         instance().getSql().execute(sql);
 
-        ReplicatedMap<String, Object> viewStorage = instance().getReplicatedMap("__sql.catalog");
+        IMap<String, Object> viewStorage = instance().getMap("__sql.catalog");
         assertThat(viewStorage.containsKey("v")).isTrue();
         assertThat(viewStorage.get("v")).isInstanceOf(View.class);
         assertThat(((View) viewStorage.get("v")).query()).isEqualTo("SELECT \"map\".\"__key\", \"map\".\"this\"" + LE
                 + "FROM \"hazelcast\".\"public\".\"map\" AS \"map\"");
 
 
-        List<Row> expected = new ArrayList<>();
-        expected.add(new Row(1, 10));
-        assertRowsAnyOrder(((View) viewStorage.get("v")).query(), expected);
+        assertRowsAnyOrder(((View) viewStorage.get("v")).query(), Collections.singletonList(new Row(1, 10)));
+    }
+
+    @Test
+    public void test_unnecessaryOrReplaceOption() {
+        String sql = "CREATE OR REPLACE VIEW v AS SELECT * FROM map";
+        instance().getSql().execute(sql);
+
+        IMap<String, Object> viewStorage = instance().getMap("__sql.catalog");
+        assertThat(viewStorage.containsKey("v")).isTrue();
+        assertThat(viewStorage.get("v")).isInstanceOf(View.class);
+        assertThat(((View) viewStorage.get("v")).query()).isEqualTo("SELECT \"map\".\"__key\", \"map\".\"this\"" + LE
+                + "FROM \"hazelcast\".\"public\".\"map\" AS \"map\"");
+
+
+        assertRowsAnyOrder(((View) viewStorage.get("v")).query(), Collections.singletonList(new Row(1, 10)));
     }
 
     @Test
@@ -76,7 +87,7 @@ public class CreateViewStatementTest extends SqlTestSupport {
         String sql = "CREATE VIEW v AS SELECT * FROM map";
         instance().getSql().execute(sql);
 
-        ReplicatedMap<String, Object> viewStorage = instance().getReplicatedMap("__sql.catalog");
+        IMap<String, Object> viewStorage = instance().getMap("__sql.catalog");
         assertThat(viewStorage.get("v")).isInstanceOf(View.class);
         assertThat(((View) viewStorage.get("v")).query()).isEqualTo("SELECT \"map\".\"__key\", \"map\".\"this\"" + LE
                 + "FROM \"hazelcast\".\"public\".\"map\" AS \"map\"");
@@ -96,7 +107,7 @@ public class CreateViewStatementTest extends SqlTestSupport {
         String sql = "CREATE VIEW v AS SELECT * FROM map";
         instance().getSql().execute(sql);
 
-        ReplicatedMap<String, Object> viewStorage = instance().getReplicatedMap("__sql.catalog");
+        IMap<String, Object> viewStorage = instance().getMap("__sql.catalog");
         assertThat(viewStorage.containsKey("v")).isTrue();
         assertThat(viewStorage.get("v")).isInstanceOf(View.class);
 
@@ -131,7 +142,7 @@ public class CreateViewStatementTest extends SqlTestSupport {
         String sql = "CREATE VIEW v AS SELECT * FROM map";
         instance().getSql().execute(sql);
 
-        ReplicatedMap<String, Object> viewStorage = instance().getReplicatedMap("__sql.catalog");
+        IMap<String, Object> viewStorage = instance().getMap("__sql.catalog");
         assertThat(viewStorage.containsKey("v")).isTrue();
 
         sql = "DROP VIEW v";

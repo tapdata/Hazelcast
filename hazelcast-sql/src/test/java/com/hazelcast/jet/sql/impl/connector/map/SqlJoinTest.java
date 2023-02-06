@@ -16,11 +16,13 @@
 
 package com.hazelcast.jet.sql.impl.connector.map;
 
+import com.hazelcast.config.IndexType;
 import com.hazelcast.jet.sql.SqlTestSupport;
 import com.hazelcast.jet.sql.impl.connector.map.model.Person;
 import com.hazelcast.jet.sql.impl.connector.map.model.PersonId;
 import com.hazelcast.jet.sql.impl.connector.test.TestBatchSqlConnector;
 import com.hazelcast.map.IMap;
+import com.hazelcast.sql.SqlRow;
 import com.hazelcast.sql.SqlService;
 import com.hazelcast.sql.impl.QueryException;
 import com.hazelcast.sql.impl.type.QueryDataTypeFamily;
@@ -41,10 +43,10 @@ import static java.util.Arrays.asList;
 import static java.util.Collections.emptyList;
 import static java.util.Collections.singletonList;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.Assert.fail;
 
 @RunWith(Enclosed.class)
 public class SqlJoinTest {
-
     public static class SqlInnerJoinTest extends SqlTestSupport {
 
         private static SqlService sqlService;
@@ -56,7 +58,7 @@ public class SqlJoinTest {
         }
 
         @Test
-        public void test_innerJoin() {
+        public void test_innerJoin_mapOnRight() {
             String leftName = randomName();
             TestBatchSqlConnector.create(sqlService, leftName, 3);
 
@@ -69,10 +71,58 @@ public class SqlJoinTest {
             assertRowsAnyOrder(
                     "SELECT l.v, m.this " +
                             "FROM " + leftName + " l " +
-                            "INNER JOIN " + mapName + " m ON l.v = m.__key",
+                            "INNER JOIN " + mapName + " m ON l.v = m.__key + m.__key",
+                    singletonList(
+                            new Row(2, "value-1")
+                    )
+            );
+        }
+
+        @Test
+        public void test_innerJoin_mapOnLeft() {
+            String leftName = randomName();
+            TestBatchSqlConnector.create(sqlService, leftName, 3);
+
+            String mapName = randomName();
+            createMapping(mapName, int.class, String.class);
+            instance().getMap(mapName).put(1, "value-1");
+            instance().getMap(mapName).put(2, "value-2");
+            instance().getMap(mapName).put(3, "value-3");
+
+            assertRowsAnyOrder(
+                    "SELECT l.v, m.this " +
+                            "FROM " + mapName + " m " +
+                            "INNER JOIN " + leftName + " l ON l.v = m.__key",
                     asList(
                             new Row(1, "value-1"),
                             new Row(2, "value-2")
+                    )
+            );
+        }
+
+        @Test
+        public void test_innerCommaJoin() {
+            String leftName = randomName();
+            TestBatchSqlConnector.create(sqlService, leftName, 3);
+
+            String map1Name = "abc";
+            String map2Name = "cdf";
+            createMapping(map1Name, int.class, String.class);
+            createMapping(map2Name, int.class, String.class);
+            instance().getMap(map1Name).put(1, "value-1");
+            instance().getMap(map1Name).put(2, "value-2");
+            instance().getMap(map1Name).put(3, "value-3");
+            instance().getMap(map2Name).put(1, "value-1");
+            instance().getMap(map2Name).put(2, "value-2");
+            instance().getMap(map2Name).put(3, "value-3");
+
+            assertRowsAnyOrder(
+                    "SELECT l.v, m1.this, m2.this" +
+                            " FROM " + leftName + " AS l, " + map1Name + " AS m1, " + map2Name + " AS m2" +
+                            " WHERE l.v = m1.__key AND l.v = m2.__key",
+                    asList(
+                            new Row(1, "value-1", "value-1"),
+                            new Row(2, "value-2", "value-2")
                     )
             );
         }
@@ -457,7 +507,7 @@ public class SqlJoinTest {
             instance().getMap(mapName).put(new Person(2, "value-2"), new PersonId());
             instance().getMap(mapName).put(new Person(3, "value-3"), new PersonId());
 
-            assertRowsEventuallyInAnyOrder(
+            assertRowsAnyOrder(
                     "SELECT l.v, m.name, m.id " +
                             "FROM " + leftName + " l " +
                             "JOIN " + mapName + " m ON l.v = m.id",
@@ -482,7 +532,7 @@ public class SqlJoinTest {
             instance().getMap(mapName).put(new Person(2, "value-2"), new PersonId());
             instance().getMap(mapName).put(new Person(3, "value-3"), new PersonId());
 
-            assertRowsEventuallyInAnyOrder(
+            assertRowsAnyOrder(
                     "SELECT l.v1, l.v2, m.id, m.name " +
                             "FROM " + leftName + " l " +
                             "JOIN " + mapName + " m ON l.v1 = m.id AND l.v2 = m.name",
@@ -507,7 +557,7 @@ public class SqlJoinTest {
             instance().getMap(mapName).put(new Person(2, "value-2"), new PersonId());
             instance().getMap(mapName).put(new Person(3, "value-3"), new PersonId());
 
-            assertRowsEventuallyInAnyOrder(
+            assertRowsAnyOrder(
                     "SELECT l.v1, l.v2, m.id, m.name " +
                             "FROM " + leftName + " l " +
                             "JOIN " + mapName + " m ON l.v1 = m.id OR l.v2 = m.name",
@@ -535,7 +585,7 @@ public class SqlJoinTest {
             instance().getMap(mapName).put(new PersonId(2), new Person(0, "value-2"));
             instance().getMap(mapName).put(new PersonId(3), new Person(0, "value-3"));
 
-            assertRowsEventuallyInAnyOrder(
+            assertRowsAnyOrder(
                     "SELECT l.v, m.id " +
                             "FROM " + leftName + " l " +
                             "JOIN " + mapName + " m ON l.v = m.name",
@@ -557,7 +607,7 @@ public class SqlJoinTest {
             instance().getMap(mapName).put(2, new Person(2, "value-2"));
             instance().getMap(mapName).put(3, new Person(0, "value-3"));
 
-            assertRowsEventuallyInAnyOrder(
+            assertRowsAnyOrder(
                     "SELECT l.v, m.id, m.name " +
                             "FROM " + leftName + " l " +
                             "JOIN " + mapName + " m ON l.v = m.__key AND l.v = m.id",
@@ -654,6 +704,36 @@ public class SqlJoinTest {
             assertRowsAnyOrder("SELECT * FROM " + leftName + " l JOIN (VALUES (1, 1)) AS r ON true",
                     singletonList(new Row(1, 1, (byte) 1, (byte) 1))
             );
+        }
+
+        @Test
+        // test for https://github.com/hazelcast/hazelcast/issues/22160
+        public void test_indexScanOnRightHandOfNestedLoopJoin() {
+            String m1 = "m1_" + randomName();
+            String m2 = "m2_" + randomName();
+            IMap<Object, Object> m1Map = instance().getMap(m1);
+            m1Map.put(42, "foo");
+            m1Map.put(43, "bar");
+            IMap<Object, Object> m2Map = instance().getMap(m2);
+            m2Map.addIndex(IndexType.HASH, "this");
+            m2Map.put(43, "baz");
+            // we need to add multiple entries to the map so that the index is created on all members
+            for (int i = 44; i < 60; i++) {
+                m2Map.put(i, "boo" + i);
+            }
+            createMapping(m1, Integer.class, String.class);
+            createMapping(m2, Integer.class, String.class);
+
+            String sql = "select * from " + m1 + " m1 join " + m2 + " m2 on m1.__key=m2.__key where m2.this='baz'";
+            assertRowsAnyOrder(sql, rows(4, 43, "bar", 43, "baz"));
+
+            for (SqlRow r : sqlService.execute("explain " + sql)) {
+                if (r.getObject(0).toString().contains("IndexScanMapPhysicalRel")) {
+                    return; // success
+                }
+            }
+
+            fail("Index scan not found in the plan");
         }
     }
 
@@ -1238,7 +1318,6 @@ public class SqlJoinTest {
                     "SELECT * FROM " + joinClause(batchName, "(SELECT * FROM " + batchName + ")") + " ON true",
                     singletonList(new Row(1, 1, 1, 1))
             );
-
         }
 
         @Test
@@ -1251,7 +1330,7 @@ public class SqlJoinTest {
             assertThatThrownBy(() -> sqlService.execute(
                     "SELECT * FROM " + joinClause(batchName, "TABLE(GENERATE_STREAM(1))") + " ON true"))
                     .hasCauseInstanceOf(QueryException.class)
-                    .hasMessageContaining("The right side of a LEFT JOIN or the left side of a RIGHT JOIN cannot be a streaming source");
+                    .hasMessageContaining("The right side of a LEFT JOIN or the left side of RIGHT JOIN cannot be a streaming source");
         }
 
         @Test

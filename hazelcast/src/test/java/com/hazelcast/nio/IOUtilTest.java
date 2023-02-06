@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -60,6 +60,7 @@ import static com.hazelcast.internal.nio.IOUtil.compactOrClear;
 import static com.hazelcast.internal.nio.IOUtil.compress;
 import static com.hazelcast.internal.nio.IOUtil.copy;
 import static com.hazelcast.internal.nio.IOUtil.copyFile;
+import static com.hazelcast.internal.nio.IOUtil.copyFromHeapBuffer;
 import static com.hazelcast.internal.nio.IOUtil.copyToHeapBuffer;
 import static com.hazelcast.internal.nio.IOUtil.decompress;
 import static com.hazelcast.internal.nio.IOUtil.delete;
@@ -78,6 +79,7 @@ import static com.hazelcast.internal.nio.IOUtil.writeObject;
 import static com.hazelcast.internal.serialization.impl.SerializationUtil.createObjectDataInputStream;
 import static com.hazelcast.internal.serialization.impl.SerializationUtil.createObjectDataOutputStream;
 import static com.hazelcast.internal.util.ExceptionUtil.rethrow;
+import static com.hazelcast.internal.util.JVMUtil.upcast;
 import static java.lang.Integer.min;
 import static java.lang.String.format;
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -687,8 +689,8 @@ public class IOUtilTest extends HazelcastTestSupport {
         ByteBuffer buffer = ByteBuffer.wrap(new byte[SIZE]);
         buffer.put((byte) 0xFF);
         buffer.put((byte) 0xFF);
-        buffer.flip();
-        buffer.position(1);
+        upcast(buffer).flip();
+        upcast(buffer).position(1);
         compactOrClear(buffer);
         assertEquals("Buffer position invalid", 1, buffer.position());
 
@@ -696,6 +698,45 @@ public class IOUtilTest extends HazelcastTestSupport {
         buffer.put((byte) 0xFF);
         compactOrClear(buffer);
         assertEquals("Buffer position invalid", 0, buffer.position());
+    }
+
+    @Test
+    public void testCopyFromHeapBuffer_whenDestinationIsHeapBuffer() {
+        ByteBuffer src = ByteBuffer.wrap(new byte[SIZE]);
+        ByteBuffer dst = ByteBuffer.wrap(new byte[SIZE]);
+
+        assertEquals(SIZE, copyFromHeapBuffer(src, dst));
+    }
+
+    @Test
+    public void testCopyFromHeapBuffer_whenDestinationIsDirectBuffer() {
+        ByteBuffer src = ByteBuffer.wrap(new byte[SIZE]);
+        ByteBuffer dst = ByteBuffer.allocateDirect(SIZE);
+
+        assertEquals(SIZE, copyFromHeapBuffer(src, dst));
+    }
+
+    @Test
+    public void testCopyFromHeapBuffer_whenSourceIsNull() {
+        ByteBuffer dst = ByteBuffer.wrap(new byte[SIZE]);
+
+        assertEquals(0, copyFromHeapBuffer(null, dst));
+    }
+
+    @Test
+    public void testCopyToHeapBuffer_whenSourceIsHeapBuffer() {
+        ByteBuffer src = ByteBuffer.wrap(new byte[SIZE]);
+        ByteBuffer dst = ByteBuffer.wrap(new byte[SIZE]);
+
+        assertEquals(SIZE, copyToHeapBuffer(src, dst));
+    }
+
+    @Test
+    public void testCopyToHeapBuffer_whenSourceIsDirectBuffer() {
+        ByteBuffer src = ByteBuffer.allocateDirect(SIZE);
+        ByteBuffer dst = ByteBuffer.wrap(new byte[SIZE]);
+
+        assertEquals(SIZE, copyToHeapBuffer(src, dst));
     }
 
     @Test

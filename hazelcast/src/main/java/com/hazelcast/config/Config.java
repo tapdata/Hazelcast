@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +30,7 @@ import com.hazelcast.internal.config.ConfigUtils;
 import com.hazelcast.internal.config.DataPersistenceAndHotRestartMerger;
 import com.hazelcast.internal.config.DurableExecutorConfigReadOnly;
 import com.hazelcast.internal.config.ExecutorConfigReadOnly;
+import com.hazelcast.internal.config.ExternalDataStoreConfigReadOnly;
 import com.hazelcast.internal.config.ListConfigReadOnly;
 import com.hazelcast.internal.config.MapConfigReadOnly;
 import com.hazelcast.internal.config.MemberXmlConfigRootTagRecognizer;
@@ -56,6 +57,7 @@ import com.hazelcast.multimap.MultiMap;
 import com.hazelcast.partition.strategy.StringPartitioningStrategy;
 import com.hazelcast.replicatedmap.ReplicatedMap;
 import com.hazelcast.security.jsm.HazelcastRuntimePermission;
+import com.hazelcast.spi.annotation.Beta;
 import com.hazelcast.spi.annotation.PrivateApi;
 import com.hazelcast.topic.ITopic;
 
@@ -65,6 +67,7 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.SequenceInputStream;
 import java.net.URL;
@@ -96,6 +99,9 @@ import static com.hazelcast.partition.strategy.StringPartitioningStrategy.getBas
  * <p>
  * Config instances can be shared between threads, but should not be
  * modified after they are used to create HazelcastInstances.
+ * <p>
+ * Unlike {@code Config} instances obtained via {@link Config#load()} and its variants,
+ * a {@code Config} does not apply overrides found in environment variables/system properties.
  */
 @SuppressWarnings({"checkstyle:methodcount", "checkstyle:classfanoutcomplexity", "checkstyle:classdataabstractioncoupling"})
 public class Config {
@@ -210,6 +216,12 @@ public class Config {
 
     private DynamicConfigurationConfig dynamicConfigurationConfig = new DynamicConfigurationConfig();
 
+    // @since 5.1
+    private IntegrityCheckerConfig integrityCheckerConfig = new IntegrityCheckerConfig();
+
+    // @since 5.2
+    private final Map<String, ExternalDataStoreConfig> externalDataStoreConfigs = new ConcurrentHashMap<>();
+
     public Config() {
     }
 
@@ -237,7 +249,22 @@ public class Config {
         cfg = new ExternalConfigurationOverride().overwriteMemberConfig(cfg);
         PersistenceAndHotRestartPersistenceMerger
                 .merge(cfg.getHotRestartPersistenceConfig(), cfg.getPersistenceConfig());
+        setConfigurationFileFromUrl(cfg);
         return cfg;
+    }
+
+    // configurationFile must be set correctly because dynamic
+    // configuration persistence depends on this field. If this is
+    // absent, hazelcast instance may fail to find a file to persist.
+    private static void setConfigurationFileFromUrl(Config cfg) {
+        if (cfg.getConfigurationFile() == null && cfg.getConfigurationUrl() != null) {
+            File configFile = new File(cfg.getConfigurationUrl().getPath());
+
+            // Only set configurationFile if the config actually exist on the filesystem.
+            if (configFile.exists()) {
+                cfg.setConfigurationFile(configFile);
+            }
+        }
     }
 
     private static Config loadFromFile(Properties properties) {
@@ -319,17 +346,24 @@ public class Config {
         checkTrue(resource != null, "resource can't be null");
         checkTrue(properties != null, "properties can't be null");
 
-        InputStream stream = classLoader.getResourceAsStream(resource);
+        // Below try catch is inlined Classloader#getResourceAsStream() to access URL.
+        InputStream stream;
+        URL url = classLoader.getResource(resource);
+        try {
+            stream = url != null ? url.openStream() : null;
+        } catch (IOException e) {
+            stream = null;
+        }
         checkTrue(stream != null, "Specified resource '" + resource + "' could not be found!");
 
         if (resource.endsWith(".xml")) {
             return applyEnvAndSystemVariableOverrides(
-                    new XmlConfigBuilder(stream).setProperties(properties).build()
+                    new XmlConfigBuilder(stream).setProperties(properties).build().setConfigurationUrl(url)
             );
         }
         if (resource.endsWith(".yaml") || resource.endsWith(".yml")) {
             return applyEnvAndSystemVariableOverrides(
-                    new YamlConfigBuilder(stream).setProperties(properties).build()
+                    new YamlConfigBuilder(stream).setProperties(properties).build().setConfigurationUrl(url)
             );
         }
 
@@ -367,12 +401,12 @@ public class Config {
         InputStream stream = new FileInputStream(configFile);
         if (path.endsWith(".xml")) {
             return applyEnvAndSystemVariableOverrides(
-                    new XmlConfigBuilder(stream).setProperties(properties).build()
+                    new XmlConfigBuilder(stream).setProperties(properties).build().setConfigurationFile(configFile)
             );
         }
         if (path.endsWith(".yaml") || path.endsWith(".yml")) {
             return applyEnvAndSystemVariableOverrides(
-                    new YamlConfigBuilder(stream).setProperties(properties).build()
+                    new YamlConfigBuilder(stream).setProperties(properties).build().setConfigurationFile(configFile)
             );
         }
 
@@ -744,7 +778,9 @@ public class Config {
      * @see #getConfigPatternMatcher()
      */
     public MapConfig getMapConfig(String name) {
-        return ConfigUtils.getConfig(configPatternMatcher, mapConfigs, name, MapConfig.class);
+        MapConfig config = ConfigUtils.getConfig(configPatternMatcher, mapConfigs, name, MapConfig.class);
+        DataPersistenceAndHotRestartMerger.merge(config.getHotRestartConfig(), config.getDataPersistenceConfig());
+        return config;
     }
 
     /**
@@ -2675,6 +2711,23 @@ public class Config {
     }
 
     /**
+     * Returns the device config mapped by the provided device name.
+     *
+     * @param name the device name
+     * @param clazz desired device implementation class
+     * @return device config or {@code null} if absent
+     */
+    @Nullable
+    public <T extends DeviceConfig> T getDeviceConfig(Class<T> clazz, String name) {
+        DeviceConfig deviceConfig = deviceConfigs.get(name);
+        if (deviceConfig == null || clazz.isAssignableFrom(deviceConfig.getClass())) {
+            return (T) deviceConfig;
+        }
+        throw new ClassCastException("there is a deviceConfig with deviceName=" + name
+                + ", however, it is not an instance or a subtype of " + clazz);
+    }
+
+    /**
      * Adds the device configuration.
      *
      * @param deviceConfig device config
@@ -3028,6 +3081,144 @@ public class Config {
     }
 
     /**
+     * Returns the IntegrityChecker config
+     * @since 5.1
+     */
+    @Nonnull
+    public IntegrityCheckerConfig getIntegrityCheckerConfig() {
+        return integrityCheckerConfig;
+    }
+
+    /**
+     * Sets the Integrity Checker config
+     * @since 5.1
+     */
+    @Nonnull
+    public Config setIntegrityCheckerConfig(final IntegrityCheckerConfig integrityCheckerConfig) {
+        this.integrityCheckerConfig = integrityCheckerConfig;
+        return this;
+    }
+
+    /**
+     * Returns the map of external data store configurations, mapped by config name.
+     *
+     * @since 5.2
+     */
+    @Beta
+    public Map<String, ExternalDataStoreConfig> getExternalDataStoreConfigs() {
+        return externalDataStoreConfigs;
+    }
+
+    /**
+     * Sets the map of external data store configurations, mapped by config name.
+     * <p>
+     * <p>
+     * Example configuration: see {@link #addExternalDataStoreConfig(com.hazelcast.config.ExternalDataStoreConfig)}
+     *
+     * @since 5.2
+     */
+    @Beta
+    public Config setExternalDataStoreConfigs(Map<String, ExternalDataStoreConfig> externalDataStoreConfigs) {
+        this.externalDataStoreConfigs.clear();
+        this.externalDataStoreConfigs.putAll(externalDataStoreConfigs);
+        for (Entry<String, ExternalDataStoreConfig> entry : externalDataStoreConfigs.entrySet()) {
+            entry.getValue().setName(entry.getKey());
+        }
+        return this;
+    }
+
+    /**
+     * Adds an external data store configuration.
+     * <p>
+     * <p>
+     * Example:
+     * <pre>{@code
+     *      Config config = new Config();
+     *      Properties properties = new Properties();
+     *      properties.put("jdbcUrl", jdbcUrl);
+     *      properties.put("username", username);
+     *      properties.put("password", password);
+     *      ExternalDataStoreConfig externalDataStoreConfig = new ExternalDataStoreConfig()
+     *              .setName("my-jdbc-data-store")
+     *              .setClassName(JdbcDataStoreFactory.class.getName())
+     *              .setProperties(properties);
+     *      config.addExternalDataStoreConfig(externalDataStoreConfig);
+     * }</pre>
+     *
+     * @since 5.2
+     */
+    @Beta
+    public Config addExternalDataStoreConfig(ExternalDataStoreConfig externalDataStoreConfig) {
+        externalDataStoreConfigs.put(externalDataStoreConfig.getName(), externalDataStoreConfig);
+        return this;
+    }
+
+
+    /**
+     * Returns the external data store configuration for the given name, creating one
+     * if necessary and adding it to the collection of known configurations.
+     * <p>
+     * The configuration is found by matching the configuration name
+     * pattern to the provided {@code name} without the partition qualifier
+     * (the part of the name after {@code '@'}).
+     * If no configuration matches, it will create one by cloning the
+     * {@code "default"} configuration and add it to the configuration
+     * collection.
+     * <p>
+     * This method is intended to easily and fluently create and add
+     * configurations more specific than the default configuration without
+     * explicitly adding it by invoking
+     * {@link #addExternalDataStoreConfig(ExternalDataStoreConfig)}.
+     * <p>
+     * Because it adds new configurations if they are not already present,
+     * this method is intended to be used before this config is used to
+     * create a hazelcast instance. Afterwards, newly added configurations
+     * may be ignored.
+     *
+     * @param name data store name
+     * @return external data store configuration
+     * @throws InvalidConfigurationException if ambiguous configurations are
+     *                                       found
+     * @see StringPartitioningStrategy#getBaseName(java.lang.String)
+     * @see #setConfigPatternMatcher(ConfigPatternMatcher)
+     * @see #getConfigPatternMatcher()
+     * @since 5.2
+     */
+    @Beta
+    public ExternalDataStoreConfig getExternalDataStoreConfig(String name) {
+        return ConfigUtils.getConfig(configPatternMatcher, externalDataStoreConfigs, name, ExternalDataStoreConfig.class);
+    }
+
+    /**
+     * Returns a read-only {@link ExternalDataStoreConfig}
+     * configuration for the given name.
+     * <p>
+     * The name is matched by pattern to the configuration and by stripping the
+     * partition ID qualifier from the given {@code name}.
+     * If there is no config found by the name, it will return the configuration
+     * with the name {@code default}.
+     *
+     * @param name name of the external DataStore
+     * @return the external DataStore configuration
+     * @throws InvalidConfigurationException if ambiguous configurations are
+     *                                       found
+     * @see StringPartitioningStrategy#getBaseName(java.lang.String)
+     * @see #setConfigPatternMatcher(ConfigPatternMatcher)
+     * @see #getConfigPatternMatcher()
+     * @see EvictionConfig#setSize(int)
+     * @since 5.2
+     */
+    @Beta
+    public ExternalDataStoreConfig findExternalDataStoreConfig(String name) {
+        name = getBaseName(name);
+        ExternalDataStoreConfig config = lookupByPattern(configPatternMatcher, externalDataStoreConfigs, name);
+        if (config != null) {
+            return new ExternalDataStoreConfigReadOnly(config);
+        }
+        return new ExternalDataStoreConfigReadOnly(getExternalDataStoreConfig("default"));
+    }
+
+    /**
      * Returns the configuration for the user services managed by this
      * hazelcast instance.
      *
@@ -3089,6 +3280,8 @@ public class Config {
                 + ", auditlogConfig=" + auditlogConfig
                 + ", jetConfig=" + jetConfig
                 + ", deviceConfigs=" + deviceConfigs
+                + ", integrityCheckerConfig=" + integrityCheckerConfig
+                + ", externalDataStoreConfigs=" + externalDataStoreConfigs
                 + '}';
     }
 }

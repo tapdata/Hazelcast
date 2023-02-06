@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,7 +40,7 @@ import javax.annotation.Nonnull;
 import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.Queue;
-import java.util.function.Predicate;
+import java.util.function.Consumer;
 
 import static com.hazelcast.jet.impl.Networking.createStreamPacketHeader;
 import static com.hazelcast.jet.impl.execution.DoneItem.DONE_ITEM;
@@ -49,9 +49,12 @@ import static com.hazelcast.jet.impl.execution.ReceiverTasklet.estimatedMemoryFo
 import static com.hazelcast.jet.impl.util.ExceptionUtil.rethrow;
 import static com.hazelcast.jet.impl.util.Util.uncheckRun;
 
+/**
+ * The tasklet that sends the data associated with a single edge through network.
+ */
 public class SenderTasklet implements Tasklet {
-
-    private static final int BUFFER_SIZE = 1 << 15;
+    private static final int BUFFER_INITIAL_SIZE = 1 << 10;
+    private static final int BUFFER_FIRST_GROWTH_SIZE = 1 << 15;
 
     private final Connection connection;
     private final Queue<Object> inbox = new ArrayDeque<>();
@@ -78,7 +81,7 @@ public class SenderTasklet implements Tasklet {
 
     // Written by HZ networking thread, read by Jet thread
     private volatile int sendSeqLimitCompressed;
-    private final Predicate<Object> addToInboxFunction = inbox::add;
+    private final Consumer<Object> addToInboxFunction = inbox::add;
 
     public SenderTasklet(
             InboundEdgeStream inboundEdgeStream,
@@ -96,7 +99,7 @@ public class SenderTasklet implements Tasklet {
         this.packetSizeLimit = packetSizeLimit;
         // we use Connection directly because we rely on packets not being transparently skipped or reordered
         this.connection = connection;
-        this.outputBuffer = serializationService.createObjectDataOutput(BUFFER_SIZE);
+        this.outputBuffer = serializationService.createObjectDataOutput(BUFFER_INITIAL_SIZE, BUFFER_FIRST_GROWTH_SIZE);
         uncheckRun(() -> outputBuffer.write(createStreamPacketHeader(nodeEngine,
                 executionId, destinationVertexId, inboundEdgeStream.ordinal())));
         bufPosPastHeader = outputBuffer.position();

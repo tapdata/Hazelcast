@@ -78,12 +78,16 @@ public class SqlAvroTest extends SqlTestSupport {
         initialize(1, null);
         sqlService = instance().getSql();
 
-        kafkaTestSupport = new KafkaTestSupport();
+        kafkaTestSupport = KafkaTestSupport.create();
         kafkaTestSupport.createKafkaCluster();
 
         Properties properties = new Properties();
         properties.put("listeners", "http://0.0.0.0:0");
-        properties.put("kafkastore.connection.url", kafkaTestSupport.getZookeeperConnectionString());
+        properties.put(SchemaRegistryConfig.KAFKASTORE_BOOTSTRAP_SERVERS_CONFIG, kafkaTestSupport.getBrokerConnectionString());
+        //When Kafka is under load the schema registry may give
+        //io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException: Register operation timed out; error code: 50002
+        //Because the default timeout is 500 ms. Use a bigger timeout value to avoid it
+        properties.put(SchemaRegistryConfig.KAFKASTORE_TIMEOUT_CONFIG, "5000");
         SchemaRegistryConfig config = new SchemaRegistryConfig(properties);
         SchemaRegistryRestApplication schemaRegistryApplication = new SchemaRegistryRestApplication(config);
         schemaRegistry = schemaRegistryApplication.createServer();
@@ -92,8 +96,12 @@ public class SqlAvroTest extends SqlTestSupport {
 
     @AfterClass
     public static void tearDownClass() throws Exception {
-        schemaRegistry.stop();
-        kafkaTestSupport.shutdownKafkaCluster();
+        if (schemaRegistry != null) {
+            schemaRegistry.stop();
+        }
+        if (kafkaTestSupport != null) {
+            kafkaTestSupport.shutdownKafkaCluster();
+        }
     }
 
     @Test

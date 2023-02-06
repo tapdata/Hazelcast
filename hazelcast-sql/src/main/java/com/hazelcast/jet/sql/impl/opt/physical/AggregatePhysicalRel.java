@@ -21,6 +21,7 @@ import com.hazelcast.jet.core.Vertex;
 import com.hazelcast.jet.sql.impl.opt.OptUtils;
 import com.hazelcast.sql.impl.QueryParameterMetadata;
 import com.hazelcast.sql.impl.plan.node.PlanNodeSchema;
+import com.hazelcast.sql.impl.row.JetSqlRow;
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelTraitSet;
 import org.apache.calcite.rel.RelNode;
@@ -33,7 +34,7 @@ import java.util.List;
 
 public class AggregatePhysicalRel extends Aggregate implements PhysicalRel {
 
-    private final AggregateOperation<?, Object[]> aggrOp;
+    private final AggregateOperation<?, JetSqlRow> aggrOp;
 
     AggregatePhysicalRel(
             RelOptCluster cluster,
@@ -42,14 +43,14 @@ public class AggregatePhysicalRel extends Aggregate implements PhysicalRel {
             ImmutableBitSet groupSet,
             List<ImmutableBitSet> groupSets,
             List<AggregateCall> aggCalls,
-            AggregateOperation<?, Object[]> aggrOp
+            AggregateOperation<?, JetSqlRow> aggrOp
     ) {
         super(cluster, traits, new ArrayList<>(), input, groupSet, groupSets, aggCalls);
 
         this.aggrOp = aggrOp;
     }
 
-    public AggregateOperation<?, Object[]> aggrOp() {
+    public AggregateOperation<?, JetSqlRow> aggrOp() {
         return aggrOp;
     }
 

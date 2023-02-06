@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,7 +38,6 @@ import com.hazelcast.spi.impl.operationservice.OperationControl;
 import com.hazelcast.spi.impl.servicemanager.ServiceManager;
 import com.hazelcast.spi.properties.HazelcastProperties;
 
-import java.util.Map.Entry;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -194,7 +193,7 @@ public class InvocationMonitor implements Consumer<Packet>, StaticMetricsProvide
         // Member list version at the time of member removal. Since version is read after member removal,
         // this is guaranteed to be greater than version in invocations whose target was left member.
         int memberListVersion = nodeEngine.getClusterService().getMemberListVersion();
-        // postpone notifying invocations since real response may arrive in the mean time.
+        // postpone notifying invocations since real response may arrive in the meantime.
         scheduler.execute(new OnMemberLeftTask(member, memberListVersion));
     }
 
@@ -318,16 +317,18 @@ public class InvocationMonitor implements Consumer<Packet>, StaticMetricsProvide
 
             int backupTimeouts = 0;
             int normalTimeouts = 0;
+            int memberLeft = 0;
             int invocationCount = 0;
 
-            for (Entry<Long, Invocation> e : invocationRegistry.entrySet()) {
+            for (Invocation inv : invocationRegistry) {
                 invocationCount++;
-                Invocation inv = e.getValue();
                 try {
                     if (inv.detectAndHandleTimeout(invocationTimeoutMillis)) {
                         normalTimeouts++;
                     } else if (inv.detectAndHandleBackupTimeout(backupTimeoutMillis)) {
                         backupTimeouts++;
+                    } else if (inv.detectAndHandleLeftMember()) {
+                        memberLeft++;
                     }
                 } catch (Throwable t) {
                     inspectOutOfMemoryError(t);
@@ -337,10 +338,10 @@ public class InvocationMonitor implements Consumer<Packet>, StaticMetricsProvide
 
             backupTimeoutsCount.inc(backupTimeouts);
             normalTimeoutsCount.inc(normalTimeouts);
-            log(invocationCount, backupTimeouts, normalTimeouts);
+            log(invocationCount, backupTimeouts, normalTimeouts, memberLeft);
         }
 
-        private void log(int invocationCount, int backupTimeouts, int invocationTimeouts) {
+        private void log(int invocationCount, int backupTimeouts, int invocationTimeouts, int memberLeft) {
             Level logLevel = null;
             if (backupTimeouts > 0 || invocationTimeouts > 0) {
                 logLevel = INFO;
@@ -351,7 +352,8 @@ public class InvocationMonitor implements Consumer<Packet>, StaticMetricsProvide
             if (logLevel != null) {
                 logger.log(logLevel, "Invocations:" + invocationCount
                         + " timeouts:" + invocationTimeouts
-                        + " backup-timeouts:" + backupTimeouts);
+                        + " backup-timeouts:" + backupTimeouts
+                        + " member-left: " + memberLeft);
             }
         }
     }

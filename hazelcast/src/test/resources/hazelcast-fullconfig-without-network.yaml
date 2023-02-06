@@ -1,4 +1,4 @@
-# Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+# Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -301,6 +301,7 @@ hazelcast:
         write-delay-seconds: 0
         write-batch-size: 1
         write-coalescing: true
+        offload: false
         properties:
           dummy.property: value
 
@@ -352,6 +353,17 @@ hazelcast:
           bitmap-index-options:
             unique-key: id
             unique-key-transformation: RAW
+        - type: SORTED
+          attributes:
+            - "age"
+          btree-index:
+            page-size:
+              value: 16
+              unit: KILOBYTES
+            memory-tier:
+              capacity:
+                value: 3000
+                unit: GIGABYTES
 
       attributes:
         currency:
@@ -382,6 +394,7 @@ hazelcast:
           in-memory-format: BINARY
           coalesce: false
           populate: true
+          serialize-keys: false
           eviction:
             eviction-policy: LRU
             max-size-policy: ENTRY_COUNT
@@ -395,10 +408,12 @@ hazelcast:
       tiered-store:
         enabled: true
         memory-tier:
-          capacity: "1 GB"
+          capacity:
+            unit: MEGABYTES
+            value: 256
         disk-tier:
           enabled: true
-          device-name: my-local-device
+          device-name: default-tiered-store-device
 
   multimap:
     default:
@@ -603,12 +618,10 @@ hazelcast:
           - "["
           - com.
     compact-serialization:
-      enabled: true
-      registered-classes:
+      serializers:
+        - serializer: com.hazelcast.examples.DummyTypeSerializer
+      classes:
         - class: com.hazelcast.examples.DummyType
-        - class: com.hazelcast.examples.DummyTypeWithSerializer
-          type-name: dummy
-          serializer: com.hazelcast.examples.DummyTypeSerializer
 
   native-memory:
     allocator-type: STANDARD
@@ -936,12 +949,11 @@ hazelcast:
 
   dynamic-configuration:
     persistence-enabled: true
-    persistence-file: /mnt/persistence-file
     backup-dir: /mnt/backup-dir
     backup-count: 7
 
   local-device:
-    my-local-device:
+    default-tiered-store-device:
       base-dir: base-dir
       block-size: 4096
       read-io-thread-count: 4
@@ -960,6 +972,7 @@ hazelcast:
     persistence-enabled: false
     base-dir: data
     data-load-timeout-seconds: 30
+    cp-member-priority: -1
     raft-algorithm:
       leader-election-timeout-in-millis: 2000
       leader-heartbeat-period-in-millis: 5000
@@ -1001,3 +1014,10 @@ hazelcast:
 
   sql:
     statement-timeout-millis: 0
+
+  external-data-store:
+    mysql-database:
+      class-name: com.hazelcast.datastore.JdbcDataStoreFactory
+      properties:
+        jdbcUrl: jdbc:mysql://dummy:3306
+      shared: false

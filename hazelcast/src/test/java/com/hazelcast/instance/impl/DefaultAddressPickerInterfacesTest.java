@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,8 @@ package com.hazelcast.instance.impl;
 
 import com.hazelcast.config.Config;
 import com.hazelcast.instance.AddressPicker;
-import com.hazelcast.instance.impl.DefaultAddressPicker.NetworkInterfaceInfo;
+import com.hazelcast.internal.util.DummyNetworkInterfacesEnumerator;
+import com.hazelcast.internal.util.NetworkInterfaceInfo;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.logging.Logger;
 import com.hazelcast.spi.properties.ClusterProperty;
@@ -33,10 +34,10 @@ import org.junit.runner.RunWith;
 
 import java.net.InetAddress;
 
-import static com.hazelcast.instance.impl.DefaultAddressPicker.NetworkInterfaceInfo.builder;
 import static com.hazelcast.instance.impl.DefaultAddressPicker.PREFER_IPV4_STACK;
 import static com.hazelcast.instance.impl.DefaultAddressPicker.PREFER_IPV6_ADDRESSES;
 import static com.hazelcast.instance.impl.TestUtil.setSystemProperty;
+import static com.hazelcast.internal.util.NetworkInterfaceInfo.builder;
 import static com.hazelcast.test.OverridePropertyRule.clear;
 import static com.hazelcast.test.OverridePropertyRule.set;
 import static org.hamcrest.CoreMatchers.anyOf;

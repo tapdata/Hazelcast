@@ -29,8 +29,12 @@ import com.hazelcast.map.IMap;
 import com.hazelcast.map.impl.MapService;
 import com.hazelcast.map.impl.MapServiceContext;
 import com.hazelcast.map.impl.record.Record;
-import com.hazelcast.nio.serialization.GenericRecord;
-import com.hazelcast.nio.serialization.GenericRecordBuilder;
+import com.hazelcast.nio.serialization.FieldKind;
+import com.hazelcast.nio.serialization.compact.CompactReader;
+import com.hazelcast.nio.serialization.compact.CompactSerializer;
+import com.hazelcast.nio.serialization.compact.CompactWriter;
+import com.hazelcast.nio.serialization.genericrecord.GenericRecord;
+import com.hazelcast.nio.serialization.genericrecord.GenericRecordBuilder;
 import com.hazelcast.spi.impl.NodeEngine;
 import com.hazelcast.sql.HazelcastSqlException;
 import com.hazelcast.sql.SqlRow;
@@ -38,6 +42,7 @@ import com.hazelcast.sql.SqlService;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
+import javax.annotation.Nonnull;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -72,6 +77,7 @@ import static org.junit.Assert.assertFalse;
 public class SqlCompactTest extends SqlTestSupport {
 
     private static SqlService sqlService;
+    private static SqlService clientSqlService;
 
     private static final String PERSON_ID_TYPE_NAME = "personId";
     private static final String PERSON_TYPE_NAME = "person";
@@ -85,29 +91,43 @@ public class SqlCompactTest extends SqlTestSupport {
         config.getJetConfig().setEnabled(true);
         CompactSerializationConfig compactSerializationConfig =
                 config.getSerializationConfig().getCompactSerializationConfig();
-        compactSerializationConfig.setEnabled(true);
-//        Left commented deliberately. See https://github.com/hazelcast/hazelcast/issues/19427
-//        // registering this class to the member to see it does not affect any of the tests.
-//        // It has a different schema than all the tests
-//        compactSerializationConfig.register(Person.class, PERSON_TYPE_NAME, new CompactSerializer<Person>() {
-//            @Nonnull
-//            @Override
-//            public Person read(@Nonnull CompactReader in) {
-//                Person person = new Person();
-//                person.surname = in.readString("surname", "NotAssigned");
-//                return person;
-//            }
-//
-//            @Override
-//            public void write(@Nonnull CompactWriter out, @Nonnull Person person) {
-//                out.writeString("surname", person.surname);
-//            }
-//        });
+        // registering this class to the member to see it does not affect any of the tests.
+        // It has a different schema than all the tests
+        compactSerializationConfig.addSerializer(new CompactSerializer<Person>() {
+            @Nonnull
+            @Override
+            public Person read(@Nonnull CompactReader reader) {
+                Person person = new Person();
+                if (reader.getFieldKind("surname") == FieldKind.STRING) {
+                    person.surname = reader.readString("surname");
+                } else {
+                    person.surname = "NotAssigned";
+                }
+                return person;
+            }
+
+            @Override
+            public void write(@Nonnull CompactWriter writer, @Nonnull Person person) {
+                writer.writeString("surname", person.surname);
+            }
+
+            @Nonnull
+            @Override
+            public String getTypeName() {
+                return PERSON_TYPE_NAME;
+            }
+
+            @Nonnull
+            @Override
+            public Class<Person> getCompactClass() {
+                return Person.class;
+            }
+        });
 
         ClientConfig clientConfig = new ClientConfig();
-        clientConfig.getSerializationConfig().getCompactSerializationConfig().setEnabled(true);
         initializeWithClient(1, config, clientConfig);
         sqlService = instance().getSql();
+        clientSqlService = client().getSql();
 
         serializationService = Util.getSerializationService(instance());
     }
@@ -129,7 +149,6 @@ public class SqlCompactTest extends SqlTestSupport {
         ).updateCount()).hasMessageContaining("Cannot derive Compact type for 'OBJECT'");
     }
 
-
     public static class Primitives {
         boolean b;
         byte bt;
@@ -139,9 +158,7 @@ public class SqlCompactTest extends SqlTestSupport {
         float f;
         double d;
 
-        public Primitives() {
-
-        }
+        public Primitives() { }
 
         public Primitives(boolean b, byte bt, short s, int i, long l, float f, double d) {
             this.b = b;
@@ -152,8 +169,6 @@ public class SqlCompactTest extends SqlTestSupport {
             this.f = f;
             this.d = d;
         }
-
-
     }
 
     @Test
@@ -541,9 +556,9 @@ public class SqlCompactTest extends SqlTestSupport {
                 sqlService.execute("SINK INTO " + mapName + "(__key, this) VALUES(1, null)").iterator().next())
                 .hasMessageContaining("Writing to top-level fields of type OBJECT not supported");
 
-        sqlService.execute("SINK INTO " + mapName + " VALUES (1, 'foo')");
+        clientSqlService.execute("SINK INTO " + mapName + " VALUES (1, 'foo')");
 
-        Iterator<SqlRow> resultIter = sqlService.execute("SELECT __key, this, name FROM " + mapName).iterator();
+        Iterator<SqlRow> resultIter = clientSqlService.execute("SELECT __key, this, name FROM " + mapName).iterator();
         SqlRow row = resultIter.next();
         assertEquals(1, (int) row.getObject(0));
         assertInstanceOf(GenericRecord.class, row.getObject(1));
@@ -566,9 +581,9 @@ public class SqlCompactTest extends SqlTestSupport {
                 + ", '" + OPTION_VALUE_COMPACT_TYPE_NAME + "'='" + PERSON_TYPE_NAME + '\''
                 + ")"
         );
-        sqlService.execute("SINK INTO " + name + " (id, name) VALUES (1, 'Alice')");
+        clientSqlService.execute("SINK INTO " + name + " (id, name) VALUES (1, 'Alice')");
 
-        Iterator<SqlRow> rowIterator = sqlService.execute("SELECT __key, this FROM " + name).iterator();
+        Iterator<SqlRow> rowIterator = clientSqlService.execute("SELECT __key, this FROM " + name).iterator();
         SqlRow row = rowIterator.next();
         assertFalse(rowIterator.hasNext());
 

@@ -49,6 +49,7 @@ import com.hazelcast.sql.impl.exec.scan.MapIndexScanMetadata;
 import com.hazelcast.sql.impl.exec.scan.MapScanRow;
 import com.hazelcast.sql.impl.exec.scan.index.IndexFilter;
 import com.hazelcast.sql.impl.expression.ExpressionEvalContext;
+import com.hazelcast.sql.impl.row.JetSqlRow;
 
 import javax.annotation.Nonnull;
 import java.io.IOException;
@@ -63,10 +64,12 @@ import java.util.concurrent.ExecutionException;
 import java.util.stream.IntStream;
 
 import static com.hazelcast.jet.impl.util.Util.getNodeEngine;
+import static com.hazelcast.query.impl.getters.GetterCache.SIMPLE_GETTER_CACHE_SUPPLIER;
 import static com.hazelcast.security.permission.ActionConstants.ACTION_CREATE;
 import static com.hazelcast.security.permission.ActionConstants.ACTION_READ;
 import static java.util.Collections.emptyList;
 import static java.util.Collections.singletonList;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.stream.Collectors.toList;
 
 /**
@@ -90,6 +93,8 @@ import static java.util.stream.Collectors.toList;
  */
 final class MapIndexScanP extends AbstractProcessor {
 
+    private static final long DELAY_AFTER_MISSING_PARTITION = MILLISECONDS.toNanos(100);
+
     private final MapIndexScanMetadata metadata;
 
     private HazelcastInstance hazelcastInstance;
@@ -98,7 +103,7 @@ final class MapIndexScanP extends AbstractProcessor {
 
     private final ArrayList<Split> splits = new ArrayList<>();
     private MapScanRow row;
-    private Object[] pendingItem;
+    private JetSqlRow pendingItem;
     private boolean isIndexSorted;
 
     private MapIndexScanP(@Nonnull MapIndexScanMetadata indexScanMetadata) {
@@ -123,7 +128,9 @@ final class MapIndexScanP extends AbstractProcessor {
                 metadata.getValueDescriptor(),
                 metadata.getFieldPaths(),
                 metadata.getFieldTypes(),
-                Extractors.newBuilder(evalContext.getSerializationService()).build(),
+                Extractors.newBuilder(evalContext.getSerializationService())
+                        .setGetterCacheSupplier(SIMPLE_GETTER_CACHE_SUPPLIER)
+                        .build(),
                 evalContext.getSerializationService()
         );
         isIndexSorted = metadata.getComparator() != null;
@@ -155,7 +162,7 @@ final class MapIndexScanP extends AbstractProcessor {
                 pendingItem = null;
             }
 
-            Object[] extreme = null;
+            JetSqlRow extreme = null;
             int extremeIndex = -1;
             for (int i = 0; i < splits.size(); ++i) {
                 Split split = splits.get(i);
@@ -193,7 +200,9 @@ final class MapIndexScanP extends AbstractProcessor {
     }
 
     private boolean runHashIndex() {
-        for (; ; ) {
+        boolean allIdle;
+        do {
+            allIdle = true;
             for (int i = 0; i < splits.size(); ++i) {
                 Split split = splits.get(i);
                 try {
@@ -212,6 +221,7 @@ final class MapIndexScanP extends AbstractProcessor {
                         }
                     }
                 } else {
+                    allIdle = false;
                     if (tryEmit(split.currentRow)) {
                         split.remove();
                     } else {
@@ -219,7 +229,9 @@ final class MapIndexScanP extends AbstractProcessor {
                     }
                 }
             }
-        }
+        } while (!allIdle);
+
+        return false;
     }
 
     /**
@@ -256,7 +268,15 @@ final class MapIndexScanP extends AbstractProcessor {
             ).partitions.add(partitionId);
         }
 
-        return new ArrayList<>(newSplits.values());
+        ArrayList<Split> res = new ArrayList<>(newSplits.values());
+        // if the resulting split is the same as the input split, postpone retrying it
+        if (res.size() == 1) {
+            Split newSplit = res.get(0);
+            if (newSplit.owner.equals(split.owner) && newSplit.partitions.equals(split.partitions)) {
+                newSplit.postponeUntil(System.nanoTime() + DELAY_AFTER_MISSING_PARTITION);
+            }
+        }
+        return res;
     }
 
     /**
@@ -268,9 +288,10 @@ final class MapIndexScanP extends AbstractProcessor {
         private final Address owner;
         private IndexIterationPointer[] pointers;
         private List<QueryableEntry<?, ?>> currentBatch = emptyList();
-        private Object[] currentRow;
+        private JetSqlRow currentRow;
         private int currentBatchPosition;
         private CompletableFuture<MapFetchIndexOperationResult> future;
+        private long postponeUntil = Long.MIN_VALUE;
 
         private Split(PartitionIdSet partitions, Address owner, IndexIterationPointer[] pointers) {
             this.partitions = partitions;
@@ -280,12 +301,24 @@ final class MapIndexScanP extends AbstractProcessor {
             this.future = null;
         }
 
+        private void postponeUntil(long postponeUntil) {
+            this.postponeUntil = postponeUntil;
+        }
+
         /**
          * After this call, {@link #currentRow} will return the next entry to emit.
          * They are set to null, if there's no row available
          * because we're either done or waiting for more data.
          */
         private void peek() {
+            if (postponeUntil > Long.MIN_VALUE) {
+                if (System.nanoTime() < postponeUntil) {
+                    return;
+                } else {
+                    postponeUntil = Long.MIN_VALUE;
+                }
+            }
+
             // start a new async call, if we're not done and one isn't in flight
             if (future == null && pointers.length > 0) {
                 future = reader.readBatch(owner, partitions, pointers);
@@ -345,7 +378,7 @@ final class MapIndexScanP extends AbstractProcessor {
             return null;
         }
 
-        private Object[] projectAndFilter(@Nonnull QueryableEntry<?, ?> entry) {
+        private JetSqlRow projectAndFilter(@Nonnull QueryableEntry<?, ?> entry) {
             row.setKeyValue(
                     entry.getKeyIfPresent(), entry.getKeyDataIfPresent(),
                     entry.getValueIfPresent(), entry.getValueDataIfPresent()
@@ -360,6 +393,15 @@ final class MapIndexScanP extends AbstractProcessor {
 
         private boolean done() {
             return currentBatchPosition == currentBatch.size() && pointers.length == 0;
+        }
+
+        @Override
+        public String toString() {
+            return "Split{" +
+                    "partitions=" + partitions +
+                    ", owner=" + owner +
+                    ", hash=" + System.identityHashCode(this) +
+                    '}';
         }
     }
 

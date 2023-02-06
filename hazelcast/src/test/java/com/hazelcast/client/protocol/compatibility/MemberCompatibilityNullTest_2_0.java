@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -6470,6 +6470,7 @@ public class MemberCompatibilityNullTest_2_0 {
         assertTrue(isEqual(aString, parameters.mergePolicy));
         assertTrue(isEqual(anInt, parameters.mergeBatchSize));
         assertFalse(parameters.isStatisticsEnabledExists);
+        assertFalse(parameters.isCapacityPolicyExists);
     }
 
     @Test
@@ -6540,6 +6541,8 @@ public class MemberCompatibilityNullTest_2_0 {
         assertTrue(isEqual(null, parameters.merkleTreeConfig));
         assertTrue(isEqual(anInt, parameters.metadataPolicy));
         assertFalse(parameters.isPerEntryStatsEnabledExists);
+        assertFalse(parameters.isDataPersistenceConfigExists);
+        assertFalse(parameters.isTieredStoreConfigExists);
     }
 
     @Test
@@ -6603,6 +6606,7 @@ public class MemberCompatibilityNullTest_2_0 {
         assertTrue(isEqual(null, parameters.eventJournalConfig));
         assertTrue(isEqual(null, parameters.hotRestartConfig));
         assertFalse(parameters.isMerkleTreeConfigExists);
+        assertFalse(parameters.isDataPersistenceConfigExists);
     }
 
     @Test
@@ -6867,7 +6871,7 @@ public class MemberCompatibilityNullTest_2_0 {
     @Test
     public void test_MCGetMapConfigCodec_encodeResponse() {
         int fileClientMessageIndex = 764;
-        ClientMessage encoded = MCGetMapConfigCodec.encodeResponse(anInt, anInt, anInt, anInt, anInt, anInt, anInt, aBoolean, anInt, aString);
+        ClientMessage encoded = MCGetMapConfigCodec.encodeResponse(anInt, anInt, anInt, anInt, anInt, anInt, anInt, aBoolean, anInt, aString, aListOfIndexConfigs);
         ClientMessage fromFile = clientMessages.get(fileClientMessageIndex);
         compareClientMessages(fromFile, encoded);
     }
@@ -7028,7 +7032,7 @@ public class MemberCompatibilityNullTest_2_0 {
     @Test
     public void test_MCGetClusterMetadataCodec_encodeResponse() {
         int fileClientMessageIndex = 786;
-        ClientMessage encoded = MCGetClusterMetadataCodec.encodeResponse(aByte, aString, null, aLong);
+        ClientMessage encoded = MCGetClusterMetadataCodec.encodeResponse(aByte, aString, null, aLong, aUUID);
         ClientMessage fromFile = clientMessages.get(fileClientMessageIndex);
         compareClientMessages(fromFile, encoded);
     }
@@ -7420,7 +7424,9 @@ public class MemberCompatibilityNullTest_2_0 {
     public void test_JetGetJobConfigCodec_decodeRequest() {
         int fileClientMessageIndex = 835;
         ClientMessage fromFile = clientMessages.get(fileClientMessageIndex);
-        assertTrue(isEqual(aLong, JetGetJobConfigCodec.decodeRequest(fromFile)));
+        JetGetJobConfigCodec.RequestParameters parameters = JetGetJobConfigCodec.decodeRequest(fromFile);
+        assertTrue(isEqual(aLong, parameters.jobId));
+        assertFalse(parameters.isLightJobCoordinatorExists);
     }
 
     @Test

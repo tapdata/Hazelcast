@@ -48,6 +48,7 @@ import com.hazelcast.sql.impl.exec.scan.index.IndexFilter;
 import com.hazelcast.sql.impl.expression.Expression;
 import com.hazelcast.sql.impl.expression.ExpressionEvalContext;
 import com.hazelcast.sql.impl.extract.QueryPath;
+import com.hazelcast.sql.impl.row.JetSqlRow;
 import com.hazelcast.sql.impl.schema.ConstantTableStatistics;
 import com.hazelcast.sql.impl.schema.MappingField;
 import com.hazelcast.sql.impl.schema.Table;
@@ -82,7 +83,7 @@ public class IMapSqlConnector implements SqlConnector {
     public static final String TYPE_NAME = "IMap";
     public static final List<String> PRIMARY_KEY_LIST = singletonList(QueryPath.KEY);
 
-    private static final KvMetadataResolvers METADATA_RESOLVERS = new KvMetadataResolvers(
+    private static final KvMetadataResolvers METADATA_RESOLVERS_WITH_COMPACT = new KvMetadataResolvers(
             KvMetadataJavaResolver.INSTANCE,
             MetadataPortableResolver.INSTANCE,
             MetadataCompactResolver.INSTANCE,
@@ -104,9 +105,10 @@ public class IMapSqlConnector implements SqlConnector {
     public List<MappingField> resolveAndValidateFields(
             @Nonnull NodeEngine nodeEngine,
             @Nonnull Map<String, String> options,
-            @Nonnull List<MappingField> userFields
+            @Nonnull List<MappingField> userFields,
+            @Nonnull String externalName
     ) {
-        return METADATA_RESOLVERS.resolveAndValidateFields(userFields, options, nodeEngine);
+        return METADATA_RESOLVERS_WITH_COMPACT.resolveAndValidateFields(userFields, options, nodeEngine);
     }
 
     @Nonnull
@@ -121,8 +123,17 @@ public class IMapSqlConnector implements SqlConnector {
     ) {
         InternalSerializationService ss = (InternalSerializationService) nodeEngine.getSerializationService();
 
-        KvMetadata keyMetadata = METADATA_RESOLVERS.resolveMetadata(true, resolvedFields, options, ss);
-        KvMetadata valueMetadata = METADATA_RESOLVERS.resolveMetadata(false, resolvedFields, options, ss);
+        KvMetadata keyMetadata = METADATA_RESOLVERS_WITH_COMPACT.resolveMetadata(
+                true,
+                resolvedFields,
+                options, ss
+        );
+        KvMetadata valueMetadata = METADATA_RESOLVERS_WITH_COMPACT.resolveMetadata(
+                false,
+                resolvedFields,
+                options,
+                ss
+        );
         List<TableField> fields = concat(keyMetadata.getFields().stream(), valueMetadata.getFields().stream())
                 .collect(toList());
 
@@ -158,7 +169,7 @@ public class IMapSqlConnector implements SqlConnector {
             @Nonnull Table table0,
             @Nullable Expression<Boolean> filter,
             @Nonnull List<Expression<?>> projection,
-            @Nullable FunctionEx<ExpressionEvalContext, EventTimePolicy<Object[]>> eventTimePolicyProvider
+            @Nullable FunctionEx<ExpressionEvalContext, EventTimePolicy<JetSqlRow>> eventTimePolicyProvider
     ) {
         if (eventTimePolicyProvider != null) {
             throw QueryException.error("Ordering functions are not supported on top of " + TYPE_NAME + " mappings");
@@ -197,7 +208,7 @@ public class IMapSqlConnector implements SqlConnector {
             @Nullable Expression<Boolean> remainingFilter,
             @Nonnull List<Expression<?>> projection,
             @Nullable IndexFilter indexFilter,
-            @Nullable ComparatorEx<Object[]> comparator,
+            @Nullable ComparatorEx<JetSqlRow> comparator,
             boolean descending
     ) {
         PartitionedMapTable table = (PartitionedMapTable) table0;
@@ -344,9 +355,9 @@ public class IMapSqlConnector implements SqlConnector {
         return dag.newUniqueVertex(
                 toString(table),
                 // TODO do a simpler, specialized deleting-only processor
-                updateMapP(table.getMapName(), (FunctionEx<Object[], Object>) row -> {
-                    assert row.length == 1;
-                    return row[0];
+                updateMapP(table.getMapName(), (FunctionEx<JetSqlRow, Object>) row -> {
+                    assert row.getFieldCount() == 1;
+                    return row.get(0);
                 }, (v, t) -> null));
     }
 

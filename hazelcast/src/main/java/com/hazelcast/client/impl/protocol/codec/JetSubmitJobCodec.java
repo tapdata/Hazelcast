@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,7 +35,7 @@ import static com.hazelcast.client.impl.protocol.codec.builtin.FixedSizeTypesCod
 
 /**
  */
-@Generated("4fc1c9713fa6c63a9be779cc5b9f04fe")
+@Generated("0fbc699a96838a9ed9e4881cd2f9f236")
 public final class JetSubmitJobCodec {
     //hex: 0xFE0100
     public static final int REQUEST_MESSAGE_TYPE = 16646400;
@@ -77,6 +77,7 @@ public final class JetSubmitJobCodec {
 
     public static ClientMessage encodeRequest(long jobId, com.hazelcast.internal.serialization.Data dag, @Nullable com.hazelcast.internal.serialization.Data jobConfig, @Nullable java.util.UUID lightJobCoordinator) {
         ClientMessage clientMessage = ClientMessage.createForEncode();
+        clientMessage.setContainsSerializedDataInRequest(true);
         clientMessage.setRetryable(false);
         clientMessage.setOperationName("Jet.SubmitJob");
         ClientMessage.Frame initialFrame = new ClientMessage.Frame(new byte[REQUEST_INITIAL_FRAME_SIZE], UNFRAGMENTED_MESSAGE);

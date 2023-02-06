@@ -30,7 +30,7 @@
     <parent>
         <groupId>com.hazelcast</groupId>
         <artifactId>hazelcast-root</artifactId>
-        <version>5.1-BETA-1-SNAPSHOT</version>
+        <version>5.2.2-SNAPSHOT</version>
     </parent>
 
     <modules>
@@ -39,7 +39,6 @@
         <module>cdc-mysql</module>
         <module>cdc-postgres</module>
         <module>csv</module>
-        <module>elasticsearch/elasticsearch-5</module>
         <module>elasticsearch/elasticsearch-6</module>
         <module>elasticsearch/elasticsearch-7</module>
         <module>hadoop</module>
@@ -47,6 +46,7 @@
         <module>hazelcast-3-connector</module>
         <module>kafka</module>
         <module>kinesis</module>
+        <module>mapstore</module>
         <module>s3</module>
     </modules>
 

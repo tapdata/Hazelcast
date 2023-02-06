@@ -24,7 +24,6 @@ import com.hazelcast.internal.serialization.impl.compact.CompactTestUtil;
 import com.hazelcast.internal.serialization.impl.portable.PortableGenericRecordBuilder;
 import com.hazelcast.nio.serialization.ClassDefinition;
 import com.hazelcast.nio.serialization.ClassDefinitionBuilder;
-import com.hazelcast.nio.serialization.GenericRecordBuilder;
 import com.hazelcast.nio.serialization.Portable;
 import com.hazelcast.nio.serialization.PortableReader;
 import com.hazelcast.nio.serialization.PortableWriter;
@@ -32,6 +31,7 @@ import com.hazelcast.nio.serialization.VersionedPortable;
 import com.hazelcast.nio.serialization.compact.CompactReader;
 import com.hazelcast.nio.serialization.compact.CompactSerializer;
 import com.hazelcast.nio.serialization.compact.CompactWriter;
+import com.hazelcast.nio.serialization.genericrecord.GenericRecordBuilder;
 import com.hazelcast.sql.impl.schema.MappingField;
 import com.hazelcast.sql.impl.type.QueryDataType;
 import com.hazelcast.test.HazelcastParallelParametersRunnerFactory;
@@ -157,8 +157,8 @@ public class SampleMetadataResolverTest {
     @Test
     public void test_compact() {
         SerializationConfig serializationConfig = new SerializationConfig();
-        serializationConfig.getCompactSerializationConfig().setEnabled(true)
-                .register(CompactClass.class, "class-name", new CompactClass.CompactClassSerializer());
+        serializationConfig.getCompactSerializationConfig()
+                .addSerializer(new CompactClass.CompactClassSerializer());
         InternalSerializationService ss = new DefaultSerializationServiceBuilder()
                 .setSchemaService(CompactTestUtil.createInMemorySchemaService())
                 .setConfig(serializationConfig)
@@ -170,7 +170,7 @@ public class SampleMetadataResolverTest {
         );
         assertThat(metadata.options()).containsExactly(
                 entry(key ? OPTION_KEY_FORMAT : OPTION_VALUE_FORMAT, COMPACT_FORMAT),
-                entry(key ? OPTION_KEY_COMPACT_TYPE_NAME : OPTION_VALUE_COMPACT_TYPE_NAME, "class-name")
+                entry(key ? OPTION_KEY_COMPACT_TYPE_NAME : OPTION_VALUE_COMPACT_TYPE_NAME, "type-name")
         );
 
         metadata = SampleMetadataResolver.resolve(ss, ss.toData(new CompactClass(1)), key);
@@ -179,35 +179,34 @@ public class SampleMetadataResolverTest {
         );
         assertThat(metadata.options()).containsExactly(
                 entry(key ? OPTION_KEY_FORMAT : OPTION_VALUE_FORMAT, COMPACT_FORMAT),
-                entry(key ? OPTION_KEY_COMPACT_TYPE_NAME : OPTION_VALUE_COMPACT_TYPE_NAME, "class-name")
+                entry(key ? OPTION_KEY_COMPACT_TYPE_NAME : OPTION_VALUE_COMPACT_TYPE_NAME, "type-name")
         );
     }
 
     @Test
     public void test_compactRecord() {
         SerializationConfig serializationConfig = new SerializationConfig();
-        serializationConfig.getCompactSerializationConfig().setEnabled(true);
         InternalSerializationService ss = new DefaultSerializationServiceBuilder()
                 .setSchemaService(CompactTestUtil.createInMemorySchemaService())
                 .setConfig(serializationConfig)
                 .build();
 
-        Metadata metadata = SampleMetadataResolver.resolve(ss, GenericRecordBuilder.compact("class-name").setInt32("field", 1).build(), key);
+        Metadata metadata = SampleMetadataResolver.resolve(ss, GenericRecordBuilder.compact("type-name").setInt32("field", 1).build(), key);
         assertThat(metadata.fields()).containsExactly(
                 new MappingField("field", QueryDataType.INT, (key ? KEY : VALUE) + ".field")
         );
         assertThat(metadata.options()).containsExactly(
                 entry(key ? OPTION_KEY_FORMAT : OPTION_VALUE_FORMAT, COMPACT_FORMAT),
-                entry(key ? OPTION_KEY_COMPACT_TYPE_NAME : OPTION_VALUE_COMPACT_TYPE_NAME, "class-name")
+                entry(key ? OPTION_KEY_COMPACT_TYPE_NAME : OPTION_VALUE_COMPACT_TYPE_NAME, "type-name")
         );
 
-        metadata = SampleMetadataResolver.resolve(ss, ss.toData(GenericRecordBuilder.compact("class-name").setInt32("field", 1).build()), key);
+        metadata = SampleMetadataResolver.resolve(ss, ss.toData(GenericRecordBuilder.compact("type-name").setInt32("field", 1).build()), key);
         assertThat(metadata.fields()).containsExactly(
                 new MappingField("field", QueryDataType.INT, (key ? KEY : VALUE) + ".field")
         );
         assertThat(metadata.options()).containsExactly(
                 entry(key ? OPTION_KEY_FORMAT : OPTION_VALUE_FORMAT, COMPACT_FORMAT),
-                entry(key ? OPTION_KEY_COMPACT_TYPE_NAME : OPTION_VALUE_COMPACT_TYPE_NAME, "class-name")
+                entry(key ? OPTION_KEY_COMPACT_TYPE_NAME : OPTION_VALUE_COMPACT_TYPE_NAME, "type-name")
         );
     }
 
@@ -298,13 +297,25 @@ public class SampleMetadataResolverTest {
 
             @Nonnull
             @Override
-            public CompactClass read(@Nonnull CompactReader in) {
-                return new CompactClass(in.readInt32("field"));
+            public CompactClass read(@Nonnull CompactReader reader) {
+                return new CompactClass(reader.readInt32("field"));
             }
 
             @Override
-            public void write(@Nonnull CompactWriter out, @Nonnull CompactClass object) {
-                out.writeInt32("field", object.field);
+            public void write(@Nonnull CompactWriter writer, @Nonnull CompactClass object) {
+                writer.writeInt32("field", object.field);
+            }
+
+            @Nonnull
+            @Override
+            public String getTypeName() {
+                return "type-name";
+            }
+
+            @Nonnull
+            @Override
+            public Class<CompactClass> getCompactClass() {
+                return CompactClass.class;
             }
         }
     }

@@ -18,22 +18,29 @@ package com.hazelcast.jet.sql.impl.opt.physical;
 
 import com.hazelcast.cluster.Address;
 import com.hazelcast.function.BiFunctionEx;
-import com.hazelcast.function.BiPredicateEx;
 import com.hazelcast.function.ComparatorEx;
 import com.hazelcast.function.ConsumerEx;
 import com.hazelcast.function.FunctionEx;
+import com.hazelcast.function.SupplierEx;
 import com.hazelcast.function.ToLongFunctionEx;
+import com.hazelcast.internal.serialization.impl.DefaultSerializationServiceBuilder;
+import com.hazelcast.internal.util.MutableByte;
+import com.hazelcast.jet.Traverser;
 import com.hazelcast.jet.aggregate.AggregateOperation;
 import com.hazelcast.jet.core.DAG;
 import com.hazelcast.jet.core.Edge;
+import com.hazelcast.jet.core.EventTimePolicy;
+import com.hazelcast.jet.core.Processor;
 import com.hazelcast.jet.core.ProcessorMetaSupplier;
 import com.hazelcast.jet.core.ProcessorSupplier;
 import com.hazelcast.jet.core.SlidingWindowPolicy;
 import com.hazelcast.jet.core.TimestampKind;
 import com.hazelcast.jet.core.Vertex;
+import com.hazelcast.jet.core.function.KeyedWindowResultFunction;
 import com.hazelcast.jet.core.processor.Processors;
 import com.hazelcast.jet.pipeline.ServiceFactories;
 import com.hazelcast.jet.sql.impl.ExpressionUtil;
+import com.hazelcast.jet.sql.impl.HazelcastPhysicalScan;
 import com.hazelcast.jet.sql.impl.JetJoinInfo;
 import com.hazelcast.jet.sql.impl.ObjectArrayKey;
 import com.hazelcast.jet.sql.impl.aggregate.WindowUtils;
@@ -41,8 +48,10 @@ import com.hazelcast.jet.sql.impl.connector.SqlConnector.VertexWithInputConfig;
 import com.hazelcast.jet.sql.impl.connector.SqlConnectorUtil;
 import com.hazelcast.jet.sql.impl.connector.map.IMapSqlConnector;
 import com.hazelcast.jet.sql.impl.opt.ExpressionValues;
-import com.hazelcast.jet.sql.impl.opt.metadata.WindowProperties;
+import com.hazelcast.jet.sql.impl.opt.WatermarkKeysAssigner;
+import com.hazelcast.jet.sql.impl.processors.LateItemsDropP;
 import com.hazelcast.jet.sql.impl.processors.SqlHashJoinP;
+import com.hazelcast.jet.sql.impl.processors.StreamToStreamJoinP.StreamToStreamJoinProcessorSupplier;
 import com.hazelcast.jet.sql.impl.schema.HazelcastTable;
 import com.hazelcast.spi.impl.NodeEngine;
 import com.hazelcast.sql.impl.QueryParameterMetadata;
@@ -50,32 +59,43 @@ import com.hazelcast.sql.impl.expression.ConstantExpression;
 import com.hazelcast.sql.impl.expression.Expression;
 import com.hazelcast.sql.impl.expression.ExpressionEvalContext;
 import com.hazelcast.sql.impl.optimizer.PlanObjectKey;
+import com.hazelcast.sql.impl.row.JetSqlRow;
 import com.hazelcast.sql.impl.schema.Table;
 import com.hazelcast.sql.impl.type.QueryDataType;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.SingleRel;
+import org.apache.calcite.rex.RexProgram;
 
 import javax.annotation.Nullable;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.function.Predicate;
 
 import static com.hazelcast.function.Functions.entryKey;
 import static com.hazelcast.jet.core.Edge.between;
 import static com.hazelcast.jet.core.Edge.from;
-import static com.hazelcast.jet.core.processor.Processors.filterUsingServiceP;
+import static com.hazelcast.jet.core.Vertex.LOCAL_PARALLELISM_USE_DEFAULT;
+import static com.hazelcast.jet.core.processor.Processors.flatMapUsingServiceP;
 import static com.hazelcast.jet.core.processor.Processors.mapP;
 import static com.hazelcast.jet.core.processor.Processors.mapUsingServiceP;
 import static com.hazelcast.jet.core.processor.Processors.sortP;
 import static com.hazelcast.jet.core.processor.SourceProcessors.convenientSourceP;
 import static com.hazelcast.jet.sql.impl.connector.SqlConnectorUtil.getJetSqlConnector;
 import static com.hazelcast.jet.sql.impl.processors.RootResultConsumerSink.rootResultConsumerSink;
+import static java.util.Collections.emptyList;
+import static java.util.Collections.emptyMap;
 import static java.util.Collections.singletonList;
 
 public class CreateDagVisitor {
+
+    // TODO https://github.com/hazelcast/hazelcast/issues/20383
+    private static final ExpressionEvalContext MOCK_EEC =
+            new ExpressionEvalContext(emptyList(), new DefaultSerializationServiceBuilder().build());
 
     private static final int LOW_PRIORITY = 10;
     private static final int HIGH_PRIORITY = 1;
@@ -85,11 +105,19 @@ public class CreateDagVisitor {
     private final NodeEngine nodeEngine;
     private final Address localMemberAddress;
     private final QueryParameterMetadata parameterMetadata;
+    private final WatermarkKeysAssigner watermarkKeysAssigner;
 
-    public CreateDagVisitor(NodeEngine nodeEngine, QueryParameterMetadata parameterMetadata) {
+    public CreateDagVisitor(
+            NodeEngine nodeEngine,
+            QueryParameterMetadata parameterMetadata,
+            @Nullable WatermarkKeysAssigner watermarkKeysAssigner,
+            Set<PlanObjectKey> usedViews
+    ) {
         this.nodeEngine = nodeEngine;
         this.localMemberAddress = nodeEngine.getThisAddress();
         this.parameterMetadata = parameterMetadata;
+        this.watermarkKeysAssigner = watermarkKeysAssigner;
+        this.objectKeys.addAll(usedViews);
     }
 
     public Vertex onValues(ValuesPhysicalRel rel) {
@@ -133,7 +161,12 @@ public class CreateDagVisitor {
     public Vertex onUpdate(UpdatePhysicalRel rel) {
         Table table = rel.getTable().unwrap(HazelcastTable.class).getTarget();
 
-        Vertex vertex = getJetSqlConnector(table).updateProcessor(dag, table, rel.updates(parameterMetadata));
+        Vertex vertex = getJetSqlConnector(table).updateProcessor(
+                dag,
+                table,
+                rel.updatesAsRex(),
+                rel.updates(parameterMetadata)
+        );
         connectInput(rel.getInput(), vertex, null);
         return vertex;
     }
@@ -147,15 +180,29 @@ public class CreateDagVisitor {
     }
 
     public Vertex onFullScan(FullScanPhysicalRel rel) {
-        Table table = rel.getTable().unwrap(HazelcastTable.class).getTarget();
+        HazelcastTable hazelcastTable = rel.getTable().unwrap(HazelcastTable.class);
+        Table table = hazelcastTable.getTarget();
         collectObjectKeys(table);
+
+        BiFunctionEx<ExpressionEvalContext, Byte, EventTimePolicy<JetSqlRow>> policyProvider = rel.eventTimePolicyProvider();
+        Map<Integer, MutableByte> fieldsKey = watermarkKeysAssigner.getWatermarkedFieldsKey(rel);
+        Byte wmKey;
+        if (fieldsKey != null) {
+            wmKey = fieldsKey.get(rel.watermarkedColumnIndex()).getValue();
+        } else {
+            assert rel.watermarkedColumnIndex() < 0;
+            wmKey = null;
+        }
 
         return getJetSqlConnector(table).fullScanReader(
                 dag,
                 table,
+                hazelcastTable,
                 rel.filter(parameterMetadata),
                 rel.projection(parameterMetadata),
-                rel.eventTimePolicyProvider()
+                policyProvider != null
+                        ? context -> policyProvider.apply(context, wmKey)
+                        : null
         );
     }
 
@@ -177,25 +224,25 @@ public class CreateDagVisitor {
                 );
     }
 
-    public Vertex onFilter(FilterPhysicalRel rel) {
-        Expression<Boolean> filter = rel.filter(parameterMetadata);
-
-        Vertex vertex = dag.newUniqueVertex("Filter", filterUsingServiceP(
-                ServiceFactories.nonSharedService(ctx ->
-                        ExpressionUtil.filterFn(filter, ExpressionEvalContext.from(ctx))),
-                (BiPredicateEx<Predicate<Object[]>, Object[]>) Predicate::test));
-        connectInputPreserveCollation(rel, vertex);
-        return vertex;
-    }
-
-    public Vertex onProject(ProjectPhysicalRel rel) {
+    public Vertex onCalc(CalcPhysicalRel rel) {
+        RexProgram program = rel.getProgram();
         List<Expression<?>> projection = rel.projection(parameterMetadata);
 
-        Vertex vertex = dag.newUniqueVertex("Project", mapUsingServiceP(
-                ServiceFactories.nonSharedService(ctx ->
-                        ExpressionUtil.projectionFn(projection, ExpressionEvalContext.from(ctx))),
-                (BiFunctionEx<Function<Object[], Object[]>, Object[], Object[]>) Function::apply
-        ));
+        Vertex vertex;
+        if (program.getCondition() != null) {
+            Expression<Boolean> filterExpr = rel.filter(parameterMetadata);
+
+            vertex = dag.newUniqueVertex("Calc", mapUsingServiceP(
+                    ServiceFactories.nonSharedService(ctx ->
+                            ExpressionUtil.calcFn(projection, filterExpr, ExpressionEvalContext.from(ctx))),
+                    (Function<JetSqlRow, JetSqlRow> calcFn, JetSqlRow row) -> calcFn.apply(row)));
+        } else {
+            vertex = dag.newUniqueVertex("Project", mapUsingServiceP(
+                    ServiceFactories.nonSharedService(ctx ->
+                            ExpressionUtil.projectionFn(projection, ExpressionEvalContext.from(ctx))),
+                    (Function<JetSqlRow, JetSqlRow> projectionFn, JetSqlRow row) -> projectionFn.apply(row)
+            ));
+        }
         connectInputPreserveCollation(rel, vertex);
         return vertex;
     }
@@ -226,7 +273,7 @@ public class CreateDagVisitor {
     }
 
     public Vertex onAggregate(AggregatePhysicalRel rel) {
-        AggregateOperation<?, Object[]> aggregateOperation = rel.aggrOp();
+        AggregateOperation<?, JetSqlRow> aggregateOperation = rel.aggrOp();
 
         Vertex vertex = dag.newUniqueVertex(
                 "Aggregate",
@@ -240,7 +287,7 @@ public class CreateDagVisitor {
     }
 
     public Vertex onAccumulate(AggregateAccumulatePhysicalRel rel) {
-        AggregateOperation<?, Object[]> aggregateOperation = rel.aggrOp();
+        AggregateOperation<?, JetSqlRow> aggregateOperation = rel.aggrOp();
 
         Vertex vertex = dag.newUniqueVertex(
                 "Accumulate",
@@ -251,7 +298,7 @@ public class CreateDagVisitor {
     }
 
     public Vertex onCombine(AggregateCombinePhysicalRel rel) {
-        AggregateOperation<?, Object[]> aggregateOperation = rel.aggrOp();
+        AggregateOperation<?, JetSqlRow> aggregateOperation = rel.aggrOp();
 
         Vertex vertex = dag.newUniqueVertex(
                 "Combine",
@@ -265,8 +312,8 @@ public class CreateDagVisitor {
     }
 
     public Vertex onAggregateByKey(AggregateByKeyPhysicalRel rel) {
-        FunctionEx<Object[], ?> groupKeyFn = rel.groupKeyFn();
-        AggregateOperation<?, Object[]> aggregateOperation = rel.aggrOp();
+        FunctionEx<JetSqlRow, ?> groupKeyFn = rel.groupKeyFn();
+        AggregateOperation<?, JetSqlRow> aggregateOperation = rel.aggrOp();
 
         Vertex vertex = dag.newUniqueVertex(
                 "AggregateByKey",
@@ -277,8 +324,8 @@ public class CreateDagVisitor {
     }
 
     public Vertex onAccumulateByKey(AggregateAccumulateByKeyPhysicalRel rel) {
-        FunctionEx<Object[], ?> groupKeyFn = rel.groupKeyFn();
-        AggregateOperation<?, Object[]> aggregateOperation = rel.aggrOp();
+        FunctionEx<JetSqlRow, ?> groupKeyFn = rel.groupKeyFn();
+        AggregateOperation<?, JetSqlRow> aggregateOperation = rel.aggrOp();
 
         Vertex vertex = dag.newUniqueVertex(
                 "AccumulateByKey",
@@ -289,7 +336,7 @@ public class CreateDagVisitor {
     }
 
     public Vertex onCombineByKey(AggregateCombineByKeyPhysicalRel rel) {
-        AggregateOperation<?, Object[]> aggregateOperation = rel.aggrOp();
+        AggregateOperation<?, JetSqlRow> aggregateOperation = rel.aggrOp();
 
         Vertex vertex = dag.newUniqueVertex(
                 "CombineByKey",
@@ -303,86 +350,83 @@ public class CreateDagVisitor {
         int orderingFieldIndex = rel.orderingFieldIndex();
         FunctionEx<ExpressionEvalContext, SlidingWindowPolicy> windowPolicySupplier = rel.windowPolicyProvider();
 
+        // this vertex is used only if there's no aggregation by a window bound
         Vertex vertex = dag.newUniqueVertex(
                 "Sliding-Window",
-                mapUsingServiceP(ServiceFactories.nonSharedService(ctx -> {
+                flatMapUsingServiceP(ServiceFactories.nonSharedService(ctx -> {
                             ExpressionEvalContext evalContext = ExpressionEvalContext.from(ctx);
                             SlidingWindowPolicy windowPolicy = windowPolicySupplier.apply(evalContext);
                             return row -> WindowUtils.addWindowBounds(row, orderingFieldIndex, windowPolicy);
                         }),
-                        (BiFunctionEx<Function<Object[], Object[]>, Object[], Object[]>) Function::apply
+                        (BiFunctionEx<Function<JetSqlRow, Traverser<JetSqlRow>>, JetSqlRow, Traverser<JetSqlRow>>) Function::apply
                 )
         );
         connectInput(rel.getInput(), vertex, null);
         return vertex;
     }
 
-    public Vertex onSlidingWindowAggregateByKey(SlidingWindowAggregateByKeyPhysicalRel rel) {
-        FunctionEx<Object[], ?> groupKeyFn = rel.groupKeyFn();
-        AggregateOperation<?, Object[]> aggregateOperation = rel.aggrOp();
+    public Vertex onSlidingWindowAggregate(SlidingWindowAggregatePhysicalRel rel) {
+        FunctionEx<JetSqlRow, ?> groupKeyFn = rel.groupKeyFn();
+        AggregateOperation<?, JetSqlRow> aggregateOperation = rel.aggrOp();
 
-        WindowProperties.WindowProperty windowProperty = rel.windowProperty();
-        ToLongFunctionEx<Object[]> timestampFn = windowProperty.orderingFn(null);
-        SlidingWindowPolicy windowPolicy = windowProperty.windowPolicy(null);
+        Expression<?> timestampExpression = rel.timestampExpression();
+        ToLongFunctionEx<JetSqlRow> timestampFn = row ->
+                WindowUtils.extractMillis(timestampExpression.eval(row.getRow(), MOCK_EEC));
+        SlidingWindowPolicy windowPolicy = rel.windowPolicyProvider().apply(MOCK_EEC);
 
-        Vertex vertex = dag.newUniqueVertex(
-                "Sliding-Window-AggregateByKey",
-                Processors.aggregateToSlidingWindowP(
-                        singletonList(groupKeyFn),
-                        singletonList(timestampFn),
-                        TimestampKind.EVENT,
-                        windowPolicy,
-                        0,
-                        aggregateOperation,
-                        (start, end, ignoredKey, result, isEarly) -> result
-                )
-        );
-        connectInput(rel.getInput(), vertex, edge -> edge.distributed().partitioned(groupKeyFn));
-        return vertex;
+        KeyedWindowResultFunction<? super Object, ? super JetSqlRow, ?> resultMapping =
+                rel.outputValueMapping();
+
+        if (rel.numStages() == 1) {
+            Vertex vertex = dag.newUniqueVertex(
+                    "Sliding-Window-AggregateByKey",
+                    Processors.aggregateToSlidingWindowP(
+                            singletonList(groupKeyFn),
+                            singletonList(timestampFn),
+                            TimestampKind.EVENT,
+                            windowPolicy,
+                            0,
+                            aggregateOperation,
+                            resultMapping));
+            connectInput(rel.getInput(), vertex, edge -> edge.distributeTo(localMemberAddress).allToOne(""));
+            return vertex;
+        } else {
+            assert rel.numStages() == 2;
+
+            Vertex vertex1 = dag.newUniqueVertex(
+                    "Sliding-Window-AccumulateByKey",
+                    Processors.accumulateByFrameP(
+                            singletonList(groupKeyFn),
+                            singletonList(timestampFn),
+                            TimestampKind.EVENT,
+                            windowPolicy,
+                            aggregateOperation));
+
+            Vertex vertex2 = dag.newUniqueVertex(
+                    "Sliding-Window-CombineByKey",
+                    Processors.combineToSlidingWindowP(
+                            windowPolicy,
+                            aggregateOperation,
+                            resultMapping));
+
+            connectInput(rel.getInput(), vertex1, edge -> edge.partitioned(groupKeyFn));
+            dag.edge(between(vertex1, vertex2).distributed().partitioned(entryKey()));
+            return vertex2;
+        }
     }
 
-    public Vertex onSlidingWindowAccumulateByKey(SlidingWindowAggregateAccumulateByKeyPhysicalRel rel) {
-        FunctionEx<Object[], ?> groupKeyFn = rel.groupKeyFn();
-        AggregateOperation<?, Object[]> aggregateOperation = rel.aggrOp();
+    public Vertex onDropLateItems(DropLateItemsPhysicalRel rel) {
+        Expression<?> timestampExpression = rel.timestampExpression();
+        byte key = watermarkKeysAssigner.getWatermarkedFieldsKey(rel).get(rel.wmField()).getValue();
+        SupplierEx<Processor> lateItemsDropPSupplier = () -> new LateItemsDropP(key, timestampExpression);
+        Vertex vertex = dag.newUniqueVertex("Drop-Late-Items", lateItemsDropPSupplier);
 
-        WindowProperties.WindowProperty windowProperty = rel.windowProperty();
-        ToLongFunctionEx<Object[]> timestampFn = windowProperty.orderingFn(null);
-        SlidingWindowPolicy windowPolicy = windowProperty.windowPolicy(null);
-
-        Vertex vertex = dag.newUniqueVertex(
-                "Sliding-Window-AccumulateByKey",
-                Processors.accumulateByFrameP(
-                        singletonList(groupKeyFn),
-                        singletonList(timestampFn),
-                        TimestampKind.EVENT,
-                        windowPolicy,
-                        aggregateOperation
-                )
-        );
-        connectInput(rel.getInput(), vertex, edge -> edge.partitioned(groupKeyFn));
-        return vertex;
-    }
-
-    public Vertex onSlidingWindowCombineByKey(SlidingWindowAggregateCombineByKeyPhysicalRel rel) {
-        AggregateOperation<?, Object[]> aggregateOperation = rel.aggrOp();
-
-        WindowProperties.WindowProperty windowProperty = rel.windowProperty();
-        SlidingWindowPolicy windowPolicy = windowProperty.windowPolicy(null);
-
-        Vertex vertex = dag.newUniqueVertex(
-                "Sliding-Window-CombineByKey",
-                Processors.combineToSlidingWindowP(
-                        windowPolicy,
-                        aggregateOperation,
-                        (start, end, ignoredKey, result, isEarly) -> result
-                )
-        );
-        connectInput(rel.getInput(), vertex, edge -> edge.distributed().partitioned(entryKey()));
+        connectInput(rel.getInput(), vertex, null);
         return vertex;
     }
 
     public Vertex onNestedLoopJoin(JoinNestedLoopPhysicalRel rel) {
-        assert rel.getRight() instanceof FullScanPhysicalRel : rel.getRight().getClass();
+        assert rel.getRight() instanceof HazelcastPhysicalScan : rel.getRight().getClass();
 
         Table rightTable = rel.getRight().getTable().unwrap(HazelcastTable.class).getTarget();
         collectObjectKeys(rightTable);
@@ -413,6 +457,57 @@ public class CreateDagVisitor {
         return joinVertex;
     }
 
+    public Vertex onStreamToStreamJoin(StreamToStreamJoinPhysicalRel rel) {
+        JetJoinInfo joinInfo = rel.joinInfo(parameterMetadata);
+
+        Map<Byte, ToLongFunctionEx<JetSqlRow>> leftExtractors = new HashMap<>();
+        Map<Byte, ToLongFunctionEx<JetSqlRow>> rightExtractors = new HashMap<>();
+
+        // map watermarked timestamps extractors to enumerated wm keys
+        Map<Integer, MutableByte> refByteMap = watermarkKeysAssigner.getWatermarkedFieldsKey(rel.getLeft());
+        for (Map.Entry<Integer, ToLongFunctionEx<JetSqlRow>> e : rel.leftTimeExtractors().entrySet()) {
+            Byte wmKey = refByteMap.get(e.getKey()).getValue();
+            leftExtractors.put(wmKey, e.getValue());
+        }
+
+        refByteMap = watermarkKeysAssigner.getWatermarkedFieldsKey(rel.getRight());
+        for (Map.Entry<Integer, ToLongFunctionEx<JetSqlRow>> e : rel.rightTimeExtractors().entrySet()) {
+            Byte wmKey = refByteMap.get(e.getKey()).getValue();
+            rightExtractors.put(wmKey, e.getValue());
+        }
+
+        // map field descriptors to enumerated watermark keys
+        refByteMap = watermarkKeysAssigner.getWatermarkedFieldsKey(rel);
+        Map<Byte, Map<Byte, Long>> postponeTimeMap = new HashMap<>();
+        for (Entry<Integer, Map<Integer, Long>> entry : rel.postponeTimeMap().entrySet()) {
+            Map<Byte, Long> map = new HashMap<>();
+            for (Entry<Integer, Long> innerEntry : entry.getValue().entrySet()) {
+                map.put(refByteMap.get(innerEntry.getKey()).getValue(), innerEntry.getValue());
+            }
+            postponeTimeMap.put(refByteMap.get(entry.getKey()).getValue(), map);
+        }
+
+        // fill `postponeTimeMap` with empty inner maps for unused
+        // watermarks keys to be counted by the processor as present.
+        for (MutableByte key : refByteMap.values()) {
+            postponeTimeMap.putIfAbsent(key.getValue(), emptyMap());
+        }
+
+        Vertex joinVertex = dag.newUniqueVertex(
+                "Stream-Stream Join",
+                new StreamToStreamJoinProcessorSupplier(
+                        joinInfo,
+                        leftExtractors,
+                        rightExtractors,
+                        postponeTimeMap,
+                        rel.getLeft().getRowType().getFieldCount(),
+                        rel.getRight().getRowType().getFieldCount()));
+
+        connectStreamToStreamJoinInput(joinInfo, rel.getLeft(), rel.getRight(), joinVertex);
+
+        return joinVertex;
+    }
+
     public Vertex onUnion(UnionPhysicalRel rel) {
         // Union[all=false] rel should be never be produced, and it is always replaced by
         // UNION_TO_DISTINCT rule : Union[all=false] -> Union[all=true] + Aggregate.
@@ -439,10 +534,10 @@ public class CreateDagVisitor {
         Expression<?> fetch;
         Expression<?> offset;
 
-        if (input instanceof SortPhysicalRel || isProjectionWithSort(input)) {
+        if (input instanceof SortPhysicalRel || isCalcWithSort(input)) {
             SortPhysicalRel sortRel = input instanceof SortPhysicalRel
                     ? (SortPhysicalRel) input
-                    : (SortPhysicalRel) ((ProjectPhysicalRel) input).getInput();
+                    : (SortPhysicalRel) ((CalcPhysicalRel) input).getInput();
 
             if (sortRel.fetch == null) {
                 fetch = ConstantExpression.create(Long.MAX_VALUE, QueryDataType.BIGINT);
@@ -474,6 +569,43 @@ public class CreateDagVisitor {
         // allToOne with any key, it goes to a single processor on a single member anyway.
         connectInput(input, vertex, edge -> edge.distributeTo(localMemberAddress).allToOne(""));
         return vertex;
+    }
+
+    public void optimizeFinishedDag() {
+        decreaseParallelism(dag, nodeEngine.getConfig().getJetConfig().getCooperativeThreadCount());
+    }
+
+    // package-visible for test
+    static void decreaseParallelism(DAG dag, int defaultParallelism) {
+        if (defaultParallelism == 1) {
+            return;
+        }
+
+        Set<Vertex> verticesToChangeParallelism = new HashSet<>();
+        for (Vertex vertex : dag) {
+            for (Edge edge : dag.getInboundEdges(vertex.getName())) {
+                if (shouldChangeLocalParallelism(edge) && edge.isLocal()) {
+                    verticesToChangeParallelism.add(edge.getSource());
+                    verticesToChangeParallelism.add(edge.getDestination());
+                    edge.isolated();
+                }
+            }
+        }
+
+        int newParallelism = (int) Math.max(2, Math.sqrt(defaultParallelism));
+        verticesToChangeParallelism.forEach(vertex -> {
+            if (vertex.getMetaSupplier().preferredLocalParallelism() == LOCAL_PARALLELISM_USE_DEFAULT) {
+                vertex.localParallelism(newParallelism);
+            }
+        });
+    }
+
+    private static boolean shouldChangeLocalParallelism(Edge edge) {
+        if (edge.getDestination() == null) {
+            return false;
+        }
+        return edge.getSource().getLocalParallelism() == LOCAL_PARALLELISM_USE_DEFAULT &&
+                edge.getDestination().getLocalParallelism() == LOCAL_PARALLELISM_USE_DEFAULT;
     }
 
     public DAG getDag() {
@@ -521,11 +653,39 @@ public class CreateDagVisitor {
             right = right.broadcast().distributed();
         }
         if (joinInfo.isEquiJoin()) {
-            int[] leftIndices = joinInfo.leftEquiJoinIndices();
-            int[] rightIndices = joinInfo.rightEquiJoinIndices();
-            left = left.distributed().partitioned(row -> ObjectArrayKey.project((Object[]) row, leftIndices));
-            right = right.distributed().partitioned(row -> ObjectArrayKey.project((Object[]) row, rightIndices));
+            left = left.distributed().partitioned(ObjectArrayKey.projectFn(joinInfo.leftEquiJoinIndices()));
+            right = right.distributed().partitioned(ObjectArrayKey.projectFn(joinInfo.rightEquiJoinIndices()));
         }
+        dag.edge(left);
+        dag.edge(right);
+    }
+
+    private void connectStreamToStreamJoinInput(
+            JetJoinInfo joinInfo,
+            RelNode leftInputRel,
+            RelNode rightInputRel,
+            Vertex joinVertex
+    ) {
+        Vertex leftInput = ((PhysicalRel) leftInputRel).accept(this);
+        Vertex rightInput = ((PhysicalRel) rightInputRel).accept(this);
+
+        Edge left = Edge.from(leftInput).to(joinVertex, 0);
+        Edge right = Edge.from(rightInput).to(joinVertex, 1);
+
+        if (joinInfo.isRightOuter()) {
+            left = left.distributed().broadcast();
+            right = right.unicast().local();
+        } else {
+            // this strategy applies to left and inner joins non-equi joins
+            left = left.unicast().local();
+            right = right.distributed().broadcast();
+        }
+
+        if (joinInfo.isEquiJoin()) {
+            left = left.distributed().partitioned(ObjectArrayKey.projectFn(joinInfo.leftEquiJoinIndices()));
+            right = right.distributed().partitioned(ObjectArrayKey.projectFn(joinInfo.rightEquiJoinIndices()));
+        }
+
         dag.edge(left);
         dag.edge(right);
     }
@@ -546,8 +706,8 @@ public class CreateDagVisitor {
         if (preserveCollation) {
             int cooperativeThreadCount = nodeEngine.getConfig().getJetConfig().getCooperativeThreadCount();
             int explicitLP = inputVertex.determineLocalParallelism(cooperativeThreadCount);
-            // It's not strictly necessary to set the LP to the input, but we do it to ensure that the two
-            // vertices indeed have the same LP
+            // It's not strictly necessary to set the LP to the input,
+            // but we do it to ensure that the two vertices indeed have the same LP
             inputVertex.determineLocalParallelism(explicitLP);
             vertex.localParallelism(explicitLP);
         }
@@ -560,8 +720,8 @@ public class CreateDagVisitor {
         }
     }
 
-    private boolean isProjectionWithSort(RelNode input) {
-        return input instanceof ProjectPhysicalRel &&
-                ((ProjectPhysicalRel) input).getInput() instanceof SortPhysicalRel;
+    private boolean isCalcWithSort(RelNode input) {
+        return input instanceof CalcPhysicalRel &&
+                ((CalcPhysicalRel) input).getInput() instanceof SortPhysicalRel;
     }
 }

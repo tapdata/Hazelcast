@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  ~ Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+  ~ Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
   ~ you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@
   This XML file is used when no hazelcast.xml is present.
 
   To learn how to configure Hazelcast, please see the schema at
-  https://hazelcast.com/schema/config/hazelcast-config-5.1.xsd
+  https://hazelcast.com/schema/config/hazelcast-config-5.2.xsd
   or the Reference Manual at https://docs.hazelcast.com/
 -->
 
@@ -29,7 +29,7 @@
 <hazelcast xmlns="http://www.hazelcast.com/schema/config"
            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
            xsi:schemaLocation="http://www.hazelcast.com/schema/config
-           http://www.hazelcast.com/schema/config/hazelcast-config-5.1.xsd">
+           http://www.hazelcast.com/schema/config/hazelcast-config-5.2.xsd">
 
     <!--
         The name of the cluster. All members of a single cluster must have the same cluster name
@@ -257,10 +257,11 @@
     <!--
         Configuration for a device, which a tiered-store can reference and use for its disk-tier.
     -->
-    <local-device name="default">
+    <local-device name="default-tiered-store-device">
         <base-dir>tiered-store</base-dir>
+        <capacity unit="GIGABYTES" value="256"/>
         <block-size>4096</block-size>
-        <read-io-thread-count>16</read-io-thread-count>
+        <read-io-thread-count>4</read-io-thread-count>
         <write-io-thread-count>4</write-io-thread-count>
     </local-device>
 
@@ -360,14 +361,14 @@
                     The amount of memory to be reserved for the memory-tier of the tiered-store instance
                     of this map.
                 -->
-                <capacity>256 MB</capacity>
+                <capacity unit="MEGABYTES" value="256"/>
             </memory-tier>
 
             <!--
                 Whether disk-tier is enabled, and the name of the device to be used for the disk-tier
                 of the tiered-store instance of this map.
             -->
-            <disk-tier enabled="false" device-name="default"/>
+            <disk-tier enabled="false" device-name="default-tiered-store-device"/>
         </tiered-store>
 
     </map>
@@ -488,6 +489,7 @@
         <session-heartbeat-interval-seconds>5</session-heartbeat-interval-seconds>
         <missing-cp-member-auto-removal-seconds>14400</missing-cp-member-auto-removal-seconds>
         <fail-on-indeterminate-operation-state>false</fail-on-indeterminate-operation-state>
+        <cp-member-priority>0</cp-member-priority>
         <raft-algorithm>
             <leader-election-timeout-in-millis>2000</leader-election-timeout-in-millis>
             <leader-heartbeat-period-in-millis>5000</leader-heartbeat-period-in-millis>
@@ -560,4 +562,5 @@
             <receive-window-multiplier>3</receive-window-multiplier>
         </edge-defaults>
     </jet>
+    <integrity-checker enabled="false"/>
 </hazelcast>

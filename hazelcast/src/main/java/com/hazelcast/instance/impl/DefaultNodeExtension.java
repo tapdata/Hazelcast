@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -79,22 +79,22 @@ import com.hazelcast.internal.networking.ChannelInitializer;
 import com.hazelcast.internal.networking.InboundHandler;
 import com.hazelcast.internal.networking.OutboundHandler;
 import com.hazelcast.internal.nio.ClassLoaderUtil;
-import com.hazelcast.internal.nio.Packet;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.internal.serialization.SerializationServiceBuilder;
 import com.hazelcast.internal.serialization.impl.DefaultSerializationServiceBuilder;
+import com.hazelcast.internal.serialization.impl.compact.schema.MemberSchemaService;
 import com.hazelcast.internal.server.ServerConnection;
 import com.hazelcast.internal.server.ServerContext;
 import com.hazelcast.internal.server.tcp.ChannelInitializerFunction;
 import com.hazelcast.internal.server.tcp.PacketDecoder;
 import com.hazelcast.internal.server.tcp.PacketEncoder;
 import com.hazelcast.internal.util.ConstructorFunction;
-import com.hazelcast.internal.util.ExceptionUtil;
 import com.hazelcast.internal.util.JVMUtil;
 import com.hazelcast.internal.util.MapUtil;
 import com.hazelcast.internal.util.Preconditions;
 import com.hazelcast.internal.util.phonehome.PhoneHome;
 import com.hazelcast.jet.JetService;
+import com.hazelcast.jet.config.JetConfig;
 import com.hazelcast.jet.impl.JetServiceBackend;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.map.impl.MapService;
@@ -104,7 +104,6 @@ import com.hazelcast.partition.strategy.DefaultPartitioningStrategy;
 import com.hazelcast.security.SecurityContext;
 import com.hazelcast.spi.impl.NodeEngine;
 import com.hazelcast.spi.impl.NodeEngineImpl;
-import com.hazelcast.spi.impl.NodeEngineImpl.JetPacketConsumer;
 import com.hazelcast.spi.impl.eventservice.impl.EventServiceImpl;
 import com.hazelcast.spi.impl.servicemanager.ServiceManager;
 import com.hazelcast.spi.properties.ClusterProperty;
@@ -113,12 +112,12 @@ import com.hazelcast.version.Version;
 import com.hazelcast.wan.impl.WanReplicationService;
 import com.hazelcast.wan.impl.WanReplicationServiceImpl;
 
+import javax.annotation.Nullable;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Function;
-import java.util.function.Supplier;
 
 import static com.hazelcast.config.ConfigAccessor.getActiveMemberNetworkConfig;
 import static com.hazelcast.config.InstanceTrackingConfig.InstanceTrackingProperties.LICENSED;
@@ -127,13 +126,14 @@ import static com.hazelcast.config.InstanceTrackingConfig.InstanceTrackingProper
 import static com.hazelcast.config.InstanceTrackingConfig.InstanceTrackingProperties.PRODUCT;
 import static com.hazelcast.config.InstanceTrackingConfig.InstanceTrackingProperties.START_TIMESTAMP;
 import static com.hazelcast.config.InstanceTrackingConfig.InstanceTrackingProperties.VERSION;
+import static com.hazelcast.internal.util.ExceptionUtil.rethrow;
 import static com.hazelcast.internal.util.InstanceTrackingUtil.writeInstanceTrackingFile;
 import static com.hazelcast.jet.impl.util.Util.JET_IS_DISABLED_MESSAGE;
 import static com.hazelcast.jet.impl.util.Util.checkJetIsEnabled;
 import static com.hazelcast.map.impl.MapServiceConstructor.getDefaultMapServiceConstructor;
 
 @SuppressWarnings({"checkstyle:methodcount", "checkstyle:classfanoutcomplexity", "checkstyle:classdataabstractioncoupling"})
-public class DefaultNodeExtension implements NodeExtension, JetPacketConsumer {
+public class DefaultNodeExtension implements NodeExtension {
     private static final String PLATFORM_LOGO
             = "\t+       +  o    o     o     o---o o----o o      o---o     o     o----o o--o--o\n"
             + "\t+ +   + +  |    |    / \\       /  |      |     /         / \\    |         |   \n"
@@ -141,15 +141,16 @@ public class DefaultNodeExtension implements NodeExtension, JetPacketConsumer {
             + "\t+ +   + +  |    |  /     \\   /    |      |     \\       /     \\       |    |   \n"
             + "\t+       +  o    o o       o o---o o----o o----o o---o o       o o----o    o   ";
 
-    private static final String COPYRIGHT_LINE = "Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.";
+    private static final String COPYRIGHT_LINE = "Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.";
 
     protected final Node node;
     protected final ILogger logger;
     protected final ILogger logoLogger;
     protected final ILogger systemLogger;
-    protected final List<ClusterVersionListener> clusterVersionListeners = new CopyOnWriteArrayList<ClusterVersionListener>();
+    protected final List<ClusterVersionListener> clusterVersionListeners = new CopyOnWriteArrayList<>();
     protected PhoneHome phoneHome;
-    protected JetExtension jetExtension;
+    protected JetServiceBackend jetServiceBackend;
+    protected IntegrityChecker integrityChecker;
 
     private final MemoryStats memoryStats = new DefaultMemoryStats();
 
@@ -160,12 +161,15 @@ public class DefaultNodeExtension implements NodeExtension, JetPacketConsumer {
         this.systemLogger = node.getLogger("com.hazelcast.system");
         checkSecurityAllowed();
         checkPersistenceAllowed();
+        checkLosslessRestartAllowed();
         createAndSetPhoneHome();
         checkDynamicConfigurationPersistenceAllowed();
 
         if (node.getConfig().getJetConfig().isEnabled()) {
-            jetExtension = new JetExtension(node, createService(JetServiceBackend.class));
+            jetServiceBackend = createService(JetServiceBackend.class);
         }
+
+        integrityChecker = new IntegrityChecker(node.getConfig().getIntegrityCheckerConfig(), this.systemLogger);
     }
 
     private void checkPersistenceAllowed() {
@@ -206,6 +210,15 @@ public class DefaultNodeExtension implements NodeExtension, JetPacketConsumer {
         }
     }
 
+    private void checkLosslessRestartAllowed() {
+        JetConfig jetConfig = node.getConfig().getJetConfig();
+        if (jetConfig.isLosslessRestartEnabled()) {
+            if (!BuildInfoProvider.getBuildInfo().isEnterprise()) {
+                throw new IllegalStateException("Lossless Restart requires Hazelcast Enterprise Edition");
+            }
+        }
+    }
+
     protected void checkDynamicConfigurationPersistenceAllowed() {
         Config config = node.getConfig();
         if (config.getDynamicConfigurationConfig().isPersistenceEnabled()) {
@@ -224,13 +237,12 @@ public class DefaultNodeExtension implements NodeExtension, JetPacketConsumer {
 
     @Override
     public void beforeStart() {
-        if (jetExtension != null) {
-            // Add configurations for the internal jet distributed objects,
-            // compatible with V4.2
-            // It can block RU4_2 only if there are existing configurations
-            // with the same name as the jet's internal objects.
-            // For this case, recommend disabling Jet.
-            jetExtension.beforeStart();
+        integrityChecker.checkIntegrity();
+
+        if (jetServiceBackend != null) {
+            systemLogger.info("Jet is enabled");
+            // Configure the internal distributed objects.
+            jetServiceBackend.configureJetInternalObjects(node.config.getStaticConfig(), node.getProperties());
         } else {
             systemLogger.info(JET_IS_DISABLED_MESSAGE);
         }
@@ -299,13 +311,18 @@ public class DefaultNodeExtension implements NodeExtension, JetPacketConsumer {
 
     @Override
     public void afterStart() {
-        if (jetExtension != null) {
-            jetExtension.afterStart();
+        if (jetServiceBackend != null) {
+            jetServiceBackend.startScanningForJobs();
         }
     }
 
     @Override
     public boolean isStartCompleted() {
+        return node.getClusterService().isJoined();
+    }
+
+    @Override
+    public boolean isReady() {
         return node.getClusterService().isJoined();
     }
 
@@ -323,6 +340,11 @@ public class DefaultNodeExtension implements NodeExtension, JetPacketConsumer {
     @Override
     public InternalSerializationService createCompatibilitySerializationService() {
         return createSerializationService(true);
+    }
+
+    @Override
+    public MemberSchemaService createSchemaService() {
+        return new MemberSchemaService();
     }
 
     /**
@@ -355,17 +377,12 @@ public class DefaultNodeExtension implements NodeExtension, JetPacketConsumer {
                     .setPartitioningStrategy(partitioningStrategy)
                     .setHazelcastInstance(hazelcastInstance)
                     .setVersion(version)
-                    .setSchemaService(node.memberSchemaService)
-                    .setNotActiveExceptionSupplier(new Supplier<RuntimeException>() {
-                        @Override
-                        public RuntimeException get() {
-                            return new HazelcastInstanceNotActiveException();
-                        }
-                    })
+                    .setSchemaService(node.getSchemaService())
+                    .setNotActiveExceptionSupplier(HazelcastInstanceNotActiveException::new)
                     .isCompatibility(isCompatibility)
                     .build();
         } catch (Exception e) {
-            throw ExceptionUtil.rethrow(e);
+            throw rethrow(e);
         }
         return ss;
     }
@@ -417,10 +434,10 @@ public class DefaultNodeExtension implements NodeExtension, JetPacketConsumer {
 
     @Override
     public Map<String, Object> createExtensionServices() {
-        if (jetExtension == null) {
-            return Collections.emptyMap();
+        if (jetServiceBackend != null) {
+            return Collections.singletonMap(JetServiceBackend.SERVICE_NAME, jetServiceBackend);
         }
-        return jetExtension.createExtensionServices();
+        return Collections.emptyMap();
     }
 
     @Override
@@ -457,8 +474,9 @@ public class DefaultNodeExtension implements NodeExtension, JetPacketConsumer {
 
     @Override
     public void beforeShutdown(boolean terminate) {
-        if (jetExtension != null) {
-            jetExtension.beforeShutdown(terminate);
+        if (jetServiceBackend != null && !terminate) {
+            // shutdown jobs on graceful shutdown
+            jetServiceBackend.shutDownJobs();
         }
     }
 
@@ -492,8 +510,8 @@ public class DefaultNodeExtension implements NodeExtension, JetPacketConsumer {
 
     @Override
     public void beforeClusterStateChange(ClusterState currState, ClusterState requestedState, boolean isTransient) {
-        if (jetExtension != null) {
-            jetExtension.beforeClusterStateChange(requestedState);
+        if (jetServiceBackend != null) {
+            jetServiceBackend.beforeClusterStateChange(requestedState);
         }
     }
 
@@ -503,9 +521,6 @@ public class DefaultNodeExtension implements NodeExtension, JetPacketConsumer {
         List<ClusterStateListener> listeners = serviceManager.getServices(ClusterStateListener.class);
         for (ClusterStateListener listener : listeners) {
             listener.onClusterStateChange(newState);
-        }
-        if (jetExtension != null) {
-            jetExtension.onClusterStateChange();
         }
     }
 
@@ -523,15 +538,13 @@ public class DefaultNodeExtension implements NodeExtension, JetPacketConsumer {
         if (service != null) {
             service.onMemberListChange();
         }
+        node.clusterTopologyIntentTracker.onMembershipChange();
     }
 
     @Override
     public void onClusterVersionChange(Version newVersion) {
         if (!node.getVersion().asVersion().isEqualTo(newVersion)) {
             systemLogger.info("Cluster version set to " + newVersion);
-        }
-        if (jetExtension != null) {
-            jetExtension.onClusterVersionChange();
         }
         ServiceManager serviceManager = node.getNodeEngine().getServiceManager();
         List<ClusterVersionListener> listeners = serviceManager.getServices(ClusterVersionListener.class);
@@ -657,12 +670,12 @@ public class DefaultNodeExtension implements NodeExtension, JetPacketConsumer {
     @Override
     public JetService getJet() {
         checkJetIsEnabled(node.nodeEngine);
-        return jetExtension.getJet();
+        return jetServiceBackend.getJet();
     }
 
     @Override
-    public void accept(Packet packet) {
-        checkJetIsEnabled(node.nodeEngine);
-        jetExtension.handlePacket(packet);
+    @Nullable
+    public JetServiceBackend getJetServiceBackend() {
+        return jetServiceBackend;
     }
 }

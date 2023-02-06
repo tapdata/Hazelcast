@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -513,5 +513,40 @@ public final class StringUtil {
     @Deprecated
     public static String formatXml(@Nullable String input, int indent) throws IllegalArgumentException {
         return XmlUtil.format(input, indent);
+    }
+
+    /**
+     * Ensures that the returned string is at most {@code maxLength} long. If
+     * it's longer, trims it to one char less (not taking word boundaries into
+     * account), and appends an ellipsis. Returns {@code null} for null input.
+     *
+     * @param s The string to shorten
+     * @param maxLength Maximum length the returned string must have
+     * @return Shortened string
+     */
+    public static String shorten(String s, int maxLength) {
+        Preconditions.checkPositive("maxLength", maxLength);
+        if (s == null || s.length() <= maxLength) {
+            return s;
+        }
+        return s.substring(maxLength - 1) + '…';
+    }
+
+    /**
+     * Removes all occurrence of {@code charToRemove} from {@code str}. This method is more efficient than
+     * {@link String#replaceAll(String, String)} which compiles a regex from the first parameter every invocation.
+     */
+    public static String removeCharacter(String str, char charToRemove) {
+        if (str == null || str.indexOf(charToRemove) == -1) {
+            return str;
+        }
+        char[] chars = str.toCharArray();
+        int pos = 0;
+        for (int i = 0; i < chars.length; i++) {
+            if (chars[i] != charToRemove) {
+                chars[pos++] = chars[i];
+            }
+        }
+        return new String(chars, 0, pos);
     }
 }

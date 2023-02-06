@@ -24,6 +24,7 @@ import com.hazelcast.sql.impl.expression.ExpressionEvalContext;
 import com.hazelcast.sql.impl.expression.math.MultiplyFunction;
 import com.hazelcast.sql.impl.extract.QueryExtractor;
 import com.hazelcast.sql.impl.extract.QueryTarget;
+import com.hazelcast.sql.impl.row.JetSqlRow;
 import com.hazelcast.sql.impl.type.QueryDataType;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.annotation.ParallelJVMTest;
@@ -56,9 +57,9 @@ public class RowProjectorTest {
                 mock(ExpressionEvalContext.class)
         );
 
-        Object[] row = projector.project(1);
+        JetSqlRow row = projector.project(1);
 
-        assertThat(row).isEqualTo(new Object[]{2});
+        assertThat(row.getValues()).isEqualTo(new Object[]{2});
     }
 
     @Test
@@ -73,7 +74,7 @@ public class RowProjectorTest {
                 mock(ExpressionEvalContext.class)
         );
 
-        Object[] row = projector.project(1);
+        JetSqlRow row = projector.project(1);
 
         assertThat(row).isNull();
     }

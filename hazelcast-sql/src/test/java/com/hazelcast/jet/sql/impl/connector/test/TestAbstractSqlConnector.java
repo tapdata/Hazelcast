@@ -35,6 +35,7 @@ import com.hazelcast.sql.impl.QueryException;
 import com.hazelcast.sql.impl.expression.Expression;
 import com.hazelcast.sql.impl.expression.ExpressionEvalContext;
 import com.hazelcast.sql.impl.optimizer.PlanObjectKey;
+import com.hazelcast.sql.impl.row.JetSqlRow;
 import com.hazelcast.sql.impl.schema.ConstantTableStatistics;
 import com.hazelcast.sql.impl.schema.MappingField;
 import com.hazelcast.sql.impl.schema.Table;
@@ -48,13 +49,10 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.stream.IntStream;
 
 import static com.hazelcast.sql.impl.type.QueryDataTypeUtils.resolveTypeForTypeFamily;
 import static java.lang.String.join;
-import static java.util.Collections.singletonList;
 import static java.util.stream.Collectors.joining;
-import static java.util.stream.Collectors.toList;
 
 /**
  * A test connector. It emits rows of provided types and values. It
@@ -71,24 +69,14 @@ public abstract class TestAbstractSqlConnector implements SqlConnector {
     private static final String VALUES_DELIMITER = "\n";
     private static final String NULL = "null";
 
-    /**
-     * Creates a table with single column named "v" with INT type.
-     * The rows contain the sequence {@code 0 .. itemCount-1}.
-     */
-    static void create(SqlService sqlService, String connectorType, String tableName, int itemCount) {
-        List<String[]> values = IntStream.range(0, itemCount)
-                .mapToObj(i -> new String[]{String.valueOf(i)})
-                .collect(toList());
-        create(sqlService, connectorType, tableName, singletonList("v"), singletonList(QueryDataTypeFamily.INTEGER), values);
-    }
-
     static void create(
             SqlService sqlService,
             String connectorType,
             String tableName,
             List<String> names,
             List<QueryDataTypeFamily> types,
-            List<String[]> values
+            List<String[]> values,
+            boolean streamingActual
     ) {
         if (names.stream().anyMatch(n -> n.contains(DELIMITER) || n.contains("'"))) {
             throw new IllegalArgumentException("'" + DELIMITER + "' and apostrophe not supported in names");
@@ -109,14 +97,12 @@ public abstract class TestAbstractSqlConnector implements SqlConnector {
         String typesSerialized = types.stream().map(QueryDataTypeFamily::name).collect(joining(DELIMITER));
         String valuesSerialized = values.stream().map(row -> join(DELIMITER, row)).collect(joining(VALUES_DELIMITER));
 
-        boolean streaming = !connectorType.equals(TestBatchSqlConnector.TYPE_NAME);
-
         String sql = "CREATE MAPPING " + tableName + " TYPE " + connectorType
                 + " OPTIONS ("
                 + '\'' + OPTION_NAMES + "'='" + namesSerialized + "'"
                 + ", '" + OPTION_TYPES + "'='" + typesSerialized + "'"
                 + ", '" + OPTION_VALUES + "'='" + valuesSerialized + "'"
-                + ", '" + OPTION_STREAMING + "'='" + streaming + "'"
+                + ", '" + OPTION_STREAMING + "'='" + streamingActual + "'"
                 + ")";
         System.out.println(sql);
         sqlService.execute(sql).updateCount();
@@ -127,7 +113,8 @@ public abstract class TestAbstractSqlConnector implements SqlConnector {
     public List<MappingField> resolveAndValidateFields(
             @Nonnull NodeEngine nodeEngine,
             @Nonnull Map<String, String> options,
-            @Nonnull List<MappingField> userFields
+            @Nonnull List<MappingField> userFields,
+            @Nonnull String externalName
     ) {
         if (userFields.size() > 0) {
             throw QueryException.error("Don't specify external fields, they are fixed");
@@ -199,28 +186,27 @@ public abstract class TestAbstractSqlConnector implements SqlConnector {
             @Nonnull Table table_,
             @Nullable Expression<Boolean> predicate,
             @Nonnull List<Expression<?>> projection,
-            @Nullable FunctionEx<ExpressionEvalContext, EventTimePolicy<Object[]>> eventTimePolicyProvider
+            @Nullable FunctionEx<ExpressionEvalContext, EventTimePolicy<JetSqlRow>> eventTimePolicyProvider
     ) {
-        EventTimePolicy<Object[]> eventTimePolicy = eventTimePolicyProvider == null
-                ? EventTimePolicy.noEventTime()
-                : eventTimePolicyProvider.apply(null);
-
         TestTable table = (TestTable) table_;
         List<Object[]> rows = table.rows;
         boolean streaming = table.streaming;
 
         FunctionEx<Context, TestDataGenerator> createContextFn = ctx -> {
             ExpressionEvalContext evalContext = ExpressionEvalContext.from(ctx);
+            EventTimePolicy<JetSqlRow> eventTimePolicy = eventTimePolicyProvider == null
+                    ? EventTimePolicy.noEventTime()
+                    : eventTimePolicyProvider.apply(evalContext);
             return new TestDataGenerator(rows, predicate, projection, evalContext, eventTimePolicy, streaming);
         };
 
-        ProcessorMetaSupplier pms = createProcessorSupplier(createContextFn, eventTimePolicy);
+        ProcessorMetaSupplier pms = createProcessorSupplier(createContextFn);
         return dag.newUniqueVertex(table.toString(), pms);
     }
 
-    protected abstract ProcessorMetaSupplier createProcessorSupplier(FunctionEx<Context, TestDataGenerator> createContextFn, EventTimePolicy<Object[]> eventTimePolicy);
+    protected abstract ProcessorMetaSupplier createProcessorSupplier(FunctionEx<Context, TestDataGenerator> createContextFn);
 
-    private static final class TestTable extends JetTable {
+    public static final class TestTable extends JetTable {
 
         private final List<Object[]> rows;
         private final boolean streaming;
@@ -289,14 +275,14 @@ public abstract class TestAbstractSqlConnector implements SqlConnector {
                 Expression<Boolean> predicate,
                 List<Expression<?>> projections,
                 ExpressionEvalContext evalContext,
-                EventTimePolicy<Object[]> eventTimePolicy,
+                EventTimePolicy<JetSqlRow> eventTimePolicy,
                 boolean streaming
         ) {
-            EventTimeMapper<Object[]> eventTimeMapper = new EventTimeMapper<>(eventTimePolicy);
+            EventTimeMapper<JetSqlRow> eventTimeMapper = new EventTimeMapper<>(eventTimePolicy);
             eventTimeMapper.addPartitions(1);
             this.traverser = Traversers.traverseIterable(rows)
                     .flatMap(row -> {
-                        Object[] evaluated = ExpressionUtil.evaluate(predicate, projections, row, evalContext);
+                        JetSqlRow evaluated = ExpressionUtil.evaluate(predicate, projections, new JetSqlRow(evalContext.getSerializationService(), row), evalContext);
                         return evaluated == null ? Traversers.empty() : eventTimeMapper.flatMapEvent(evaluated, 0, -1);
                     });
 

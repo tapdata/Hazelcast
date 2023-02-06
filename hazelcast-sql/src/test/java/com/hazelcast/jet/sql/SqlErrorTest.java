@@ -19,7 +19,9 @@ package com.hazelcast.jet.sql;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.HazelcastInstanceNotActiveException;
 import com.hazelcast.core.MemberLeftException;
+import com.hazelcast.jet.sql.impl.connector.test.TestStreamSqlConnector;
 import com.hazelcast.sql.HazelcastSqlException;
+import com.hazelcast.sql.SqlService;
 import com.hazelcast.sql.SqlStatement;
 import com.hazelcast.sql.impl.SqlErrorCode;
 import com.hazelcast.test.HazelcastSerialClassRunner;
@@ -29,8 +31,10 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-import static com.hazelcast.jet.sql.SqlTestSupport.awaitSingleRunningJob;
-import static com.hazelcast.sql.SqlStatement.DEFAULT_CURSOR_BUFFER_SIZE;
+import static com.hazelcast.sql.impl.type.QueryDataTypeFamily.INTEGER;
+import static com.hazelcast.sql.impl.type.QueryDataTypeFamily.TIMESTAMP_WITH_TIME_ZONE;
+import static com.hazelcast.sql.impl.type.QueryDataTypeFamily.VARCHAR;
+import static java.util.Arrays.asList;
 import static junit.framework.TestCase.assertEquals;
 
 /**
@@ -42,7 +46,7 @@ public class SqlErrorTest extends SqlErrorAbstractTest {
 
     @Test
     public void testTimeout() {
-        checkTimeout(false, DEFAULT_CURSOR_BUFFER_SIZE);
+        checkTimeout(false);
     }
 
     @Test
@@ -51,19 +55,50 @@ public class SqlErrorTest extends SqlErrorAbstractTest {
         instance1 = newHazelcastInstance(false);
         instance2 = newHazelcastInstance(true);
 
+        String name = createTable(instance1.getSql(),
+                row(timestampTz(0), "Alice", 1),
+                row(timestampTz(1), null, 1),
+                row(timestampTz(2), "Alice", 1),
+                row(timestampTz(3), "Bob", 1),
+                row(timestampTz(4), "Alice", 1),
+                row(timestampTz(20), null, null)
+        );
+
         Thread shutdownThread = new Thread(() -> {
-            awaitSingleRunningJob(instance1);
+            // Waiting for a deployment of the job on both members.
+            assertTrueEventually(() -> {
+                assertEquals(1, getExecutionContextCount(instance1));
+                assertEquals(1, getExecutionContextCount(instance2));
+            });
             instance2.shutdown();
         });
-
         shutdownThread.start();
 
-        SqlStatement streamingQuery = new SqlStatement("SELECT * FROM TABLE(GENERATE_STREAM(1000))");
-
         // Start query
+        SqlStatement streamingQuery = new SqlStatement("SELECT window_start/*, window_end*/ FROM " +
+                "TABLE(HOP(" +
+                "  (SELECT * FROM TABLE(IMPOSE_ORDER(TABLE " + name + ", DESCRIPTOR(ts), INTERVAL '0.002' SECOND)))" +
+                "  , DESCRIPTOR(ts)" +
+                "  , INTERVAL '0.004' SECOND" +
+                "  , INTERVAL '0.002' SECOND" +
+                ")) " +
+                "GROUP BY 1/*, 2*/");
         HazelcastSqlException error = assertSqlException(instance1, streamingQuery);
         shutdownThread.join();
         assertInstanceOf(MemberLeftException.class, findRootCause(error));
+        shutdownThread.join();
+    }
+
+    private static String createTable(SqlService sqlService, Object[]... values) {
+        String name = randomName();
+        TestStreamSqlConnector.create(
+                sqlService,
+                name,
+                asList("ts", "name", "distance"),
+                asList(TIMESTAMP_WITH_TIME_ZONE, VARCHAR, INTEGER),
+                values
+        );
+        return name;
     }
 
     @Test

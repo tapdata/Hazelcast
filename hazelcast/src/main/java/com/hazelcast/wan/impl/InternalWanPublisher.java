@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -57,9 +57,10 @@ public interface InternalWanPublisher<T> extends WanPublisher<T> {
      * event or trigger processing.
      * NOTE: used only in Hazelcast Enterprise.
      *
-     * @param event the WAN anti-entropy event
+     * @param event              the WAN anti-entropy event
+     * @param wanReplicationName the WAN replication config name
      */
-    default void publishAntiEntropyEvent(WanAntiEntropyEvent event) {
+    default void publishAntiEntropyEvent(WanAntiEntropyEvent event, String wanReplicationName) {
     }
 
     /**

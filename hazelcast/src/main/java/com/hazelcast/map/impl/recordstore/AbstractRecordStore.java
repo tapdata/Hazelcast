@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -87,6 +87,14 @@ abstract class AbstractRecordStore implements RecordStore<Record> {
         addMutationObservers();
     }
 
+    public ValueComparator getValueComparator() {
+        return valueComparator;
+    }
+
+    public LockStore getLockStore() {
+        return lockStore;
+    }
+
     // Overridden in EE.
     protected void addMutationObservers() {
         // Add observer for event journal
@@ -121,7 +129,7 @@ abstract class AbstractRecordStore implements RecordStore<Record> {
         return getMapContainer().getMapConfig().getEvictionConfig().getEvictionPolicy();
     }
 
-    protected boolean persistenceEnabledFor(@Nonnull CallerProvenance provenance) {
+    public boolean persistenceEnabledFor(@Nonnull CallerProvenance provenance) {
         switch (provenance) {
             case WAN:
                 return mapContainer.isPersistWanReplicatedData();
@@ -231,12 +239,7 @@ abstract class AbstractRecordStore implements RecordStore<Record> {
         }
     }
 
-    protected void updateStatsOnPut(long hits, long now) {
-        stats.setLastUpdateTime(now);
-        stats.increaseHits(hits);
-    }
-
-    protected void updateStatsOnRemove(long now) {
+    public void updateStatsOnRemove(long now) {
         stats.setLastUpdateTime(now);
     }
 

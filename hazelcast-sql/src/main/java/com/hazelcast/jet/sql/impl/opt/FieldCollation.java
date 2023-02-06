@@ -16,24 +16,38 @@
 
 package com.hazelcast.jet.sql.impl.opt;
 
+import com.hazelcast.jet.impl.util.Util;
+import com.hazelcast.jet.sql.impl.JetSqlSerializerHook;
+import com.hazelcast.nio.ObjectDataInput;
+import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import org.apache.calcite.rel.RelFieldCollation;
 import org.apache.calcite.rel.RelFieldCollation.Direction;
 import org.apache.calcite.rel.RelFieldCollation.NullDirection;
 
+import java.io.IOException;
 import java.io.Serializable;
+import java.util.List;
 
 /**
  * Serializable equivalent of {@link RelFieldCollation}.
  */
-public class FieldCollation implements Serializable {
-    private final int index;
-    private final Direction direction;
-    private final NullDirection nullDirection;
+public class FieldCollation implements Serializable, IdentifiedDataSerializable {
+    private int index;
+    private Direction direction;
+    private NullDirection nullDirection;
+
+    public FieldCollation() {
+    }
 
     public FieldCollation(RelFieldCollation coll) {
         index = coll.getFieldIndex();
         direction = coll.getDirection();
         nullDirection = coll.nullDirection;
+    }
+
+    public static List<FieldCollation> convertCollation(List<RelFieldCollation> colls) {
+        return Util.toList(colls, FieldCollation::new);
     }
 
     public int getIndex() {
@@ -46,5 +60,29 @@ public class FieldCollation implements Serializable {
 
     public NullDirection getNullDirection() {
         return nullDirection;
+    }
+
+    @Override
+    public void writeData(ObjectDataOutput out) throws IOException {
+        out.writeInt(index);
+        out.writeObject(direction);
+        out.writeObject(nullDirection);
+    }
+
+    @Override
+    public void readData(ObjectDataInput in) throws IOException {
+        index = in.readInt();
+        direction = in.readObject();
+        nullDirection = in.readObject();
+    }
+
+    @Override
+    public int getFactoryId() {
+        return JetSqlSerializerHook.F_ID;
+    }
+
+    @Override
+    public int getClassId() {
+        return JetSqlSerializerHook.FIELD_COLLATION;
     }
 }

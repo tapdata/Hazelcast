@@ -57,6 +57,11 @@ public class SqlHadoopTest extends SqlTestSupport {
     public static void setUpClass() throws Exception {
         assumeThatNoWindowsOS();
 
+        // Tests might fail on some IBM JDKs with error:
+        // No LoginModule found for com.ibm.security.auth.module.JAASLoginModule
+        // see https://github.com/hazelcast/hazelcast/issues/20754
+        assumeHadoopSupportsIbmPlatform();
+
         initialize(1, null);
         sqlService = instance().getSql();
 

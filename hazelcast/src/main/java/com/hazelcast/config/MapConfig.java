@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2021, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
 
 package com.hazelcast.config;
 
-import com.hazelcast.internal.cluster.Versions;
 import com.hazelcast.internal.config.ConfigDataSerializerHook;
 import com.hazelcast.internal.config.DataPersistenceAndHotRestartMerger;
 import com.hazelcast.internal.partition.IPartition;
@@ -24,7 +23,6 @@ import com.hazelcast.map.IMap;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
-import com.hazelcast.nio.serialization.impl.Versioned;
 
 import javax.annotation.Nonnull;
 import java.io.IOException;
@@ -43,7 +41,7 @@ import static com.hazelcast.internal.util.Preconditions.isNotNull;
 /**
  * Contains the configuration for an {@link IMap}.
  */
-public class MapConfig implements IdentifiedDataSerializable, NamedConfig, Versioned {
+public class MapConfig implements IdentifiedDataSerializable, NamedConfig {
 
     /**
      * The minimum number of backups
@@ -59,9 +57,14 @@ public class MapConfig implements IdentifiedDataSerializable, NamedConfig, Versi
     public static final int MAX_BACKUP_COUNT = IPartition.MAX_BACKUP_COUNT;
 
     /**
+     * The number of Time to Live that represents disabling TTL.
+     */
+    public static final int DISABLED_TTL_SECONDS = 0;
+
+    /**
      * The number of default Time to Live in seconds.
      */
-    public static final int DEFAULT_TTL_SECONDS = 0;
+    public static final int DEFAULT_TTL_SECONDS = DISABLED_TTL_SECONDS;
 
     /**
      * The number of default time to wait eviction in seconds.
@@ -1002,16 +1005,9 @@ public class MapConfig implements IdentifiedDataSerializable, NamedConfig, Versi
         out.writeObject(merkleTreeConfig);
         out.writeObject(eventJournalConfig);
         out.writeShort(metadataPolicy.getId());
-
-        if (out.getVersion().isGreaterOrEqual(Versions.V4_2)) {
-            out.writeBoolean(perEntryStatsEnabled);
-        }
-        if (out.getVersion().isGreaterOrEqual(Versions.V5_0)) {
-            out.writeObject(dataPersistenceConfig);
-        }
-        if (out.getVersion().isGreaterOrEqual(Versions.V5_1)) {
-            out.writeObject(tieredStoreConfig);
-        }
+        out.writeBoolean(perEntryStatsEnabled);
+        out.writeObject(dataPersistenceConfig);
+        out.writeObject(tieredStoreConfig);
     }
 
     @Override
@@ -1041,15 +1037,8 @@ public class MapConfig implements IdentifiedDataSerializable, NamedConfig, Versi
         merkleTreeConfig = in.readObject();
         eventJournalConfig = in.readObject();
         metadataPolicy = MetadataPolicy.getById(in.readShort());
-
-        if (in.getVersion().isGreaterOrEqual(Versions.V4_2)) {
-            perEntryStatsEnabled = in.readBoolean();
-        }
-        if (in.getVersion().isGreaterOrEqual(Versions.V5_0)) {
-            setDataPersistenceConfig(in.readObject());
-        }
-        if (in.getVersion().isGreaterOrEqual(Versions.V5_1)) {
-            setTieredStoreConfig(in.readObject());
-        }
+        perEntryStatsEnabled = in.readBoolean();
+        setDataPersistenceConfig(in.readObject());
+        setTieredStoreConfig(in.readObject());
     }
 }

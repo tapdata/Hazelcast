@@ -27,6 +27,7 @@ import com.hazelcast.sql.impl.expression.Expression;
 import com.hazelcast.sql.impl.expression.ExpressionEvalContext;
 import com.hazelcast.sql.impl.optimizer.PlanObjectKey;
 import com.hazelcast.sql.impl.row.EmptyRow;
+import com.hazelcast.sql.impl.row.JetSqlRow;
 import com.hazelcast.sql.impl.schema.ConstantTableStatistics;
 import com.hazelcast.sql.impl.schema.TableField;
 
@@ -51,7 +52,7 @@ class SeriesTable extends JetTable {
         this.argumentExpressions = argumentExpressions;
     }
 
-    BatchSource<Object[]> items(Expression<Boolean> predicate, List<Expression<?>> projections) {
+    BatchSource<JetSqlRow> items(Expression<Boolean> predicate, List<Expression<?>> projections) {
         List<Expression<?>> argumentExpressions = this.argumentExpressions;
         return SourceBuilder
                 .batch("series", ctx -> {
@@ -97,7 +98,7 @@ class SeriesTable extends JetTable {
 
         private static final int MAX_BATCH_SIZE = 1024;
 
-        private final Iterator<Object[]> iterator;
+        private final Iterator<JetSqlRow> iterator;
 
         private DataGenerator(
                 int start,
@@ -109,12 +110,13 @@ class SeriesTable extends JetTable {
         ) {
             this.iterator = IntStream.iterate(start, i -> i + step)
                     .limit(numberOfItems(start, stop, step))
-                    .mapToObj(i -> ExpressionUtil.evaluate(predicate, projections, new Object[]{i}, evalContext))
+                    .mapToObj(i -> ExpressionUtil.evaluate(predicate, projections,
+                            new JetSqlRow(evalContext.getSerializationService(), new Object[]{i}), evalContext))
                     .filter(Objects::nonNull)
                     .iterator();
         }
 
-        private void fillBuffer(SourceBuffer<Object[]> buffer) {
+        private void fillBuffer(SourceBuffer<JetSqlRow> buffer) {
             for (int i = 0; i < MAX_BATCH_SIZE; i++) {
                 if (iterator.hasNext()) {
                     buffer.add(iterator.next());
