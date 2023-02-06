@@ -20,12 +20,10 @@ import com.hazelcast.cluster.Address;
 import com.hazelcast.internal.networking.OutboundFrame;
 import com.hazelcast.internal.nio.ConnectionLifecycleListener;
 import com.hazelcast.internal.nio.ConnectionType;
-import com.hazelcast.internal.server.FirewallingServer;
-import com.hazelcast.internal.server.Server;
-import com.hazelcast.internal.server.ServerConnectionManager;
 import com.hazelcast.internal.nio.Packet;
 import com.hazelcast.internal.nio.PacketIOHelper;
 import com.hazelcast.internal.server.ServerConnection;
+import com.hazelcast.internal.server.ServerConnectionManager;
 import com.hazelcast.spi.impl.NodeEngineImpl;
 
 import java.net.InetAddress;

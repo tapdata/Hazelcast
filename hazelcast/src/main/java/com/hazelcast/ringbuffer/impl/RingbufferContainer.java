@@ -155,7 +155,7 @@ public class RingbufferContainer<T, E> implements IdentifiedDataSerializable, No
                 final long tailSequence = store.getLargestSequence();
                 if (tailSequence() < tailSequence) {
                     ringbuffer.setTailSequence(tailSequence);
-                    ringbuffer.setHeadSequence(tailSequence+1);
+                    ringbuffer.setHeadSequence(tailSequence + 1);
                 }
             } catch (Exception e) {
                 throw new HazelcastException(e);

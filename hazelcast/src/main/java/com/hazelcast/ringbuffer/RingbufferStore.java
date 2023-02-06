@@ -75,10 +75,11 @@ public interface RingbufferStore<T> {
      *
      * @return the largest sequence of the data in the data store
      */
-    default long getLargestSequence(){
+    default long getLargestSequence() {
         throw new UnsupportedOperationException();
     }
-    default long getSmallestSequence(){
+
+    default long getSmallestSequence() {
         throw new UnsupportedOperationException();
     }
 
