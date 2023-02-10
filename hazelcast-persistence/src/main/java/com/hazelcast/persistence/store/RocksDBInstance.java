@@ -1,4 +1,4 @@
-package com.hazelcast.persistence;
+package com.hazelcast.persistence.store;
 
 import org.rocksdb.Options;
 import org.rocksdb.RocksDB;

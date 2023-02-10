@@ -1,23 +1,35 @@
 package com.hazelcast.persistence;
 
-import com.hazelcast.config.*;
-import com.hazelcast.persistence.http.HttpConstant;
-import com.hazelcast.persistence.http.HttpTMIMap;
+import com.hazelcast.config.Config;
+import com.hazelcast.config.DataPersistenceConfig;
+import com.hazelcast.config.EvictionConfig;
+import com.hazelcast.config.EvictionPolicy;
+import com.hazelcast.config.InMemoryFormat;
+import com.hazelcast.config.MapConfig;
+import com.hazelcast.config.MapStoreConfig;
+import com.hazelcast.config.MaxSizePolicy;
+import com.hazelcast.config.RingbufferConfig;
+import com.hazelcast.config.RingbufferStoreConfig;
+import com.hazelcast.map.IMap;
+import com.hazelcast.persistence.config.PersistenceMongoDBConfig;
+import com.hazelcast.persistence.config.PersistenceStorageAbstractConfig;
+import com.hazelcast.persistence.external.ExternalResource;
+import com.hazelcast.persistence.external.ExternalResourceFactory;
+import com.hazelcast.persistence.store.PersistenceMapStore;
+import com.hazelcast.persistence.store.PersistenceRingBufferStore;
+import com.hazelcast.persistence.store.PersistenceStorageStore;
+import com.hazelcast.persistence.store.PersistenceStoreFactory;
 import com.hazelcast.ringbuffer.Ringbuffer;
+import com.hazelcast.ringbuffer.RingbufferStore;
 import com.mongodb.MongoClient;
 import com.mongodb.MongoClientURI;
 import com.mongodb.client.MongoCollection;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.Logger;
-import org.bson.BsonBinaryReader;
 import org.bson.Document;
-import org.bson.codecs.Codec;
-import org.bson.codecs.DecoderContext;
-import org.bson.codecs.DocumentCodec;
-import org.rocksdb.RocksDB;
-import org.rocksdb.RocksDBException;
 
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
+import java.util.Iterator;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -26,25 +38,12 @@ import static com.mongodb.client.model.Sorts.ascending;
 import static com.mongodb.client.model.Sorts.descending;
 
 public class PersistenceStorage {
-	private StorageMode imapStorageMode = StorageMode.RocksDB;
-	private String imapRocksDBPath = "./imap-cache-data/";
-	private String imapMongoUri = "mongodb://127.0.0.1";
-	private String imapDB = "cache";
-	private String imapCollection = "imap";
-	private Integer imapInMemSize = 1;
-
-	private StorageMode ringBufferStorageMode = StorageMode.RocksDB;
-	private String ringBufferRocksDBPath = "./ringBuffer-cache-data/";
-	private String ringBufferMongoUri = "mongodb://127.0.0.1";
-	private String ringBufferDB = "cache";
-	private String ringBufferCollection = "ringBuffer";
-	private Integer ringBufferInMemSize = 1;
-	private String baseUrl;
-	private String accessCode;
-	private ConcurrentHashMap<String, Thread> ttlThreadMap = new ConcurrentHashMap<>();
+	private final ConcurrentHashMap<String, Thread> ttlThreadMap = new ConcurrentHashMap<>();
 	private Logger logger;
+	private final ConcurrentHashMap<String, PersistenceStorageAbstractConfig> persistenceConfigMap = new ConcurrentHashMap<>();
+	private final ConcurrentHashMap<String, PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>>> storeImplementationMap = new ConcurrentHashMap<>();
 
-	public PersistenceStorage() {
+	private PersistenceStorage() {
 	}
 
 	public static PersistenceStorage getInstance() {
@@ -65,124 +64,36 @@ public class PersistenceStorage {
 		}
 	}
 
-	public PersistenceStorage setStorageMode(StorageMode storageMode) {
-		this.setImapStorageMode(storageMode);
-		this.setRingBufferStorageMode(storageMode);
-		return this;
+	public static String getConfigKey(ConstructType constructType, String name) {
+		if (null == constructType) {
+			throw new IllegalArgumentException("Construct type cannot be null");
+		}
+		if (StringUtils.isBlank(name)) {
+			throw new IllegalArgumentException("Name cannot be blank");
+		}
+		return String.join("-", constructType.name(), name);
 	}
 
-	public PersistenceStorage setImapStorageMode(StorageMode storageMode) {
-		this.imapStorageMode = storageMode;
-		return this;
+	public PersistenceStorageAbstractConfig getPersistenceStorageConfig(ConstructType constructType, String name) {
+		String configKey = getConfigKey(constructType, name);
+		return persistenceConfigMap.get(configKey);
 	}
 
-	public PersistenceStorage setRingBufferStorageMode(StorageMode storageMode) {
-		this.ringBufferStorageMode = storageMode;
-		return this;
-	}
-
-	public PersistenceStorage setRocksDBPath(String rocksDBPath) {
-		this.setImapRocksDBPath(rocksDBPath);
-		this.setRingBufferRocksDBPath(rocksDBPath);
-		return this;
-	}
-
-	public PersistenceStorage setImapRocksDBPath(String rocksDBPath) {
-		this.imapRocksDBPath = rocksDBPath;
-		return this;
-	}
-
-	public PersistenceStorage setRingBufferRocksDBPath(String rocksDBPath) {
-		this.ringBufferRocksDBPath = rocksDBPath;
-		return this;
-	}
-
-	public PersistenceStorage setMongoUri(String mongoUri) {
-		this.setImapMongoUri(mongoUri);
-		this.setRingBufferMongoUri(mongoUri);
-		return this;
-	}
-
-	public PersistenceStorage setImapMongoUri(String mongoUri) {
-		this.imapMongoUri = mongoUri;
-		return this;
-	}
-
-	public PersistenceStorage setRingBufferMongoUri(String mongoUri) {
-		this.ringBufferMongoUri = mongoUri;
-		return this;
-	}
-
-	public PersistenceStorage setDB(String db) {
-		this.setImapDB(db);
-		this.setRingBufferDB(db);
-		return this;
-	}
-
-	public PersistenceStorage setImapDB(String db) {
-		this.imapDB = db;
-		return this;
-	}
-
-	public PersistenceStorage setRingBufferDB(String db) {
-		this.ringBufferDB = db;
-		return this;
-	}
-
-	public PersistenceStorage setCollection(String collection) {
-		this.setImapCollection(collection);
-		this.setRingBufferCollection((collection));
-		return this;
-	}
-
-	public PersistenceStorage setImapCollection(String imapCollection) {
-		this.imapCollection = imapCollection;
-		return this;
-	}
-
-	public PersistenceStorage setRingBufferCollection(String ringBufferCollection) {
-		this.ringBufferCollection = ringBufferCollection;
-		return this;
-	}
-
-	public PersistenceStorage setInMemSize(Integer inMemSize) {
-		this.setImapInMemSize(inMemSize);
-		this.setRingBufferInMemSize(inMemSize);
-		return this;
-	}
-
-	public PersistenceStorage setImapInMemSize(Integer imapInMemSize) {
-		this.imapInMemSize = imapInMemSize;
-		return this;
-	}
-
-	public PersistenceStorage setRingBufferInMemSize(Integer ringBufferInMemSize) {
-		this.ringBufferInMemSize = ringBufferInMemSize;
-		return this;
-	}
-
-	public PersistenceStorage baseUrl(String baseUrl) {
-		this.baseUrl = baseUrl;
-		return this;
-	}
-
-	public PersistenceStorage accessCode(String accessCode) {
-		this.accessCode = accessCode;
-		return this;
-	}
-
-	private Integer connectTimeoutMs;
-
-	public PersistenceStorage connectTimeoutMs(Integer connectTimeoutMs) {
-		this.connectTimeoutMs = connectTimeoutMs;
-		return this;
-	}
-
-	private Integer readTimeoutMs;
-
-	public PersistenceStorage readTimeoutMs(Integer readTimeoutMs) {
-		this.readTimeoutMs = readTimeoutMs;
-		return this;
+	public synchronized void addConfig(PersistenceStorageAbstractConfig persistenceStorageAbstractConfig) {
+		String configKey;
+		try {
+			configKey = getConfigKey(persistenceStorageAbstractConfig.getConstructType(), persistenceStorageAbstractConfig.getName());
+		} catch (Exception e) {
+			throw new RuntimeException("Get config key failed", e);
+		}
+		PersistenceStorageAbstractConfig existingConfig = persistenceConfigMap.get(configKey);
+		if (null != existingConfig) {
+			if (!existingConfig.getStorageMode().equals(persistenceStorageAbstractConfig.getStorageMode())) {
+				// Nonsupport change storage mode
+				throw new RuntimeException("Change persistence storage mode is not allowed\n old: " + existingConfig + "\n new: " + persistenceStorageAbstractConfig);
+			}
+		}
+		persistenceConfigMap.put(configKey, persistenceStorageAbstractConfig);
 	}
 
 	public PersistenceStorage logger(Logger logger) {
@@ -195,37 +106,48 @@ public class PersistenceStorage {
 	}
 
 	public PersistenceStorage initMapStoreConfig(Config c, String mapName) {
-		if (this.imapStorageMode == StorageMode.Mem) {
-			return this;
+		checkInitConfig(mapName, ConstructType.IMAP);
+		PersistenceStorageAbstractConfig persistenceStorageAbstractConfig = getPersistenceStorageConfig(ConstructType.IMAP, mapName);
+		if (null == persistenceStorageAbstractConfig) {
+			throw new IllegalArgumentException(String.format("IMap name %s's persistence storage config is not exists, please add config", mapName));
 		}
+		StorageMode storageMode = persistenceStorageAbstractConfig.getStorageMode();
 		MapConfig mapCfg = c.getMapConfig(mapName);
 		MapStoreConfig mapStoreCfg = mapCfg.getMapStoreConfig();
-		switch (this.imapStorageMode) {
-			case MongoDB:
-				mapStoreCfg.setClassName(MongoDBIMap.class.getName())
-						.setProperty("mongo.uri", this.imapMongoUri)
-						.setProperty("mongo.db", this.imapDB)
-						.setProperty("mongo.collection", this.imapCollection);
-				break;
-			case RocksDB:
-				mapStoreCfg.setClassName(RocksDBIMap.class.getName())
-						.setProperty("rocksdb.dbPath", this.imapRocksDBPath);
-				break;
-			case HTTP_TM:
-				mapStoreCfg.setClassName(HttpTMIMap.class.getName())
-						.setProperty(HttpConstant.BASE_URL_PROPERTY, baseUrl)
-						.setProperty(HttpConstant.ACCESS_CODE_PROPERTY, accessCode)
-						.setProperty(HttpConstant.CONNECT_TIMEOUT_PROPERTY, connectTimeoutMs.toString())
-						.setProperty(HttpConstant.READ_TIMEOUT_PROPERTY, readTimeoutMs.toString());
-				break;
+
+		ExternalResource<PersistenceStorageAbstractConfig> externalResource = getExternalResource(storageMode);
+		if (null == externalResource) {
+			return this;
+		}
+		externalResource.doInit(persistenceStorageAbstractConfig);
+		String configKey = getConfigKey(ConstructType.IMAP, mapName);
+		try {
+			if (storeImplementationMap.containsKey(configKey)) {
+				PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> persistenceStorageStore = storeImplementationMap.get(configKey);
+				persistenceStorageStore.doDestroy();
+				persistenceStorageStore.doInit(persistenceStorageAbstractConfig, externalResource);
+			} else {
+				PersistenceStoreFactory persistenceStoreFactory = new PersistenceStoreFactory();
+				PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> store = persistenceStoreFactory.createStore(ConstructType.IMAP, storageMode);
+				if (null == store) {
+					return this;
+				}
+				store.doInit(persistenceStorageAbstractConfig, externalResource);
+				mapStoreCfg.setImplementation(store);
+				storeImplementationMap.put(configKey, store);
+			}
+		} catch (Exception e) {
+			CommonUtils.ignoreAnyError(externalResource::close);
+			throw new RuntimeException(e);
 		}
 		EvictionConfig evictionConfig = new EvictionConfig()
 				.setEvictionPolicy(EvictionPolicy.LRU)
 				.setMaxSizePolicy(MaxSizePolicy.PER_NODE)
-				.setSize(this.imapInMemSize);
+				.setSize(persistenceStorageAbstractConfig.getInMemSize());
 		mapCfg.setEvictionConfig(evictionConfig);
 		mapStoreCfg.setEnabled(true);
 		mapCfg.setMapStoreConfig(mapStoreCfg);
+		mapCfg.setDataPersistenceConfig(new DataPersistenceConfig().setEnabled(true));
 		c.addMapConfig(mapCfg);
 		return this;
 	}
@@ -235,29 +157,61 @@ public class PersistenceStorage {
 	}
 
 	public PersistenceStorage initRingBufferConfig(Config c, String ringBufferName) {
-		if (this.ringBufferStorageMode == StorageMode.Mem) {
+		checkInitConfig(ringBufferName, ConstructType.RINGBUFFER);
+		PersistenceStorageAbstractConfig persistenceStorageAbstractConfig = getPersistenceStorageConfig(ConstructType.RINGBUFFER, ringBufferName);
+		if (null == persistenceStorageAbstractConfig) {
+			throw new IllegalArgumentException(String.format("Ring buffer name %s's persistence storage config is not exists, please add config", ringBufferName));
+		}
+		StorageMode storageMode = persistenceStorageAbstractConfig.getStorageMode();
+		RingbufferConfig ringbufferConfig = c.getRingbufferConfig(ringBufferName);
+		RingbufferStoreConfig ringbufferStoreConfig = ringbufferConfig.getRingbufferStoreConfig();
+
+		ExternalResource<PersistenceStorageAbstractConfig> externalResource = getExternalResource(storageMode);
+		if (null == externalResource) {
 			return this;
 		}
-
-		RingbufferConfig ringbufferConfig = c.getRingbufferConfig(ringBufferName);
-		ringbufferConfig.setCapacity(this.ringBufferInMemSize);
-		RingbufferStoreConfig ringbufferStoreConfig = ringbufferConfig.getRingbufferStoreConfig();
-		switch (this.ringBufferStorageMode) {
-			case MongoDB:
-				ringbufferStoreConfig.setClassName(MongoDBRingBuffer.class.getName())
-						.setProperty("mongo.uri", this.ringBufferMongoUri)
-						.setProperty("mongo.db", this.ringBufferDB)
-						.setProperty("mongo.collection", this.ringBufferCollection);
-				break;
-			case RocksDB:
-				ringbufferStoreConfig.setClassName(RocksDBRingBuffer.class.getName())
-						.setProperty("rocksdb.dbPath", this.ringBufferRocksDBPath);
+		externalResource.doInit(persistenceStorageAbstractConfig);
+		String configKey = getConfigKey(ConstructType.RINGBUFFER, ringBufferName);
+		try {
+			if (storeImplementationMap.containsKey(configKey)) {
+				PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> persistenceStorageStore = storeImplementationMap.get(configKey);
+				persistenceStorageStore.doDestroy();
+				persistenceStorageStore.doInit(persistenceStorageAbstractConfig, externalResource);
+			} else {
+				PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> store = getStore(storageMode);
+				if (null == store) {
+					return this;
+				}
+				store.doInit(persistenceStorageAbstractConfig, externalResource);
+				ringbufferStoreConfig.setStoreImplementation((RingbufferStore) store);
+				storeImplementationMap.put(configKey, store);
+			}
+		} catch (Exception e) {
+			CommonUtils.ignoreAnyError(externalResource::close);
+			throw new RuntimeException(e);
 		}
-		ringbufferConfig.setCapacity(this.ringBufferInMemSize).setInMemoryFormat(InMemoryFormat.OBJECT);
+		ringbufferConfig.setCapacity(persistenceStorageAbstractConfig.getInMemSize())
+				.setInMemoryFormat(InMemoryFormat.OBJECT);
 		ringbufferStoreConfig.setEnabled(true);
 		ringbufferConfig.setRingbufferStoreConfig(ringbufferStoreConfig);
 		c.addRingBufferConfig(ringbufferConfig);
 		return this;
+	}
+
+	private static void checkInitConfig(String name, ConstructType constructType) {
+		if (StringUtils.isBlank(name) || "default".equals(name)) {
+			throw new RuntimeException(String.format("Default %s config is not allowed", constructType.name()));
+		}
+	}
+
+	private static ExternalResource<PersistenceStorageAbstractConfig> getExternalResource(StorageMode storageMode) {
+		ExternalResourceFactory externalResourceFactory = new ExternalResourceFactory();
+		return externalResourceFactory.createExternalResource(storageMode);
+	}
+
+	private static PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> getStore(StorageMode storageMode) {
+		PersistenceStoreFactory persistenceStoreFactory = new PersistenceStoreFactory();
+		return persistenceStoreFactory.createStore(ConstructType.RINGBUFFER, storageMode);
 	}
 
 
@@ -273,8 +227,20 @@ public class PersistenceStorage {
 		return this;
 	}
 
-	public PersistenceStorage setImapTTL(String imapName, long ttlSeconds) {
-		new Thread(() -> {
+	public PersistenceStorage setImapTTL(IMap<String, Object> imap, long ttlSeconds) {
+		ConstructType constructType = ConstructType.IMAP;
+		PersistenceStorageAbstractConfig persistenceStorageAbstractConfig = getPersistenceStorageConfig(constructType, imap.getName());
+		StorageMode storageMode = persistenceStorageAbstractConfig.getStorageMode();
+		if (storageMode == StorageMode.Mem || storageMode == StorageMode.HTTP_TM) {
+			return this;
+		}
+		String ttlThreadKey = getTtlThreadKey(constructType, imap.getName());
+		if (ttlThreadMap.containsKey(ttlThreadKey)) {
+			// use thread's interrupt method to stop pre ttl thread
+			ttlThreadMap.get(ttlThreadKey).interrupt();
+		}
+		Thread ttlThread = new Thread(() -> {
+			Thread.currentThread().setName(String.format("Clear-IMap-TTL-%s", ttlThreadKey));
 			long sleepSeconds = 60;
 			if (ttlSeconds < 60) {
 				sleepSeconds = ttlSeconds;
@@ -282,49 +248,13 @@ public class PersistenceStorage {
 			if (sleepSeconds < 10) {
 				sleepSeconds = 10;
 			}
-			while (true) {
-				try {
-					Thread.sleep(sleepSeconds * 1000);
-				} catch (Exception e) {
-				}
-			}
-		}).start();
-		return this;
-	}
-
-	public PersistenceStorage setRingBufferTTL(Ringbuffer<Document> rb, long ttlSeconds) {
-		if (this.ringBufferStorageMode == StorageMode.Mem) {
-			return this;
-		}
-		if (this.ringBufferStorageMode == StorageMode.HTTP_TM) {
-			return this;
-		}
-		if (ttlThreadMap.containsKey(rb.getName())) {
-			// use thread's interrupt method to stop pre ttl thread
-			ttlThreadMap.get(rb.getName()).interrupt();
-		}
-		Thread ttlThread = new Thread(() -> {
-			RocksDB rocksDB = null;
-			MongoClient mongoClient = null;
-			MongoCollection<Document> cacheCollection = null;
-			Codec<Document> documentCodec = null;
-				Thread.currentThread().setName(String.format("Clear-RingBuffer-TTL-%s-%s", ringBufferStorageMode.name(), rb.getName()));
-				long sleepSeconds = 60;
-				if (ttlSeconds < 60) {
-					sleepSeconds = ttlSeconds;
-				}
-				if (sleepSeconds < 10) {
-					sleepSeconds = 10;
-				}
+			PersistenceMapStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> persistenceMapStore = null;
 			try {
-				String keySplit = "__0x1__";
-				String sign = rb.getName() + keySplit;
-				if (this.ringBufferStorageMode == StorageMode.MongoDB) {
-					mongoClient = MongodbUtil.createClient(this.ringBufferMongoUri);
-					cacheCollection = mongoClient.getDatabase(this.ringBufferDB).getCollection(this.ringBufferCollection);
-				} else if (this.ringBufferStorageMode == StorageMode.RocksDB) {
-					rocksDB = RocksDBInstance.getInstance(this.ringBufferRocksDBPath);
-					documentCodec = new DocumentCodec();
+				PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> store = createStore(persistenceStorageAbstractConfig);
+				if (store instanceof PersistenceMapStore) {
+					persistenceMapStore = (PersistenceMapStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>>) store;
+				} else {
+					return;
 				}
 				while (ttlIsRunning()) {
 					try {
@@ -333,7 +263,72 @@ public class PersistenceStorage {
 						break;
 					}
 					try {
-						if (rb.tailSequence() == -1) {
+						Iterator<Map.Entry<String, Object>> iterator = imap.iterator();
+						while (ttlIsRunning() && iterator.hasNext()) {
+							Map.Entry<String, Object> entry = iterator.next();
+							Object value = entry.getValue();
+							if (!(value instanceof Document)) {
+								continue;
+							}
+							Document document = (Document) entry.getValue();
+							Long _ts = getTs(document);
+							if (System.currentTimeMillis() - _ts * 1000 < ttlSeconds * 1000) {
+								break;
+							}
+							persistenceMapStore.delete(entry.getKey());
+						}
+					} catch (Exception e) {
+						if (null != logger) {
+							logger.warn("IMap [{}] clear ttl data failed, ttl seconds: {}", imap.getName(), ttlSeconds, e);
+						}
+					}
+				}
+			} finally {
+				Optional.ofNullable(persistenceMapStore).ifPresent(PersistenceStorageStore::doDestroy);
+			}
+		});
+		ttlThread.start();
+		ttlThreadMap.put(ttlThreadKey, ttlThread);
+		return this;
+	}
+
+	public PersistenceStorage setRingBufferTTL(Ringbuffer<Document> rb, long ttlSeconds) {
+		ConstructType constructType = ConstructType.RINGBUFFER;
+		PersistenceStorageAbstractConfig persistenceStorageAbstractConfig = getPersistenceStorageConfig(constructType, rb.getName());
+		StorageMode storageMode = persistenceStorageAbstractConfig.getStorageMode();
+		if (storageMode == StorageMode.Mem || storageMode == StorageMode.HTTP_TM) {
+			return this;
+		}
+		String ttlThreadKey = getTtlThreadKey(constructType, rb.getName());
+		if (ttlThreadMap.containsKey(ttlThreadKey)) {
+			// use thread's interrupt method to stop pre ttl thread
+			ttlThreadMap.get(ttlThreadKey).interrupt();
+		}
+		Thread ttlThread = new Thread(() -> {
+			Thread.currentThread().setName(String.format("Clear-RingBuffer-TTL-%s-%s", storageMode.name(), rb.getName()));
+			long sleepSeconds = 60;
+			if (ttlSeconds < 60) {
+				sleepSeconds = ttlSeconds;
+			}
+			if (sleepSeconds < 10) {
+				sleepSeconds = 10;
+			}
+			PersistenceRingBufferStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> persistenceRingBufferStore = null;
+			try {
+				PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> store = createStore(persistenceStorageAbstractConfig);
+				if (store instanceof PersistenceRingBufferStore) {
+					persistenceRingBufferStore = (PersistenceRingBufferStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>>) store;
+				} else {
+					return;
+				}
+				while (ttlIsRunning()) {
+					try {
+						TimeUnit.SECONDS.sleep(sleepSeconds);
+					} catch (InterruptedException e) {
+						break;
+					}
+					try {
+						if (rb.tailSequence() < 0) {
 							continue;
 						}
 						long s = rb.headSequence() - 1;
@@ -342,74 +337,73 @@ public class PersistenceStorage {
 							if (s >= rb.tailSequence()) {
 								break;
 							}
-							Document document = null;
-							Document value = null;
+							Document document;
 							try {
-								if (this.ringBufferStorageMode == StorageMode.MongoDB) {
-									document = cacheCollection.find(new Document("ringBuffer", rb.getName()).append("key", s)).first();
-								} else if (this.ringBufferStorageMode == StorageMode.RocksDB) {
-									byte[] bytes = rocksDB.get((sign + s).getBytes());
-									if (null != bytes) {
-										BsonBinaryReader bsonReader = new BsonBinaryReader(ByteBuffer.wrap(bytes));
-										document = documentCodec.decode(bsonReader, DecoderContext.builder().build());
-									}
-								}
+								document = persistenceRingBufferStore.load(s);
 							} catch (Exception e) {
 								throw new RuntimeException("Read one from ringBuffer failed, sequence: " + s, e);
 							}
-							if (null == document) {
-								continue;
-							}
-							if (document.get("value") instanceof Document) {
-								value = (Document) document.get("value");
-							}
-							if (null == value) {
-								continue;
-							}
-							long _ts;
-							if (!value.containsKey("_ts")) {
-								continue;
-							}
-							_ts = value.getLong("_ts");
+							Long _ts = getTs(document);
+							if (_ts == null) continue;
 							if (System.currentTimeMillis() - _ts * 1000 < ttlSeconds * 1000) {
 								break;
 							}
-							if (this.ringBufferStorageMode == StorageMode.MongoDB) {
-								Document query = new Document("ringBuffer", rb.getName()).append("key", s);
-								try {
-									cacheCollection.deleteOne(query);
-								} catch (Exception e) {
-									throw new RuntimeException("Delete from mongodb failed, query: " + query.toJson(), e);
-								}
-							} else if (this.ringBufferStorageMode == StorageMode.RocksDB) {
-								try {
-									rocksDB.delete((sign + s).getBytes(StandardCharsets.UTF_8));
-									rocksDB.put((sign + "smallestSequence").getBytes(StandardCharsets.UTF_8), ((Long) (s + 1)).toString().getBytes());
-								} catch (RocksDBException e) {
-									throw new RuntimeException("Delete from rocksdb failed, key: " + sign + s, e);
-								}
-							}
+							persistenceRingBufferStore.delete(s);
 						}
 					} catch (Exception e) {
 						if (null != logger) {
-							logger.warn("Ringbuffer [{}] clear ttl data failed, ttl seconds: {}", ttlSeconds, rb.getName(), e);
+							logger.warn("Ringbuffer [{}] clear ttl data failed, ttl seconds: {}", rb.getName(), ttlSeconds, e);
 						}
 					}
 				}
 			} finally {
-				try {
-					Optional.ofNullable(rocksDB).ifPresent(RocksDB::close);
-				} catch (Exception ignored) {
-				}
-				try {
-					Optional.ofNullable(mongoClient).ifPresent(MongoClient::close);
-				} catch (Exception ignored) {
-				}
+				Optional.ofNullable(persistenceRingBufferStore).ifPresent(PersistenceStorageStore::doDestroy);
 			}
 		});
 		ttlThread.start();
-		ttlThreadMap.put(rb.getName(), ttlThread);
+		ttlThreadMap.put(ttlThreadKey, ttlThread);
 		return this;
+	}
+
+	private static Long getTs(Document document) {
+		if (null == document) {
+			return null;
+		}
+		Document value = null;
+		if (document.get("value") instanceof Document) {
+			value = (Document) document.get("value");
+		}
+		if (null == value) {
+			return null;
+		}
+		long _ts;
+		if (!value.containsKey("_ts")) {
+			return null;
+		}
+		_ts = value.getLong("_ts");
+		return _ts;
+	}
+
+	private static PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> createStore(
+			PersistenceStorageAbstractConfig persistenceStorageAbstractConfig
+	) {
+		if (null == persistenceStorageAbstractConfig) {
+			return null;
+		}
+		ExternalResource<PersistenceStorageAbstractConfig> externalResource = new ExternalResourceFactory().createExternalResource(persistenceStorageAbstractConfig.getStorageMode());
+		if (null == externalResource) return null;
+		externalResource.doInit(persistenceStorageAbstractConfig);
+		PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> store = new PersistenceStoreFactory().createStore(
+				persistenceStorageAbstractConfig.getConstructType(),
+				persistenceStorageAbstractConfig.getStorageMode()
+		);
+		if (null == store) return null;
+		store.doInit(persistenceStorageAbstractConfig, externalResource);
+		return store;
+	}
+
+	private static String getTtlThreadKey(ConstructType constructType, String constructName) {
+		return getConfigKey(constructType, constructName);
 	}
 
 	private boolean ttlIsRunning() {
@@ -417,9 +411,12 @@ public class PersistenceStorage {
 	}
 
 	public long findSequence(Ringbuffer<Document> rb, long timestamp) {
-		if (this.ringBufferStorageMode == StorageMode.MongoDB) {
-			try (MongoClient mongoClient = new MongoClient(new MongoClientURI(this.ringBufferMongoUri))) {
-				MongoCollection<Document> cacheCollection = mongoClient.getDatabase(this.ringBufferDB).getCollection(this.ringBufferCollection);
+		PersistenceStorageAbstractConfig persistenceStorageAbstractConfig = getPersistenceStorageConfig(ConstructType.RINGBUFFER, rb.getName());
+		StorageMode storageMode = persistenceStorageAbstractConfig.getStorageMode();
+		if (storageMode == StorageMode.MongoDB) {
+			PersistenceMongoDBConfig persistenceMongoDBConfig = (PersistenceMongoDBConfig) persistenceStorageAbstractConfig;
+			try (MongoClient mongoClient = new MongoClient(new MongoClientURI(persistenceMongoDBConfig.getUri()))) {
+				MongoCollection<Document> cacheCollection = mongoClient.getDatabase(persistenceMongoDBConfig.getDatabase()).getCollection(persistenceMongoDBConfig.getCollection());
 				Document query = new Document("ringBuffer", rb.getName()).append("value.timestamp", new Document("$gte", timestamp));
 				Document document = cacheCollection.find(query).sort(ascending("_id")).first();
 				if (document == null) {
@@ -434,7 +431,7 @@ public class PersistenceStorage {
 			}
 		}
 
-		if (this.ringBufferStorageMode == StorageMode.RocksDB) {
+		if (storageMode == StorageMode.RocksDB) {
 			if (rb.tailSequence() == -1) {
 				return 0;
 			}

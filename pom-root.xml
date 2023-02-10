@@ -30,7 +30,7 @@
 
     <modules>
         <module>hazelcast</module>
-        <!--        <module>hazelcast-archunit-rules</module>-->
+        <module>hazelcast-archunit-rules</module>
         <!--        <module>hazelcast-spring</module>-->
         <!--        <module>hazelcast-spring-tests</module>-->
         <!--        <module>hazelcast-build-utils</module>-->
@@ -468,7 +468,9 @@
                             <outputDirectory>${project.build.outputDirectory}/META-INF</outputDirectory>
                             <failOnBlacklist>true</failOnBlacklist>
                             <failOnMissing>true</failOnMissing>
-                            <fileTemplate>${main.basedir}/hazelcast-build-utils/src/main/resources/hazelcast-thirdparty-template.ftl</fileTemplate>
+                            <fileTemplate>
+                                ${main.basedir}/hazelcast-build-utils/src/main/resources/hazelcast-thirdparty-template.ftl
+                            </fileTemplate>
                             <includedLicenses>
                                 <includedLicense>CC0</includedLicense>
                                 <includedLicense>Apache License, Version 2.0</includedLicense>
@@ -487,9 +489,11 @@
                                     Apache 2|Apache 2.0|Apache-2.0|Apache License 2.0|The Apache License, Version 2.0|
                                     Apache Software License - Version 2.0|Apache License Version 2.0
                                 </licenseMerge>
-                                <licenseMerge>MIT License|MIT|The MIT License|MIT license|The MIT License (MIT)</licenseMerge>
+                                <licenseMerge>MIT License|MIT|The MIT License|MIT license|The MIT License (MIT)
+                                </licenseMerge>
                                 <licenseMerge>
-                                    BSD 3-Clause License|BSD License|BSD|BSD licence|The BSD License|3-Clause BSD License|
+                                    BSD 3-Clause License|BSD License|BSD|BSD licence|The BSD License|3-Clause BSD
+                                    License|
                                     New BSD License|New BSD license|The New BSD License|Revised BSD|BSD New license|
                                     BSD-3-Clause|BSD 3-clause
                                 </licenseMerge>
@@ -690,7 +694,8 @@
                             <exclusionPattern>per-property override</exclusionPattern>
                             <exclusionPattern>^copyright notice</exclusionPattern>
                             <exclusionPattern>FAILED_PRECONDITION</exclusionPattern>
-                            <exclusionPattern>The ASF licenses this file to you under the Apache License</exclusionPattern>
+                            <exclusionPattern>The ASF licenses this file to you under the Apache License
+                            </exclusionPattern>
                             <exclusionPattern>Substitute for l, l</exclusionPattern>
                             <exclusionPattern>inside edge crossings that are between</exclusionPattern>
                         </exclusionPatterns>

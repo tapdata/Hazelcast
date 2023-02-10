@@ -1,30 +1,25 @@
-package com.hazelcast.persistence;
+package com.hazelcast.persistence.store.impl;
 
-import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.map.MapLoaderLifecycleSupport;
-import com.hazelcast.map.MapStore;
-import com.mongodb.MongoClient;
-import com.mongodb.MongoClientURI;
+import com.hazelcast.persistence.CommonUtils;
+import com.hazelcast.persistence.config.PersistenceMongoDBConfig;
+import com.hazelcast.persistence.external.impl.MongoDBResource;
+import com.hazelcast.persistence.store.PersistenceMapStore;
 import com.mongodb.client.FindIterable;
-import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
-import com.mongodb.client.model.Indexes;
 import com.mongodb.client.model.ReplaceOptions;
 import org.bson.Document;
-import org.bson.conversions.Bson;
 
-import java.util.*;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Optional;
 import java.util.function.Consumer;
 
-public class MongoDBIMap implements MapStore<String, Object>, MapLoaderLifecycleSupport {
-	private MongoClient mongoClient;
-	private MongoCollection<Document> cacheCollection;
-	private final Long autoCreateIndexDocumentLimit = 5000000L;
-	private final String defaultMongoUri = "mongodb://127.0.0.1";
-	private final String defaultMongoDB = "cache";
-	private final String defaultMongoCollection = "imap";
-	private String imapName;
-	private Document sign;
+public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, MongoDBResource> {
+	protected Document sign;
+	private MongoDBResource mongoDBResource;
+	private PersistenceMongoDBConfig persistenceMongoDBConfig;
 
 	private Document sign() {
 		return new Document(sign);
@@ -34,38 +29,28 @@ public class MongoDBIMap implements MapStore<String, Object>, MapLoaderLifecycle
 	}
 
 	@Override
-	public void init(HazelcastInstance hazelcastInstance, Properties properties, String s) {
-		String mongoUri = properties.getProperty("mongo.uri");
-		if (mongoUri == null) {
-			mongoUri = defaultMongoUri;
-		}
-		String db = properties.getProperty("mongo.db");
-		if (db == null) {
-			db = defaultMongoDB;
-		}
-		String collection = properties.getProperty("mongo.collection");
-		if (collection == null) {
-			collection = defaultMongoCollection;
-		}
+	public void doInit(PersistenceMongoDBConfig persistenceMongoDBConfig, MongoDBResource mongoDBResource) {
+		super.doInit(persistenceMongoDBConfig, mongoDBResource);
+		this.mongoDBResource = mongoDBResource;
+		this.persistenceMongoDBConfig = persistenceMongoDBConfig;
+		this.sign = new Document("imap", super.imapName);
+	}
 
-		mongoClient = MongodbUtil.createClient(mongoUri);
-		cacheCollection = mongoClient.getDatabase(db).getCollection(collection);
-
-		Long cacheCollectionCount = cacheCollection.countDocuments();
-		if (cacheCollectionCount > autoCreateIndexDocumentLimit) {
-			throw new RuntimeException(String.format("mongo uri: %s, db: %s, collection: %s config as cache collection, but no index on key field, and because its document count is too many, %d: more than: %d, we stop auto create it, please manual create index with {\"key\":1}", mongoUri, db, collection, cacheCollectionCount, autoCreateIndexDocumentLimit));
-		}
-		Bson keyIndex = Indexes.ascending("key", "imap");
-		cacheCollection.createIndex(keyIndex);
-		Bson tsIndex = Indexes.ascending("key", "ts");
-		cacheCollection.createIndex(tsIndex);
-		this.imapName = s;
-		sign = new Document("imap", this.imapName);
+	@Override
+	public void doDestroy() {
+		this.destroy();
 	}
 
 	@Override
 	public void destroy() {
-		this.mongoClient.close();
+		Optional.ofNullable(this.mongoDBResource).ifPresent(mr -> CommonUtils.handleWithError(
+				() -> {
+					mr.close();
+					this.mongoDBResource = null;
+				}, throwable -> {
+					throw new RuntimeException("Close IMap[" + imapName + "]'s MongoDB resource failed, config: " + persistenceMongoDBConfig, throwable);
+				})
+		);
 	}
 
 	public synchronized void store(String key, Object value) {
@@ -76,7 +61,7 @@ public class MongoDBIMap implements MapStore<String, Object>, MapLoaderLifecycle
 		Document query = sign().append("key", key);
 		Document doc = new Document(query).append("value", value);
 		ReplaceOptions options = new ReplaceOptions().upsert(true);
-		cacheCollection.replaceOne(query, doc, options);
+		this.mongoDBResource.getMongoCollection().replaceOne(query, doc, options);
 	}
 
 	public synchronized void storeAll(Map<String, Object> map) {
@@ -86,11 +71,11 @@ public class MongoDBIMap implements MapStore<String, Object>, MapLoaderLifecycle
 	}
 
 	public synchronized void delete(String key) {
-		cacheCollection.deleteOne(sign().append("key", key));
+		this.mongoDBResource.getMongoCollection().deleteOne(sign().append("key", key));
 	}
 
 	public synchronized void deleteAll(Collection<String> keys) {
-		cacheCollection.deleteMany(new Document("imap", imapName));
+		this.mongoDBResource.getMongoCollection().deleteMany(new Document("imap", imapName));
 //		for (String key : keys) {
 //			delete(key);
 //		}
@@ -98,7 +83,7 @@ public class MongoDBIMap implements MapStore<String, Object>, MapLoaderLifecycle
 
 	public synchronized Document load(String key) {
 		Document query = sign().append("key", key);
-		Document doc = cacheCollection.find(query).first();
+		Document doc = this.mongoDBResource.getMongoCollection().find(query).first();
 		if (doc == null) {
 			return null;
 		}
@@ -114,7 +99,7 @@ public class MongoDBIMap implements MapStore<String, Object>, MapLoaderLifecycle
 	}
 
 	public Iterable<String> loadAllKeys() {
-		return new MongoDBImapIterable(cacheCollection.find(new Document("imap", imapName)));
+		return new MongoDBImapIterable(this.mongoDBResource.getMongoCollection().find(new Document("imap", imapName)));
 	}
 
 	class MongoDBImapIterable implements Iterable<String> {

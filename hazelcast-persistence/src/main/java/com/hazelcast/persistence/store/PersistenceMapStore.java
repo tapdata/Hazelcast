@@ -1,27 +1,31 @@
-package com.hazelcast.persistence.http;
+package com.hazelcast.persistence.store;
 
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.map.MapLoaderLifecycleSupport;
 import com.hazelcast.map.MapStore;
 import com.hazelcast.persistence.config.PersistenceStorageAbstractConfig;
 import com.hazelcast.persistence.external.ExternalResource;
-import com.hazelcast.persistence.store.PersistenceStorageStore;
 
 import java.util.Properties;
 
 /**
  * @author samuel
  * @Description
- * @create 2022-10-18 15:59
+ * @create 2023-02-07 19:28
  **/
-public abstract class HttpIMap<T extends PersistenceStorageAbstractConfig, R extends ExternalResource<T>> extends PersistenceStorageStore<T, R>
+public abstract class PersistenceMapStore<T extends PersistenceStorageAbstractConfig, R extends ExternalResource<T>> extends PersistenceStorageStore<T, R>
 		implements MapStore<String, Object>, MapLoaderLifecycleSupport {
 	protected HazelcastInstance hazelcastInstance;
-	protected String mapName;
+	protected String imapName;
 
 	@Override
-	public void init(HazelcastInstance hazelcastInstance, Properties properties, String mapName) {
+	public final void init(HazelcastInstance hazelcastInstance, Properties properties, String mapName) {
+		// Replace with com.hazelcast.persistence.PersistenceStorageStore.doInit
 		this.hazelcastInstance = hazelcastInstance;
-		this.mapName = mapName;
+	}
+
+	@Override
+	public void doInit(T t, R r) {
+		this.imapName = t.getName();
 	}
 }
