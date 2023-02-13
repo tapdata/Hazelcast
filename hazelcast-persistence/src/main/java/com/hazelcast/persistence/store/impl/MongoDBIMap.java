@@ -41,12 +41,16 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 
 	@Override
 	public void doDestroy() {
-		this.destroy();
+		releaseResource();
 	}
 
 	@Override
 	public void destroy() {
 		CommonUtils.ignoreAnyError(() -> this.deleteAll(null));
+		releaseResource();
+	}
+
+	private void releaseResource() {
 		Optional.ofNullable(this.mongoDBResource).ifPresent(mr -> CommonUtils.handleWithError(
 				() -> {
 					mr.close();
@@ -97,7 +101,7 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 				tempKeys.clear();
 			}
 		} else {
-			this.mongoDBResource.getMongoCollection().deleteMany(new Document("imap", imapName));
+			this.mongoDBResource.getMongoCollection().deleteMany(sign());
 		}
 	}
 

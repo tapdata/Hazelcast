@@ -45,11 +45,16 @@ public class RocksDBIMap extends PersistenceMapStore<PersistenceRocksDBConfig, R
 
 	@Override
 	public void doDestroy() {
-		this.destroy();
+		releaseResource();
 	}
 
 	@Override
 	public void destroy() {
+		// todo delete all data
+		releaseResource();
+	}
+
+	private void releaseResource() {
 		Optional.ofNullable(this.rocksDBResource).ifPresent(rr -> CommonUtils.handleWithError(
 				() -> {
 					rr.close();
