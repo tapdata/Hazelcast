@@ -25,7 +25,7 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 	private PersistenceMongoDBConfig persistenceMongoDBConfig;
 
 	private Document sign() {
-		return sign;
+		return new Document(sign);
 	}
 
 	public MongoDBIMap() {
@@ -46,7 +46,7 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 
 	@Override
 	public void destroy() {
-		CommonUtils.ignoreAnyError(() -> this.deleteAll(null));
+		this.deleteAll(null);
 		releaseResource();
 	}
 

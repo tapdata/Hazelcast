@@ -20,7 +20,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 	private PersistenceMongoDBConfig persistenceMongoDBConfig;
 
 	private Document sign() {
-		return sign;
+		return new Document(sign);
 	}
 
 	public MongoDBRingBuffer() {

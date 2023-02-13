@@ -1416,7 +1416,7 @@
         </profile>
     </profiles>
 
-    <distributionManagement>
+<!--    <distributionManagement>
         <repository>
             <id>release-repository</id>
             <url>https://oss.sonatype.org/service/local/staging/deploy/maven2</url>
@@ -1427,6 +1427,14 @@
             <url>https://oss.sonatype.org/content/repositories/snapshots</url>
             <uniqueVersion>false</uniqueVersion>
         </snapshotRepository>
+    </distributionManagement>-->
+
+    <distributionManagement>
+        <repository>
+            <id>tapdata-tapdata-maven</id>
+            <name>Tapdata Maven Repository</name>
+            <url>https://tapdata-maven.pkg.coding.net/repository/tapdata/maven/</url>
+        </repository>
     </distributionManagement>
 
     <repositories>
