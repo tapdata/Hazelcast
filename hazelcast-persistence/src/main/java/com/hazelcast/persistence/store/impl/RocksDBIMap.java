@@ -73,10 +73,11 @@ public class RocksDBIMap extends PersistenceMapStore<PersistenceRocksDBConfig, R
 		if (!(value instanceof Document)) {
 			return;
 		}
-		try {
+		try (
+				BasicOutputBuffer outputBuffer = new BasicOutputBuffer()
+		) {
 			String sKey = sign + key;
 			Document val = ((Document) value).append("_ts", System.currentTimeMillis() / 1000);
-			BasicOutputBuffer outputBuffer = new BasicOutputBuffer();
 			BsonBinaryWriter writer = new BsonBinaryWriter(outputBuffer);
 			DOCUMENT_CODEC.encode(writer, val, EncoderContext.builder().isEncodingCollectibleDocument(true).build());
 			this.rocksDBResource.getRocksDB().put(sKey.getBytes(), outputBuffer.toByteArray());
@@ -97,7 +98,7 @@ public class RocksDBIMap extends PersistenceMapStore<PersistenceRocksDBConfig, R
 		}
 	}
 
-	public synchronized Document load(String key) throws RuntimeException {
+	public synchronized Document load(String key) {
 		Document doc;
 		String sKey = sign + key;
 		try {
@@ -107,10 +108,8 @@ public class RocksDBIMap extends PersistenceMapStore<PersistenceRocksDBConfig, R
 			}
 			BsonBinaryReader bsonReader = new BsonBinaryReader(ByteBuffer.wrap(s));
 			doc = DOCUMENT_CODEC.decode(bsonReader, DecoderContext.builder().build());
-		} catch (RocksDBException e) {
-			throw new RuntimeException(e.getMessage());
-		} catch (RuntimeException e) {
-			throw new RuntimeException(e.getMessage());
+		} catch (Exception e) {
+			throw new RuntimeException(e);
 		}
 		return doc;
 	}

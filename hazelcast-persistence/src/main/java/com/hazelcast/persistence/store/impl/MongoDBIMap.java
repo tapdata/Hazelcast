@@ -7,11 +7,14 @@ import com.hazelcast.persistence.store.PersistenceMapStore;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCursor;
 import com.mongodb.client.model.ReplaceOptions;
+import org.apache.commons.collections4.CollectionUtils;
 import org.bson.Document;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Consumer;
@@ -22,7 +25,7 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 	private PersistenceMongoDBConfig persistenceMongoDBConfig;
 
 	private Document sign() {
-		return new Document(sign);
+		return sign;
 	}
 
 	public MongoDBIMap() {
@@ -43,6 +46,7 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 
 	@Override
 	public void destroy() {
+		CommonUtils.ignoreAnyError(() -> this.deleteAll(null));
 		Optional.ofNullable(this.mongoDBResource).ifPresent(mr -> CommonUtils.handleWithError(
 				() -> {
 					mr.close();
@@ -75,10 +79,26 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 	}
 
 	public synchronized void deleteAll(Collection<String> keys) {
-		this.mongoDBResource.getMongoCollection().deleteMany(new Document("imap", imapName));
-//		for (String key : keys) {
-//			delete(key);
-//		}
+		if (CollectionUtils.isNotEmpty(keys)) {
+			List<String> tempKeys = new ArrayList<>();
+			for (String key : keys) {
+				tempKeys.add(key);
+				if (tempKeys.size() >= 100) {
+					Document deleteClause = sign()
+							.append("key", new Document("$in", tempKeys));
+					this.mongoDBResource.getMongoCollection().deleteMany(deleteClause);
+					tempKeys.clear();
+				}
+			}
+			if (tempKeys.size() > 0) {
+				Document deleteClause = sign()
+						.append("key", new Document("$in", tempKeys));
+				this.mongoDBResource.getMongoCollection().deleteMany(deleteClause);
+				tempKeys.clear();
+			}
+		} else {
+			this.mongoDBResource.getMongoCollection().deleteMany(new Document("imap", imapName));
+		}
 	}
 
 	public synchronized Document load(String key) {

@@ -63,23 +63,20 @@ public class RocksDBRingBuffer extends PersistenceRingBufferStore<PersistenceRoc
 	public void store(long sequence, Document value) {
 		value = value.append("_ts", System.currentTimeMillis() / 1000);
 		String key = sign + sequence;
-		BasicOutputBuffer outputBuffer = new BasicOutputBuffer();
-		BsonBinaryWriter writer = new BsonBinaryWriter(outputBuffer);
-		DOCUMENT_CODEC.encode(writer, value, EncoderContext.builder().isEncodingCollectibleDocument(true).build());
-		try {
-			this.rocksDBResource.getRocksDB().put(key.getBytes(), outputBuffer.toByteArray());
-		} catch (RocksDBException e) {
-			throw new RuntimeException(e.getMessage());
-		}
-		if (sequence <= largestSequence) {
-			return;
-		}
-		largestSequence = sequence;
-		key = sign + largestSequenceKey;
-		try {
-			this.rocksDBResource.getRocksDB().put(key.getBytes(), ((Long) sequence).toString().getBytes());
-		} catch (RocksDBException e) {
-			throw new RuntimeException(e.getMessage());
+		try (
+				BasicOutputBuffer outputBuffer = new BasicOutputBuffer()
+		) {
+			BsonBinaryWriter writer = new BsonBinaryWriter(outputBuffer);
+			DOCUMENT_CODEC.encode(writer, value, EncoderContext.builder().isEncodingCollectibleDocument(true).build());
+			this.rocksDBResource.getRocksDB().put(key.getBytes(StandardCharsets.UTF_8), outputBuffer.toByteArray());
+			if (sequence <= largestSequence) {
+				return;
+			}
+			largestSequence = sequence;
+			key = sign + largestSequenceKey;
+			this.rocksDBResource.getRocksDB().put(key.getBytes(StandardCharsets.UTF_8), ((Long) sequence).toString().getBytes());
+		} catch (Exception e) {
+			throw new RuntimeException(e);
 		}
 	}
 
@@ -96,16 +93,14 @@ public class RocksDBRingBuffer extends PersistenceRingBufferStore<PersistenceRoc
 		String key = sign + sequence;
 		Document doc;
 		try {
-			byte[] s = this.rocksDBResource.getRocksDB().get(key.getBytes());
+			byte[] s = this.rocksDBResource.getRocksDB().get(key.getBytes(StandardCharsets.UTF_8));
 			if (s == null) {
 				return null;
 			}
 			BsonBinaryReader bsonReader = new BsonBinaryReader(ByteBuffer.wrap(s));
 			doc = DOCUMENT_CODEC.decode(bsonReader, DecoderContext.builder().build());
-		} catch (RocksDBException e) {
-			throw new RuntimeException(e.getMessage());
-		} catch (RuntimeException e) {
-			throw new RuntimeException(e.getMessage());
+		} catch (Exception e) {
+			throw new RuntimeException(e);
 		}
 		return doc;
 	}
@@ -128,14 +123,14 @@ public class RocksDBRingBuffer extends PersistenceRingBufferStore<PersistenceRoc
 	public long _getLargestSequence() {
 		String key = sign + largestSequenceKey;
 		try {
-			byte[] s = this.rocksDBResource.getRocksDB().get(key.getBytes());
+			byte[] s = this.rocksDBResource.getRocksDB().get(key.getBytes(StandardCharsets.UTF_8));
 			if (s == null) {
 				return -1L;
 			}
 			String l = new String(s);
 			return Long.parseLong(l);
 		} catch (RocksDBException e) {
-			throw new RuntimeException(e.getMessage());
+			throw new RuntimeException(e);
 		}
 	}
 
@@ -147,14 +142,14 @@ public class RocksDBRingBuffer extends PersistenceRingBufferStore<PersistenceRoc
 	public long _getSmallestSequence() {
 		String key = sign + smallestSequenceKey;
 		try {
-			byte[] s = this.rocksDBResource.getRocksDB().get(key.getBytes());
+			byte[] s = this.rocksDBResource.getRocksDB().get(key.getBytes(StandardCharsets.UTF_8));
 			if (s == null) {
 				return 0;
 			}
 			String l = new String(s);
 			return Long.parseLong(l);
 		} catch (RocksDBException e) {
-			throw new RuntimeException(e.getMessage());
+			throw new RuntimeException(e);
 		}
 	}
 }

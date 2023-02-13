@@ -12,6 +12,7 @@ import com.hazelcast.jet.core.AbstractProcessor;
 import com.hazelcast.jet.core.DAG;
 import com.hazelcast.jet.core.Edge;
 import com.hazelcast.jet.core.Inbox;
+import com.hazelcast.jet.core.JobStatus;
 import com.hazelcast.jet.core.Vertex;
 import com.hazelcast.persistence.config.PersistenceHttpConfig;
 import com.hazelcast.persistence.config.PersistenceInMemConfig;

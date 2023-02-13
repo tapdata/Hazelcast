@@ -152,6 +152,10 @@ public class PersistenceStorage {
 		return this;
 	}
 
+	public void destroyRingBuffer(String name) {
+		CommonUtils.ignoreAnyError(() -> Optional.ofNullable(storeImplementationMap.get(name)).ifPresent(PersistenceStorageStore::doDestroy));
+	}
+
 	public PersistenceStorage initRingBufferConfig(Config c) {
 		return initRingBufferConfig(c, "default");
 	}

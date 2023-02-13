@@ -20,7 +20,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 	private PersistenceMongoDBConfig persistenceMongoDBConfig;
 
 	private Document sign() {
-		return new Document(sign);
+		return sign;
 	}
 
 	public MongoDBRingBuffer() {
@@ -80,7 +80,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 
 	@Override
 	public void delete(long s) {
-		Document query = new Document(sign).append("key", s);
+		Document query = sign().append("key", s);
 		try {
 			this.mongoDBResource.getMongoCollection().deleteOne(query);
 		} catch (Exception e) {
