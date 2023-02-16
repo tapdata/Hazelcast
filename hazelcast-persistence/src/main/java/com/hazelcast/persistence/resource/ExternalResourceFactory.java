@@ -1,9 +1,9 @@
-package com.hazelcast.persistence.external;
+package com.hazelcast.persistence.resource;
 
 import com.hazelcast.persistence.StorageMode;
 import com.hazelcast.persistence.config.PersistenceStorageAbstractConfig;
-import com.hazelcast.persistence.external.impl.MongoDBResource;
-import com.hazelcast.persistence.external.impl.RocksDBResource;
+import com.hazelcast.persistence.resource.impl.MongoDBResource;
+import com.hazelcast.persistence.resource.impl.RocksDBResource;
 import com.hazelcast.persistence.http.HttpResource;
 
 /**

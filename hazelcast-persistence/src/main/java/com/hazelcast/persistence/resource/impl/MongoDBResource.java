@@ -1,8 +1,8 @@
-package com.hazelcast.persistence.external.impl;
+package com.hazelcast.persistence.resource.impl;
 
 import com.hazelcast.persistence.MongodbUtil;
 import com.hazelcast.persistence.config.PersistenceMongoDBConfig;
-import com.hazelcast.persistence.external.ExternalResource;
+import com.hazelcast.persistence.resource.ExternalResource;
 import com.mongodb.MongoClient;
 import com.mongodb.MongoClientURI;
 import com.mongodb.client.MongoCollection;

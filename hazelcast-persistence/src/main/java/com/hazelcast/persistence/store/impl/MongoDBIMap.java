@@ -2,7 +2,7 @@ package com.hazelcast.persistence.store.impl;
 
 import com.hazelcast.persistence.CommonUtils;
 import com.hazelcast.persistence.config.PersistenceMongoDBConfig;
-import com.hazelcast.persistence.external.impl.MongoDBResource;
+import com.hazelcast.persistence.resource.impl.MongoDBResource;
 import com.hazelcast.persistence.store.PersistenceMapStore;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCursor;

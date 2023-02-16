@@ -1,8 +1,9 @@
 package com.hazelcast.persistence.store.impl;
 
 import com.hazelcast.persistence.CommonUtils;
+import com.hazelcast.persistence.MongodbUtil;
 import com.hazelcast.persistence.config.PersistenceRocksDBConfig;
-import com.hazelcast.persistence.external.impl.RocksDBResource;
+import com.hazelcast.persistence.resource.impl.RocksDBResource;
 import com.hazelcast.persistence.store.PersistenceMapStore;
 import org.bson.BsonBinaryReader;
 import org.bson.BsonBinaryWriter;
@@ -12,10 +13,10 @@ import org.bson.codecs.DecoderContext;
 import org.bson.codecs.DocumentCodec;
 import org.bson.codecs.EncoderContext;
 import org.bson.io.BasicOutputBuffer;
-import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
@@ -24,13 +25,19 @@ import java.util.Optional;
 public class RocksDBIMap extends PersistenceMapStore<PersistenceRocksDBConfig, RocksDBResource> {
 	private static final String keySplit = "__0x0__";
 	private String sign;
-	private static Codec<Document> DOCUMENT_CODEC = new DocumentCodec();
+	private static Codec<Document> documentCodec;
+	private static EncoderContext encoderContext;
 	private RocksDBResource rocksDBResource;
 	private PersistenceRocksDBConfig persistenceRocksDBConfig;
 
 	static {
-		RocksDB.loadLibrary();
+		documentCodec = new DocumentCodec(MongodbUtil.getForJavaCodecRegistry());
+		encoderContext = EncoderContext.builder()
+				.isEncodingCollectibleDocument(true)
+				.build();
 	}
+
+	private DecoderContext decoderContext;
 
 	public RocksDBIMap() {
 	}
@@ -68,7 +75,7 @@ public class RocksDBIMap extends PersistenceMapStore<PersistenceRocksDBConfig, R
 	public synchronized void delete(String key) {
 		try {
 			String sKey = sign + key;
-			this.rocksDBResource.getRocksDB().delete(sKey.getBytes());
+			this.rocksDBResource.getRocksDB().delete(sKey.getBytes(StandardCharsets.UTF_8));
 		} catch (RocksDBException e) {
 			throw new RuntimeException(e.getMessage());
 		}
@@ -84,8 +91,8 @@ public class RocksDBIMap extends PersistenceMapStore<PersistenceRocksDBConfig, R
 			String sKey = sign + key;
 			Document val = ((Document) value).append("_ts", System.currentTimeMillis() / 1000);
 			BsonBinaryWriter writer = new BsonBinaryWriter(outputBuffer);
-			DOCUMENT_CODEC.encode(writer, val, EncoderContext.builder().isEncodingCollectibleDocument(true).build());
-			this.rocksDBResource.getRocksDB().put(sKey.getBytes(), outputBuffer.toByteArray());
+			documentCodec.encode(writer, val, encoderContext);
+			this.rocksDBResource.getRocksDB().put(sKey.getBytes(StandardCharsets.UTF_8), outputBuffer.toByteArray());
 		} catch (RocksDBException e) {
 			throw new RuntimeException(e.getMessage());
 		}
@@ -107,12 +114,13 @@ public class RocksDBIMap extends PersistenceMapStore<PersistenceRocksDBConfig, R
 		Document doc;
 		String sKey = sign + key;
 		try {
-			byte[] s = this.rocksDBResource.getRocksDB().get(sKey.getBytes());
+			byte[] s = this.rocksDBResource.getRocksDB().get(sKey.getBytes(StandardCharsets.UTF_8));
 			if (s == null) {
 				return null;
 			}
 			BsonBinaryReader bsonReader = new BsonBinaryReader(ByteBuffer.wrap(s));
-			doc = DOCUMENT_CODEC.decode(bsonReader, DecoderContext.builder().build());
+			decoderContext = DecoderContext.builder().build();
+			doc = documentCodec.decode(bsonReader, decoderContext);
 		} catch (Exception e) {
 			throw new RuntimeException(e);
 		}

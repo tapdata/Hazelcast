@@ -1,7 +1,7 @@
 package com.hazelcast.persistence.store;
 
 import com.hazelcast.persistence.config.PersistenceStorageAbstractConfig;
-import com.hazelcast.persistence.external.ExternalResource;
+import com.hazelcast.persistence.resource.ExternalResource;
 
 /**
  * @author samuel

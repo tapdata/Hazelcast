@@ -4,7 +4,7 @@ import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.map.MapLoaderLifecycleSupport;
 import com.hazelcast.map.MapStore;
 import com.hazelcast.persistence.config.PersistenceStorageAbstractConfig;
-import com.hazelcast.persistence.external.ExternalResource;
+import com.hazelcast.persistence.resource.ExternalResource;
 
 import java.util.Properties;
 

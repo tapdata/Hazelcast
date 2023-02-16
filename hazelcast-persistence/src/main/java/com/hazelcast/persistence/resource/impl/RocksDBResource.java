@@ -1,13 +1,12 @@
-package com.hazelcast.persistence.external.impl;
+package com.hazelcast.persistence.resource.impl;
 
-import com.hazelcast.persistence.store.RocksDBInstance;
 import com.hazelcast.persistence.config.PersistenceRocksDBConfig;
-import com.hazelcast.persistence.external.ExternalResource;
+import com.hazelcast.persistence.resource.ExternalResource;
+import com.hazelcast.persistence.store.RocksDBInstance;
 import org.apache.commons.lang3.StringUtils;
 import org.rocksdb.RocksDB;
 
 import java.io.IOException;
-import java.util.Optional;
 
 /**
  * @author samuel
@@ -16,11 +15,16 @@ import java.util.Optional;
  **/
 public class RocksDBResource extends ExternalResource<PersistenceRocksDBConfig> {
 	private RocksDB rocksDB;
+	private String dbPath;
+
+	static {
+		RocksDB.loadLibrary();
+	}
 
 	@Override
 	public void doInit(PersistenceRocksDBConfig persistenceRocksDBConfig) {
 		super.doInit(persistenceRocksDBConfig);
-		String dbPath = persistenceRocksDBConfig.getPath();
+		dbPath = persistenceRocksDBConfig.getPath();
 		if (StringUtils.isBlank(dbPath)) {
 			throw new IllegalArgumentException("RocksDB path cannot be blank");
 		}
@@ -29,7 +33,7 @@ public class RocksDBResource extends ExternalResource<PersistenceRocksDBConfig> 
 
 	@Override
 	public void close() throws IOException {
-		Optional.ofNullable(this.rocksDB).ifPresent(RocksDB::close);
+		RocksDBInstance.close(dbPath);
 		this.rocksDB = null;
 	}
 

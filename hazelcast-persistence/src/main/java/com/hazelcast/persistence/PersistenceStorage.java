@@ -13,8 +13,8 @@ import com.hazelcast.config.RingbufferStoreConfig;
 import com.hazelcast.map.IMap;
 import com.hazelcast.persistence.config.PersistenceMongoDBConfig;
 import com.hazelcast.persistence.config.PersistenceStorageAbstractConfig;
-import com.hazelcast.persistence.external.ExternalResource;
-import com.hazelcast.persistence.external.ExternalResourceFactory;
+import com.hazelcast.persistence.resource.ExternalResource;
+import com.hazelcast.persistence.resource.ExternalResourceFactory;
 import com.hazelcast.persistence.store.PersistenceMapStore;
 import com.hazelcast.persistence.store.PersistenceRingBufferStore;
 import com.hazelcast.persistence.store.PersistenceStorageStore;
@@ -119,15 +119,16 @@ public class PersistenceStorage {
 		if (null == externalResource) {
 			return this;
 		}
-		externalResource.doInit(persistenceStorageAbstractConfig);
 		String configKey = getConfigKey(ConstructType.IMAP, mapName);
 		try {
 			if (storeImplementationMap.containsKey(configKey)) {
 				PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> persistenceStorageStore = storeImplementationMap.get(configKey);
 				persistenceStorageStore.doDestroy();
+				externalResource.doInit(persistenceStorageAbstractConfig);
 				persistenceStorageStore.doInit(persistenceStorageAbstractConfig, externalResource);
 			} else {
 				PersistenceStoreFactory persistenceStoreFactory = new PersistenceStoreFactory();
+				externalResource.doInit(persistenceStorageAbstractConfig);
 				PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> store = persistenceStoreFactory.createStore(ConstructType.IMAP, storageMode);
 				if (null == store) {
 					return this;

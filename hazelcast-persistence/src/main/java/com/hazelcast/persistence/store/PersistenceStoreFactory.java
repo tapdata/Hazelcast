@@ -3,7 +3,7 @@ package com.hazelcast.persistence.store;
 import com.hazelcast.persistence.ConstructType;
 import com.hazelcast.persistence.StorageMode;
 import com.hazelcast.persistence.config.PersistenceStorageAbstractConfig;
-import com.hazelcast.persistence.external.ExternalResource;
+import com.hazelcast.persistence.resource.ExternalResource;
 import com.hazelcast.persistence.http.HttpTMIMap;
 import com.hazelcast.persistence.store.impl.MongoDBIMap;
 import com.hazelcast.persistence.store.impl.MongoDBRingBuffer;

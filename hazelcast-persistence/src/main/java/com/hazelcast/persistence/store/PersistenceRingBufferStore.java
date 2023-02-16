@@ -1,11 +1,9 @@
 package com.hazelcast.persistence.store;
 
 import com.hazelcast.persistence.config.PersistenceStorageAbstractConfig;
-import com.hazelcast.persistence.external.ExternalResource;
+import com.hazelcast.persistence.resource.ExternalResource;
 import com.hazelcast.ringbuffer.RingbufferStore;
 import org.bson.Document;
-
-import java.util.Properties;
 
 /**
  * @author samuel

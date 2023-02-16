@@ -1,7 +1,7 @@
 package com.hazelcast.persistence.http;
 
 import com.hazelcast.persistence.config.PersistenceHttpConfig;
-import com.hazelcast.persistence.external.ExternalResource;
+import com.hazelcast.persistence.resource.ExternalResource;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.web.client.RestTemplate;
 

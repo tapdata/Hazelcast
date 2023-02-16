@@ -89,7 +89,7 @@ public class MongodbUtil {
 		);
 	}
 
-	private static CodecRegistry getForJavaCodecRegistry() {
+	public static CodecRegistry getForJavaCodecRegistry() {
 		Map<BsonType, Class<?>> replacements = new HashMap<>();
 		replacements.put(BsonType.DECIMAL128, BigDecimal.class);
 		replacements.put(BsonType.BINARY, byte[].class);

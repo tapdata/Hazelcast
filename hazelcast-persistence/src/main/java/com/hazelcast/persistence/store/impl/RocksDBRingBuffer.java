@@ -1,8 +1,9 @@
 package com.hazelcast.persistence.store.impl;
 
 import com.hazelcast.persistence.CommonUtils;
+import com.hazelcast.persistence.MongodbUtil;
 import com.hazelcast.persistence.config.PersistenceRocksDBConfig;
-import com.hazelcast.persistence.external.impl.RocksDBResource;
+import com.hazelcast.persistence.resource.impl.RocksDBResource;
 import com.hazelcast.persistence.store.PersistenceRingBufferStore;
 import org.bson.BsonBinaryReader;
 import org.bson.BsonBinaryWriter;
@@ -12,7 +13,6 @@ import org.bson.codecs.DecoderContext;
 import org.bson.codecs.DocumentCodec;
 import org.bson.codecs.EncoderContext;
 import org.bson.io.BasicOutputBuffer;
-import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 
 import java.nio.ByteBuffer;
@@ -26,12 +26,16 @@ public class RocksDBRingBuffer extends PersistenceRingBufferStore<PersistenceRoc
 	private Long smallestSequence = 0L;
 	private final String largestSequenceKey = "largestSequence";
 	private final String smallestSequenceKey = "smallestSequence";
-	private static Codec<Document> DOCUMENT_CODEC = new DocumentCodec();
+	private static Codec<Document> documentCodec;
+	private static EncoderContext encoderContext;
 	private RocksDBResource rocksDBResource;
 	private PersistenceRocksDBConfig persistenceRocksDBConfig;
 
 	static {
-		RocksDB.loadLibrary();
+		documentCodec = new DocumentCodec(MongodbUtil.getForJavaCodecRegistry());
+		encoderContext = EncoderContext.builder()
+				.isEncodingCollectibleDocument(true)
+				.build();
 	}
 
 	public RocksDBRingBuffer() {
@@ -67,7 +71,7 @@ public class RocksDBRingBuffer extends PersistenceRingBufferStore<PersistenceRoc
 				BasicOutputBuffer outputBuffer = new BasicOutputBuffer()
 		) {
 			BsonBinaryWriter writer = new BsonBinaryWriter(outputBuffer);
-			DOCUMENT_CODEC.encode(writer, value, EncoderContext.builder().isEncodingCollectibleDocument(true).build());
+			documentCodec.encode(writer, value, encoderContext);
 			this.rocksDBResource.getRocksDB().put(key.getBytes(StandardCharsets.UTF_8), outputBuffer.toByteArray());
 			if (sequence <= largestSequence) {
 				return;
@@ -98,7 +102,7 @@ public class RocksDBRingBuffer extends PersistenceRingBufferStore<PersistenceRoc
 				return null;
 			}
 			BsonBinaryReader bsonReader = new BsonBinaryReader(ByteBuffer.wrap(s));
-			doc = DOCUMENT_CODEC.decode(bsonReader, DecoderContext.builder().build());
+			doc = documentCodec.decode(bsonReader, DecoderContext.builder().build());
 		} catch (Exception e) {
 			throw new RuntimeException(e);
 		}

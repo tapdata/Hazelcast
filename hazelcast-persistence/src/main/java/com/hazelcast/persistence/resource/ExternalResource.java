@@ -1,4 +1,4 @@
-package com.hazelcast.persistence.external;
+package com.hazelcast.persistence.resource;
 
 import com.hazelcast.persistence.config.PersistenceStorageAbstractConfig;
 

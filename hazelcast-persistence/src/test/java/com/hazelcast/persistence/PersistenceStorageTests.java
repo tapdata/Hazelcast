@@ -12,22 +12,29 @@ import com.hazelcast.jet.core.AbstractProcessor;
 import com.hazelcast.jet.core.DAG;
 import com.hazelcast.jet.core.Edge;
 import com.hazelcast.jet.core.Inbox;
-import com.hazelcast.jet.core.JobStatus;
 import com.hazelcast.jet.core.Vertex;
+import com.hazelcast.map.IMap;
 import com.hazelcast.persistence.config.PersistenceHttpConfig;
 import com.hazelcast.persistence.config.PersistenceInMemConfig;
 import com.hazelcast.persistence.config.PersistenceMongoDBConfig;
 import com.hazelcast.persistence.config.PersistenceRocksDBConfig;
 import com.hazelcast.persistence.config.PersistenceStorageAbstractConfig;
 import org.apache.commons.lang3.RandomStringUtils;
+import org.bson.Document;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.IntStream;
 
 /**
  * @author samuel
@@ -35,6 +42,31 @@ import java.util.concurrent.atomic.AtomicLong;
  * @create 2023-02-07 15:56
  **/
 public class PersistenceStorageTests {
+
+	private static HazelcastInstance hazelcastInstance;
+	private static PersistenceStorage persistenceStorage;
+
+	@BeforeAll
+	public static void init() {
+		Config config = new Config();
+		config.getJetConfig().setEnabled(true);
+		JoinConfig joinConfig = new JoinConfig();
+		joinConfig.setTcpIpConfig(new TcpIpConfig().setEnabled(true));
+		NetworkConfig networkConfig = new NetworkConfig();
+		networkConfig.setJoin(joinConfig);
+		config.setNetworkConfig(networkConfig);
+		config.setInstanceName("test");
+		hazelcastInstance = Hazelcast.newHazelcastInstance(config);
+		persistenceStorage = PersistenceStorage.getInstance();
+	}
+
+	@AfterAll
+	public static void afterAll() {
+		try {
+			hazelcastInstance.shutdown();
+		} catch (Exception ignored) {
+		}
+	}
 
 	@Test
 	public void addConfigTest() {
@@ -90,7 +122,6 @@ public class PersistenceStorageTests {
 		Assertions.assertTrue(PersistenceRocksDBConfig.create(ConstructType.RINGBUFFER, "ringbuffer").equals(PersistenceRocksDBConfig.create(ConstructType.RINGBUFFER, "ringbuffer")));
 		Assertions.assertFalse(PersistenceInMemConfig.create(ConstructType.IMAP).equals(PersistenceInMemConfig.create(ConstructType.RINGBUFFER)));
 	}
-
 	public static void main(String[] args) throws Throwable {
 		Config config = new Config();
 		config.getJetConfig().setEnabled(true);
@@ -101,12 +132,6 @@ public class PersistenceStorageTests {
 		config.setNetworkConfig(networkConfig);
 		config.setInstanceName("test");
 		HazelcastInstance hazelcastInstance = Hazelcast.newHazelcastInstance(config);
-		/*PersistenceMongoDBConfig mongoDBConfig = PersistenceMongoDBConfig.create(ConstructType.IMAP)
-				.database("test").collection("ttl_test");
-		PersistenceStorage.getInstance().addConfig(mongoDBConfig);
-		PersistenceStorage.getInstance().initMapStoreConfig(config);
-		IMap<Object, Object> imap = hazelcastInstance.getMap("imap");
-		imap.put("test", new Document("name", "test1").append("age", 12));*/
 		JetService jet = hazelcastInstance.getJet();
 		DAG dag = new DAG();
 		Vertex src = new Vertex("src", DummySourceProcessor::new).localParallelism(1);
