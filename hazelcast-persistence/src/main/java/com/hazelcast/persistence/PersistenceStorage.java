@@ -11,6 +11,7 @@ import com.hazelcast.config.MaxSizePolicy;
 import com.hazelcast.config.RingbufferConfig;
 import com.hazelcast.config.RingbufferStoreConfig;
 import com.hazelcast.map.IMap;
+import com.hazelcast.persistence.config.HazelcastStoreConfig;
 import com.hazelcast.persistence.config.PersistenceMongoDBConfig;
 import com.hazelcast.persistence.config.PersistenceStorageAbstractConfig;
 import com.hazelcast.persistence.resource.ExternalResource;
@@ -20,7 +21,6 @@ import com.hazelcast.persistence.store.PersistenceRingBufferStore;
 import com.hazelcast.persistence.store.PersistenceStorageStore;
 import com.hazelcast.persistence.store.PersistenceStoreFactory;
 import com.hazelcast.ringbuffer.Ringbuffer;
-import com.hazelcast.ringbuffer.RingbufferStore;
 import com.mongodb.MongoClient;
 import com.mongodb.MongoClientURI;
 import com.mongodb.client.MongoCollection;
@@ -90,7 +90,7 @@ public class PersistenceStorage {
 		if (null != existingConfig) {
 			if (!existingConfig.getStorageMode().equals(persistenceStorageAbstractConfig.getStorageMode())) {
 				// Nonsupport change storage mode
-				throw new RuntimeException("Change persistence storage mode is not allowed\n old: " + existingConfig + "\n new: " + persistenceStorageAbstractConfig);
+				throw new RuntimeException("Change persistence storage mode is not allowed until restart instance\n old: " + existingConfig + "\n new: " + persistenceStorageAbstractConfig);
 			}
 		}
 		persistenceConfigMap.put(configKey, persistenceStorageAbstractConfig);
@@ -119,24 +119,15 @@ public class PersistenceStorage {
 		if (null == externalResource) {
 			return this;
 		}
-		String configKey = getConfigKey(ConstructType.IMAP, mapName);
 		try {
-			if (storeImplementationMap.containsKey(configKey)) {
-				PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> persistenceStorageStore = storeImplementationMap.get(configKey);
-				persistenceStorageStore.doDestroy();
-				externalResource.doInit(persistenceStorageAbstractConfig);
-				persistenceStorageStore.doInit(persistenceStorageAbstractConfig, externalResource);
-			} else {
-				PersistenceStoreFactory persistenceStoreFactory = new PersistenceStoreFactory();
-				externalResource.doInit(persistenceStorageAbstractConfig);
-				PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> store = persistenceStoreFactory.createStore(ConstructType.IMAP, storageMode);
-				if (null == store) {
-					return this;
-				}
-				store.doInit(persistenceStorageAbstractConfig, externalResource);
-				mapStoreCfg.setImplementation(store);
-				storeImplementationMap.put(configKey, store);
-			}
+			HazelcastStoreConfig<MapStoreConfig> hazelcastStoreConfig = new HazelcastStoreConfig<>(mapStoreCfg);
+			initStore(
+					ConstructType.IMAP,
+					mapName,
+					persistenceStorageAbstractConfig,
+					externalResource,
+					hazelcastStoreConfig
+			);
 		} catch (Exception e) {
 			CommonUtils.ignoreAnyError(externalResource::close);
 			throw new RuntimeException(e);
@@ -175,22 +166,15 @@ public class PersistenceStorage {
 		if (null == externalResource) {
 			return this;
 		}
-		externalResource.doInit(persistenceStorageAbstractConfig);
-		String configKey = getConfigKey(ConstructType.RINGBUFFER, ringBufferName);
 		try {
-			if (storeImplementationMap.containsKey(configKey)) {
-				PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> persistenceStorageStore = storeImplementationMap.get(configKey);
-				persistenceStorageStore.doDestroy();
-				persistenceStorageStore.doInit(persistenceStorageAbstractConfig, externalResource);
-			} else {
-				PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> store = getStore(storageMode);
-				if (null == store) {
-					return this;
-				}
-				store.doInit(persistenceStorageAbstractConfig, externalResource);
-				ringbufferStoreConfig.setStoreImplementation((RingbufferStore) store);
-				storeImplementationMap.put(configKey, store);
-			}
+			HazelcastStoreConfig<RingbufferStoreConfig> hazelcastStoreConfig = new HazelcastStoreConfig<>(ringbufferStoreConfig);
+			initStore(
+					ConstructType.RINGBUFFER,
+					ringBufferName,
+					persistenceStorageAbstractConfig,
+					externalResource,
+					hazelcastStoreConfig
+			);
 		} catch (Exception e) {
 			CommonUtils.ignoreAnyError(externalResource::close);
 			throw new RuntimeException(e);
@@ -201,6 +185,38 @@ public class PersistenceStorage {
 		ringbufferConfig.setRingbufferStoreConfig(ringbufferStoreConfig);
 		c.addRingBufferConfig(ringbufferConfig);
 		return this;
+	}
+
+	private synchronized void initStore(ConstructType constructType,
+										String name,
+										PersistenceStorageAbstractConfig persistenceStorageAbstractConfig,
+										ExternalResource<PersistenceStorageAbstractConfig> externalResource,
+										HazelcastStoreConfig<?> hazelcastStoreConfig) {
+		String configKey = getConfigKey(constructType, name);
+		StorageMode storageMode = persistenceStorageAbstractConfig.getStorageMode();
+		if (storageMode == StorageMode.Mem && storeImplementationMap.containsKey(configKey)) {
+			storeImplementationMap.get(configKey).disable();
+		}
+		if (storeImplementationMap.containsKey(configKey)) {
+			PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> store = storeImplementationMap.get(configKey);
+			store.doDestroy();
+			externalResource.doInit(persistenceStorageAbstractConfig);
+			store.doInit(persistenceStorageAbstractConfig, externalResource);
+			store.enable();
+		} else {
+			PersistenceStoreFactory persistenceStoreFactory = new PersistenceStoreFactory();
+			externalResource.doInit(persistenceStorageAbstractConfig);
+			PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> store = persistenceStoreFactory.createStore(
+					constructType,
+					persistenceStorageAbstractConfig.getStorageMode()
+			);
+			if (null == store) {
+				return;
+			}
+			store.doInit(persistenceStorageAbstractConfig, externalResource);
+			hazelcastStoreConfig.implementation(store);
+			storeImplementationMap.put(configKey, store);
+		}
 	}
 
 	private static void checkInitConfig(String name, ConstructType constructType) {

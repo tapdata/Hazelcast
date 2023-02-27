@@ -73,6 +73,9 @@ public class RocksDBIMap extends PersistenceMapStore<PersistenceRocksDBConfig, R
 	}
 
 	public synchronized void delete(String key) {
+		if (!checkEnable()) {
+			return;
+		}
 		try {
 			String sKey = sign + key;
 			this.rocksDBResource.getRocksDB().delete(sKey.getBytes(StandardCharsets.UTF_8));
@@ -82,6 +85,9 @@ public class RocksDBIMap extends PersistenceMapStore<PersistenceRocksDBConfig, R
 	}
 
 	public synchronized void store(String key, Object value) throws RuntimeException {
+		if (!checkEnable()) {
+			return;
+		}
 		if (!(value instanceof Document)) {
 			return;
 		}
@@ -99,12 +105,18 @@ public class RocksDBIMap extends PersistenceMapStore<PersistenceRocksDBConfig, R
 	}
 
 	public synchronized void storeAll(Map<String, Object> map) {
+		if (!checkEnable()) {
+			return;
+		}
 		for (Map.Entry<String, Object> entry : map.entrySet()) {
 			store(entry.getKey(), entry.getValue());
 		}
 	}
 
 	public synchronized void deleteAll(Collection<String> keys) {
+		if (!checkEnable()) {
+			return;
+		}
 		for (String key : keys) {
 			delete(key);
 		}

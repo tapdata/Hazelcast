@@ -65,6 +65,9 @@ public class RocksDBRingBuffer extends PersistenceRingBufferStore<PersistenceRoc
 
 	@Override
 	public void store(long sequence, Document value) {
+		if (!checkEnable()) {
+			return;
+		}
 		value = value.append("_ts", System.currentTimeMillis() / 1000);
 		String key = sign + sequence;
 		try (
@@ -86,6 +89,9 @@ public class RocksDBRingBuffer extends PersistenceRingBufferStore<PersistenceRoc
 
 	@Override
 	public void storeAll(long sequence, Document[] values) {
+		if (!checkEnable()) {
+			return;
+		}
 		for (Document value : values) {
 			store(sequence, value);
 			sequence = sequence + 1;
@@ -111,6 +117,9 @@ public class RocksDBRingBuffer extends PersistenceRingBufferStore<PersistenceRoc
 
 	@Override
 	public void delete(long s) {
+		if (!checkEnable()) {
+			return;
+		}
 		try {
 			this.rocksDBResource.getRocksDB().delete((sign + s).getBytes(StandardCharsets.UTF_8));
 			this.rocksDBResource.getRocksDB().put((sign + "smallestSequence").getBytes(StandardCharsets.UTF_8), ((Long) (s + 1)).toString().getBytes());

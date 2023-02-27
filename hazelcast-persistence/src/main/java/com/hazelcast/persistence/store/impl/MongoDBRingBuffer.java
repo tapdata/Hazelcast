@@ -50,6 +50,9 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 
 	@Override
 	public void store(long sequence, Document value) {
+		if (!checkEnable()) {
+			return;
+		}
 		Document query = sign().append("key", sequence);
 		Document doc = new Document(query).append("value", value.append("_ts", System.currentTimeMillis() / 1000));
 		ReplaceOptions options = new ReplaceOptions().upsert(true);
@@ -62,6 +65,9 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 
 	@Override
 	public void storeAll(long l, Document[] values) {
+		if (!checkEnable()) {
+			return;
+		}
 		for (Document value : values) {
 			store(l, value);
 			l = l + 1;
@@ -80,6 +86,9 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 
 	@Override
 	public void delete(long s) {
+		if (!checkEnable()) {
+			return;
+		}
 		Document query = sign().append("key", s);
 		try {
 			this.mongoDBResource.getMongoCollection().deleteOne(query);

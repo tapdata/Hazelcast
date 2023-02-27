@@ -2,9 +2,10 @@ package com.hazelcast.persistence.resource;
 
 import com.hazelcast.persistence.StorageMode;
 import com.hazelcast.persistence.config.PersistenceStorageAbstractConfig;
+import com.hazelcast.persistence.http.HttpResource;
+import com.hazelcast.persistence.resource.impl.InMemoryResource;
 import com.hazelcast.persistence.resource.impl.MongoDBResource;
 import com.hazelcast.persistence.resource.impl.RocksDBResource;
-import com.hazelcast.persistence.http.HttpResource;
 
 /**
  * @author samuel
@@ -23,6 +24,9 @@ public class ExternalResourceFactory {
 				break;
 			case HTTP_TM:
 				externalResource = (ExternalResource<E>) new HttpResource();
+				break;
+			case Mem:
+				externalResource = (ExternalResource<E>) new InMemoryResource();
 				break;
 			default:
 				break;

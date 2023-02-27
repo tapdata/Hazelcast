@@ -62,6 +62,9 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 	}
 
 	public synchronized void store(String key, Object value) {
+		if (!checkEnable()) {
+			return;
+		}
 		if (!(value instanceof Document)) {
 			return;
 		}
@@ -73,16 +76,25 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 	}
 
 	public synchronized void storeAll(Map<String, Object> map) {
+		if (!checkEnable()) {
+			return;
+		}
 		for (Map.Entry<String, Object> entry : map.entrySet()) {
 			store(entry.getKey(), entry.getValue());
 		}
 	}
 
 	public synchronized void delete(String key) {
+		if (!checkEnable()) {
+			return;
+		}
 		this.mongoDBResource.getMongoCollection().deleteOne(sign().append("key", key));
 	}
 
 	public synchronized void deleteAll(Collection<String> keys) {
+		if (!checkEnable()) {
+			return;
+		}
 		if (CollectionUtils.isNotEmpty(keys)) {
 			List<String> tempKeys = new ArrayList<>();
 			for (String key : keys) {
