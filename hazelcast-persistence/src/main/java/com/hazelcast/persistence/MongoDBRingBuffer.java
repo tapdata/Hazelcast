@@ -143,7 +143,7 @@ public class MongoDBRingBuffer implements RingbufferStore<Document> {
 
 	@Override
 	public long getSmallestSequence() {
-		return this._getSmallestSequence();
+		return this.smallestSequence;
 	}
 
 	public long _getSmallestSequence() {
