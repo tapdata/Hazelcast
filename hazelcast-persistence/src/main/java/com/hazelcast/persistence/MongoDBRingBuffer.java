@@ -117,6 +117,9 @@ public class MongoDBRingBuffer implements RingbufferStore<Document> {
 			}
 		}
 		Document document = cacheMap.get(sequenceStr);
+		if (null == document) {
+			return null;
+		}
 		if (document.containsKey("value")) {
 			return (Document) document.get("value");
 		} else {
