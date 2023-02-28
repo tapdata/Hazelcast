@@ -92,6 +92,8 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		Document query = sign().append("key", s);
 		try {
 			this.mongoDBResource.getMongoCollection().deleteOne(query);
+			this.smallestSequence = _getSmallestSequence();
+			this.largestSequence = _getLargestSequence();
 		} catch (Exception e) {
 			throw new RuntimeException("Delete from mongodb failed, query: " + query.toJson(), e);
 		}
@@ -113,7 +115,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 
 	@Override
 	public long getSmallestSequence() {
-		return this._getSmallestSequence();
+		return this.smallestSequence;
 	}
 
 	public long _getSmallestSequence() {
