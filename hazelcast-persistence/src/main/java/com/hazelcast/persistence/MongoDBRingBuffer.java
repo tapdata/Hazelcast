@@ -6,12 +6,16 @@ import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
 import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.Indexes;
+import com.mongodb.client.model.InsertOneModel;
 import com.mongodb.client.model.ReplaceOptions;
 import com.mongodb.client.model.Sorts;
+import com.mongodb.client.model.WriteModel;
 import org.apache.commons.collections4.map.LRUMap;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
 
 import static com.mongodb.client.model.Sorts.ascending;
@@ -80,22 +84,30 @@ public class MongoDBRingBuffer implements RingbufferStore<Document> {
 
 	@Override
 	public void store(long sequence, Document value) {
-		Document query = sign().append("key", sequence);
-		Document doc = new Document(query).append("value", value.append("_ts", System.currentTimeMillis() / 1000));
-		ReplaceOptions options = new ReplaceOptions().upsert(true);
-		cacheCollection.replaceOne(query, doc, options);
 		if (sequence <= largestSequence) {
 			return;
 		}
+		Document doc = getInsertDocument(sequence, value);
+		cacheCollection.insertOne(doc);
 		this.largestSequence = sequence;
+	}
+
+	private Document getInsertDocument(long sequence, Document value) {
+		return new Document(sign()).append("key", sequence).append("value", value.append("_ts", System.currentTimeMillis() / 1000));
 	}
 
 	@Override
 	public void storeAll(long l, Document[] values) {
-		for (Document value : values) {
-			store(l, value);
-			l = l + 1;
+		if (l <= largestSequence) {
+			return;
 		}
+		List<WriteModel<Document>> models = new ArrayList<>();
+		for (Document value : values) {
+			Document doc = getInsertDocument(l++, value);
+			models.add(new InsertOneModel<>(doc));
+		}
+		cacheCollection.bulkWrite(models);
+		this.largestSequence += l;
 	}
 
 	@Override
