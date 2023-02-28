@@ -3,9 +3,12 @@ package com.hazelcast.persistence;
 import com.hazelcast.ringbuffer.RingbufferStore;
 import com.mongodb.MongoClient;
 import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoCursor;
 import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.Indexes;
 import com.mongodb.client.model.ReplaceOptions;
+import com.mongodb.client.model.Sorts;
+import org.apache.commons.collections4.map.LRUMap;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 
@@ -15,6 +18,8 @@ import static com.mongodb.client.model.Sorts.ascending;
 import static com.mongodb.client.model.Sorts.descending;
 
 public class MongoDBRingBuffer implements RingbufferStore<Document> {
+	public static final int DEFAULT_FIND_LIMIT = 100;
+	public static final int LRU_MAP_MAX_SIZE = DEFAULT_FIND_LIMIT + 1;
 	private MongoClient mongoClient;
 	private MongoCollection<Document> cacheCollection;
 	private final Long autoCreateIndexDocumentLimit = 5000000L;
@@ -25,6 +30,7 @@ public class MongoDBRingBuffer implements RingbufferStore<Document> {
 	private Long largestSequence = -1L;
 	private Long smallestSequence = 0L;
 	private Document sign;
+	private final LRUMap<String, Document> cacheMap = new LRUMap<>(LRU_MAP_MAX_SIZE);
 
 	private Document sign() {
 		return new Document(sign);
@@ -94,12 +100,28 @@ public class MongoDBRingBuffer implements RingbufferStore<Document> {
 
 	@Override
 	public Document load(long sequence) {
-		Document query = sign().append("key", sequence);
-		Document doc = cacheCollection.find(query).first();
-		if (doc == null) {
+		String sequenceStr = String.valueOf(sequence);
+		if (!cacheMap.containsKey(sequenceStr)) {
+			Document query = sign().append("key", new Document("$gte", sequence));
+			try (
+					MongoCursor<Document> iterator = cacheCollection.find(query).sort(Sorts.ascending("key")).limit(DEFAULT_FIND_LIMIT).iterator()
+			) {
+				while (iterator.hasNext()) {
+					Document document = iterator.next();
+					if (!document.containsKey("key")) {
+						continue;
+					}
+					Object key = document.get("key");
+					cacheMap.put(key.toString(), document);
+				}
+			}
+		}
+		Document document = cacheMap.get(sequenceStr);
+		if (document.containsKey("value")) {
+			return (Document) document.get("value");
+		} else {
 			return null;
 		}
-		return (Document) doc.get("value");
 	}
 
 	@Override
