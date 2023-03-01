@@ -119,9 +119,10 @@ public class PersistenceStorage {
 		if (null == externalResource) {
 			return this;
 		}
+		boolean initResult;
 		try {
 			HazelcastStoreConfig<MapStoreConfig> hazelcastStoreConfig = new HazelcastStoreConfig<>(mapStoreCfg);
-			initStore(
+			initResult = initStore(
 					ConstructType.IMAP,
 					mapName,
 					persistenceStorageAbstractConfig,
@@ -137,9 +138,11 @@ public class PersistenceStorage {
 				.setMaxSizePolicy(MaxSizePolicy.PER_NODE)
 				.setSize(persistenceStorageAbstractConfig.getInMemSize());
 		mapCfg.setEvictionConfig(evictionConfig);
-		mapStoreCfg.setEnabled(true);
-		mapCfg.setMapStoreConfig(mapStoreCfg);
-		mapCfg.setDataPersistenceConfig(new DataPersistenceConfig().setEnabled(true));
+		if (initResult) {
+			mapStoreCfg.setEnabled(true);
+			mapCfg.setMapStoreConfig(mapStoreCfg);
+			mapCfg.setDataPersistenceConfig(new DataPersistenceConfig().setEnabled(true));
+		}
 		c.addMapConfig(mapCfg);
 		return this;
 	}
@@ -166,9 +169,10 @@ public class PersistenceStorage {
 		if (null == externalResource) {
 			return this;
 		}
+		boolean initResult;
 		try {
 			HazelcastStoreConfig<RingbufferStoreConfig> hazelcastStoreConfig = new HazelcastStoreConfig<>(ringbufferStoreConfig);
-			initStore(
+			initResult = initStore(
 					ConstructType.RINGBUFFER,
 					ringBufferName,
 					persistenceStorageAbstractConfig,
@@ -181,17 +185,19 @@ public class PersistenceStorage {
 		}
 		ringbufferConfig.setCapacity(persistenceStorageAbstractConfig.getInMemSize())
 				.setInMemoryFormat(InMemoryFormat.OBJECT);
-		ringbufferStoreConfig.setEnabled(true);
-		ringbufferConfig.setRingbufferStoreConfig(ringbufferStoreConfig);
+		if (initResult) {
+			ringbufferStoreConfig.setEnabled(true);
+			ringbufferConfig.setRingbufferStoreConfig(ringbufferStoreConfig);
+		}
 		c.addRingBufferConfig(ringbufferConfig);
 		return this;
 	}
 
-	private synchronized void initStore(ConstructType constructType,
-										String name,
-										PersistenceStorageAbstractConfig persistenceStorageAbstractConfig,
-										ExternalResource<PersistenceStorageAbstractConfig> externalResource,
-										HazelcastStoreConfig<?> hazelcastStoreConfig) {
+	private synchronized boolean initStore(ConstructType constructType,
+										   String name,
+										   PersistenceStorageAbstractConfig persistenceStorageAbstractConfig,
+										   ExternalResource<PersistenceStorageAbstractConfig> externalResource,
+										   HazelcastStoreConfig<?> hazelcastStoreConfig) {
 		String configKey = getConfigKey(constructType, name);
 		StorageMode storageMode = persistenceStorageAbstractConfig.getStorageMode();
 		if (storageMode == StorageMode.Mem && storeImplementationMap.containsKey(configKey)) {
@@ -211,12 +217,13 @@ public class PersistenceStorage {
 					persistenceStorageAbstractConfig.getStorageMode()
 			);
 			if (null == store) {
-				return;
+				return false;
 			}
 			store.doInit(persistenceStorageAbstractConfig, externalResource);
 			hazelcastStoreConfig.implementation(store);
 			storeImplementationMap.put(configKey, store);
 		}
+		return true;
 	}
 
 	private static void checkInitConfig(String name, ConstructType constructType) {
