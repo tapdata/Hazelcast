@@ -7,7 +7,6 @@ import com.mongodb.client.MongoCursor;
 import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.Indexes;
 import com.mongodb.client.model.InsertOneModel;
-import com.mongodb.client.model.ReplaceOptions;
 import com.mongodb.client.model.Sorts;
 import com.mongodb.client.model.WriteModel;
 import org.apache.commons.collections4.map.LRUMap;
@@ -16,7 +15,13 @@ import org.bson.conversions.Bson;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Properties;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static com.mongodb.client.model.Sorts.ascending;
 import static com.mongodb.client.model.Sorts.descending;
@@ -31,10 +36,11 @@ public class MongoDBRingBuffer implements RingbufferStore<Document> {
 	private final String defaultMongoDB = "cache";
 	private final String defaultMongoCollection = "ringBuffer";
 	private String ringBufferName;
-	private Long largestSequence = -1L;
-	private Long smallestSequence = 0L;
+	private AtomicLong largestSequence = new AtomicLong(-1L);
+	private AtomicLong smallestSequence = new AtomicLong(0L);
 	private Document sign;
 	private final LRUMap<String, Document> cacheMap = new LRUMap<>(LRU_MAP_MAX_SIZE);
+	private ScheduledExecutorService flushSequenceThreadPool;
 
 	private Document sign() {
 		return new Document(sign);
@@ -61,10 +67,6 @@ public class MongoDBRingBuffer implements RingbufferStore<Document> {
 		mongoClient = MongodbUtil.createClient(mongoUri);
 		cacheCollection = mongoClient.getDatabase(db).getCollection(collection);
 
-		/*Long cacheCollectionCount = cacheCollection.countDocuments();
-		if (cacheCollectionCount > autoCreateIndexDocumentLimit) {
-			throw new RuntimeException(String.format("mongo uri: %s, db: %s, collection: %s config as cache collection, but no index on key field, and because its document count is too many, %d: more than: %d, we stop auto create it, please manual create index with {\"key\":1}", mongoUri, db, collection, cacheCollectionCount, autoCreateIndexDocumentLimit));
-		}*/
 		IndexOptions indexOptions = new IndexOptions().background(true);
 		Bson keyIndex = Indexes.ascending("key", "ringBuffer");
 		cacheCollection.createIndex(keyIndex, indexOptions);
@@ -73,23 +75,30 @@ public class MongoDBRingBuffer implements RingbufferStore<Document> {
 		this.ringBufferName = s;
 		sign = new Document("ringBuffer", this.ringBufferName);
 
-		this.largestSequence = this._getLargestSequence();
-		this.smallestSequence = this._getSmallestSequence();
+		flushSequence();
+		this.flushSequenceThreadPool = new ScheduledThreadPoolExecutor(1);
+		this.flushSequenceThreadPool.scheduleAtFixedRate(this::flushSequence, 5L, 5L, TimeUnit.SECONDS);
+	}
+
+	private void flushSequence() {
+		this.smallestSequence.set(this._getSmallestSequence());
+		this.largestSequence.set(this._getLargestSequence());
 	}
 
 	@Override
 	public void destroy() {
-		mongoClient.close();
+		Optional.ofNullable(this.flushSequenceThreadPool).ifPresent(ExecutorService::shutdownNow);
+		Optional.ofNullable(this.mongoClient).ifPresent(MongoClient::close);
 	}
 
 	@Override
 	public void store(long sequence, Document value) {
-		if (sequence <= largestSequence) {
+		if (sequence <= largestSequence.get()) {
 			return;
 		}
 		Document doc = getInsertDocument(sequence, value);
 		cacheCollection.insertOne(doc);
-		this.largestSequence = sequence;
+		this.largestSequence.set(sequence);
 	}
 
 	private Document getInsertDocument(long sequence, Document value) {
@@ -98,7 +107,7 @@ public class MongoDBRingBuffer implements RingbufferStore<Document> {
 
 	@Override
 	public void storeAll(long l, Document[] values) {
-		if (l <= largestSequence) {
+		if (l <= largestSequence.get()) {
 			return;
 		}
 		List<WriteModel<Document>> models = new ArrayList<>();
@@ -107,7 +116,7 @@ public class MongoDBRingBuffer implements RingbufferStore<Document> {
 			models.add(new InsertOneModel<>(doc));
 		}
 		cacheCollection.bulkWrite(models);
-		this.largestSequence += l;
+		this.largestSequence.set(l);
 	}
 
 	@Override
@@ -141,7 +150,7 @@ public class MongoDBRingBuffer implements RingbufferStore<Document> {
 
 	@Override
 	public long getLargestSequence() {
-		return this.largestSequence;
+		return this.largestSequence.get();
 	}
 
 	public long _getLargestSequence() {
@@ -155,7 +164,7 @@ public class MongoDBRingBuffer implements RingbufferStore<Document> {
 
 	@Override
 	public long getSmallestSequence() {
-		return this.smallestSequence;
+		return this.smallestSequence.get();
 	}
 
 	public long _getSmallestSequence() {
