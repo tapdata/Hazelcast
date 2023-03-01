@@ -60,7 +60,16 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 
 	@Override
 	public void doDestroy() {
-		Optional.ofNullable(this.flushSequenceThreadPool).ifPresent(tp -> CommonUtils.ignoreAnyError(tp::shutdownNow));
+		Optional.ofNullable(this.flushSequenceThreadPool).ifPresent(tp -> CommonUtils.ignoreAnyError(() -> {
+			tp.shutdown();
+			try {
+				if (!tp.awaitTermination(10L, TimeUnit.SECONDS)) {
+					tp.shutdownNow();
+				}
+			} catch (InterruptedException e) {
+				tp.shutdownNow();
+			}
+		}));
 		Optional.ofNullable(this.mongoDBResource).ifPresent(mr -> CommonUtils.handleWithError(
 				() -> {
 					mr.close();
