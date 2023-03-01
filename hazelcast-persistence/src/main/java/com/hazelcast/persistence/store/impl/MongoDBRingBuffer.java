@@ -4,20 +4,30 @@ import com.hazelcast.persistence.CommonUtils;
 import com.hazelcast.persistence.config.PersistenceMongoDBConfig;
 import com.hazelcast.persistence.resource.impl.MongoDBResource;
 import com.hazelcast.persistence.store.PersistenceRingBufferStore;
+import com.mongodb.client.MongoCursor;
+import com.mongodb.client.model.InsertOneModel;
 import com.mongodb.client.model.ReplaceOptions;
+import com.mongodb.client.model.Sorts;
+import com.mongodb.client.model.WriteModel;
+import org.apache.commons.collections4.map.LRUMap;
 import org.bson.Document;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 import static com.mongodb.client.model.Sorts.ascending;
 import static com.mongodb.client.model.Sorts.descending;
 
 public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMongoDBConfig, MongoDBResource> {
+	public static final int DEFAULT_FIND_LIMIT = 100;
+	public static final int LRU_MAP_MAX_SIZE = DEFAULT_FIND_LIMIT + 1;
 	private Long largestSequence = -1L;
 	private Long smallestSequence = 0L;
 	private Document sign;
 	private MongoDBResource mongoDBResource;
 	private PersistenceMongoDBConfig persistenceMongoDBConfig;
+	private final LRUMap<String, Document> cacheMap = new LRUMap<>(LRU_MAP_MAX_SIZE);
 
 	private Document sign() {
 		return new Document(sign);
@@ -53,13 +63,11 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		if (!checkEnable()) {
 			return;
 		}
-		Document query = sign().append("key", sequence);
-		Document doc = new Document(query).append("value", value.append("_ts", System.currentTimeMillis() / 1000));
-		ReplaceOptions options = new ReplaceOptions().upsert(true);
-		this.mongoDBResource.getMongoCollection().replaceOne(query, doc, options);
 		if (sequence <= largestSequence) {
 			return;
 		}
+		Document doc = getInsertDocument(sequence, value);
+		this.mongoDBResource.getMongoCollection().insertOne(doc);
 		this.largestSequence = sequence;
 	}
 
@@ -68,20 +76,51 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		if (!checkEnable()) {
 			return;
 		}
-		for (Document value : values) {
-			store(l, value);
-			l = l + 1;
+		if (l <= largestSequence) {
+			return;
 		}
+		List<WriteModel<Document>> models = new ArrayList<>();
+		for (Document value : values) {
+			Document doc = getInsertDocument(l++, value);
+			models.add(new InsertOneModel<>(doc));
+		}
+		this.mongoDBResource.getMongoCollection().bulkWrite(models);
+		this.largestSequence += l;
+	}
+
+	private Document getInsertDocument(long sequence, Document value) {
+		return new Document(sign()).append("key", sequence).append("value", value.append("_ts", System.currentTimeMillis() / 1000));
 	}
 
 	@Override
 	public Document load(long sequence) {
-		Document query = sign().append("key", sequence);
-		Document doc = this.mongoDBResource.getMongoCollection().find(query).first();
-		if (doc == null) {
+		String sequenceStr = String.valueOf(sequence);
+		if (!cacheMap.containsKey(sequenceStr)) {
+			Document query = sign().append("key", new Document("$gte", sequence));
+			try (
+					MongoCursor<Document> iterator = this.mongoDBResource.getMongoCollection().find(query)
+							.sort(Sorts.ascending("key"))
+							.limit(DEFAULT_FIND_LIMIT).iterator()
+			) {
+				while (iterator.hasNext()) {
+					Document document = iterator.next();
+					if (!document.containsKey("key")) {
+						continue;
+					}
+					Object key = document.get("key");
+					cacheMap.put(key.toString(), document);
+				}
+			}
+		}
+		Document document = cacheMap.get(sequenceStr);
+		if (null == document) {
 			return null;
 		}
-		return (Document) doc.get("value");
+		if (document.containsKey("value")) {
+			return (Document) document.get("value");
+		} else {
+			return null;
+		}
 	}
 
 	@Override
