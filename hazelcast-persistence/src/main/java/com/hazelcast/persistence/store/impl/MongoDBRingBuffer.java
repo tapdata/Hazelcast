@@ -26,6 +26,7 @@ import static com.mongodb.client.model.Sorts.descending;
 public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMongoDBConfig, MongoDBResource> {
 	public static final int DEFAULT_FIND_LIMIT = 100;
 	public static final int LRU_MAP_MAX_SIZE = DEFAULT_FIND_LIMIT + 1;
+	public static final long PERIOD_SECONDS = 5L;
 	private AtomicLong largestSequence = new AtomicLong(-1L);
 	private AtomicLong smallestSequence = new AtomicLong(0L);
 	private Document sign;
@@ -49,7 +50,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		sign = new Document("ringBuffer", super.ringBufferName);
 		flushSequence();
 		this.flushSequenceThreadPool = new ScheduledThreadPoolExecutor(1);
-		this.flushSequenceThreadPool.scheduleAtFixedRate(this::flushSequence, 5000L, 5000L, TimeUnit.SECONDS);
+		this.flushSequenceThreadPool.scheduleAtFixedRate(this::flushSequence, PERIOD_SECONDS, PERIOD_SECONDS, TimeUnit.SECONDS);
 	}
 
 	private void flushSequence() {
