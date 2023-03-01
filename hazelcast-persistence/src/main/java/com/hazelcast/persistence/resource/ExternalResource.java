@@ -15,4 +15,8 @@ public abstract class ExternalResource<T extends PersistenceStorageAbstractConfi
 	public void doInit(T t) {
 		this.persistenceStorageAbstractConfig = t;
 	}
+
+	public PersistenceStorageAbstractConfig getPersistenceStorageAbstractConfig() {
+		return persistenceStorageAbstractConfig;
+	}
 }

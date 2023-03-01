@@ -44,6 +44,7 @@ public class HttpTMIMap extends HttpIMap<PersistenceHttpConfig, HttpResource> {
 
 	@Override
 	public void doInit(PersistenceHttpConfig persistenceHttpConfig, HttpResource httpResource) {
+		super.doInit(persistenceHttpConfig, httpResource);
 		this.persistenceHttpConfig = persistenceHttpConfig;
 		this.httpResource = httpResource;
 		this.accessCode = persistenceHttpConfig.getAccessCode();

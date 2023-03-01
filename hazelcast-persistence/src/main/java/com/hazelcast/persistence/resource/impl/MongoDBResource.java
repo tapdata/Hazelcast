@@ -49,11 +49,6 @@ public class MongoDBResource extends ExternalResource<PersistenceMongoDBConfig> 
 		this.mongoDatabase = mongoClient.getDatabase(db);
 		this.mongoCollection = mongoClient.getDatabase(db).getCollection(collection);
 
-		Long cacheCollectionCount = this.mongoCollection.countDocuments();
-		if (cacheCollectionCount > AUTO_CREATE_INDEX_DOCUMENT_LIMIT) {
-			throw new RuntimeException(String.format("mongo uri: %s, db: %s, collection: %s config as cache collection, but no index on key field, and because its document count is too many, %d: more than: %d, we stop auto create it, please manual create index with {\"key\":1}",
-					mongoUri, db, collection, cacheCollectionCount, AUTO_CREATE_INDEX_DOCUMENT_LIMIT));
-		}
 		IndexOptions indexOptions = new IndexOptions().background(true);
 		Bson keyIndex = Indexes.ascending("key", "ringBuffer");
 		this.mongoCollection.createIndex(keyIndex, indexOptions);

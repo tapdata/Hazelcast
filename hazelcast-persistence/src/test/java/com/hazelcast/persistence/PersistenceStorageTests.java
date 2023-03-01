@@ -13,28 +13,22 @@ import com.hazelcast.jet.core.DAG;
 import com.hazelcast.jet.core.Edge;
 import com.hazelcast.jet.core.Inbox;
 import com.hazelcast.jet.core.Vertex;
-import com.hazelcast.map.IMap;
 import com.hazelcast.persistence.config.PersistenceHttpConfig;
 import com.hazelcast.persistence.config.PersistenceInMemConfig;
 import com.hazelcast.persistence.config.PersistenceMongoDBConfig;
 import com.hazelcast.persistence.config.PersistenceRocksDBConfig;
 import com.hazelcast.persistence.config.PersistenceStorageAbstractConfig;
 import org.apache.commons.lang3.RandomStringUtils;
-import org.bson.Document;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.stream.IntStream;
 
 /**
  * @author samuel
@@ -122,6 +116,7 @@ public class PersistenceStorageTests {
 		Assertions.assertTrue(PersistenceRocksDBConfig.create(ConstructType.RINGBUFFER, "ringbuffer").equals(PersistenceRocksDBConfig.create(ConstructType.RINGBUFFER, "ringbuffer")));
 		Assertions.assertFalse(PersistenceInMemConfig.create(ConstructType.IMAP).equals(PersistenceInMemConfig.create(ConstructType.RINGBUFFER)));
 	}
+
 	public static void main(String[] args) throws Throwable {
 		Config config = new Config();
 		config.getJetConfig().setEnabled(true);

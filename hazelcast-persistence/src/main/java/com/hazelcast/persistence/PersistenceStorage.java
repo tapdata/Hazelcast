@@ -205,9 +205,11 @@ public class PersistenceStorage {
 		}
 		if (storeImplementationMap.containsKey(configKey)) {
 			PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> store = storeImplementationMap.get(configKey);
-			store.doDestroy();
-			externalResource.doInit(persistenceStorageAbstractConfig);
-			store.doInit(persistenceStorageAbstractConfig, externalResource);
+			if (!store.configEquals(persistenceStorageAbstractConfig)) {
+				store.doDestroy();
+				externalResource.doInit(persistenceStorageAbstractConfig);
+				store.doInit(persistenceStorageAbstractConfig, externalResource);
+			}
 			store.enable();
 		} else {
 			PersistenceStoreFactory persistenceStoreFactory = new PersistenceStoreFactory();
@@ -365,11 +367,17 @@ public class PersistenceStorage {
 							if (s >= rb.tailSequence()) {
 								break;
 							}
-							Document document;
+							Document document = null;
 							try {
-								document = persistenceRingBufferStore.load(s);
+								Object obj = persistenceRingBufferStore.load(s);
+								if (obj instanceof Document) {
+									document = (Document) obj;
+								}
 							} catch (Exception e) {
 								throw new RuntimeException("Read one from ringBuffer failed, sequence: " + s, e);
+							}
+							if (null == document) {
+								continue;
 							}
 							Long _ts = getTs(document);
 							if (_ts == null) continue;

@@ -64,17 +64,21 @@ public class RocksDBRingBuffer extends PersistenceRingBufferStore<PersistenceRoc
 	}
 
 	@Override
-	public void store(long sequence, Document value) {
+	public void store(long sequence, Object value) {
+		if (!(value instanceof Document)) {
+			return;
+		}
+		Document document = (Document) value;
 		if (!checkEnable()) {
 			return;
 		}
-		value = value.append("_ts", System.currentTimeMillis() / 1000);
+		value = document.append("_ts", System.currentTimeMillis() / 1000);
 		String key = sign + sequence;
 		try (
 				BasicOutputBuffer outputBuffer = new BasicOutputBuffer()
 		) {
 			BsonBinaryWriter writer = new BsonBinaryWriter(outputBuffer);
-			documentCodec.encode(writer, value, encoderContext);
+			documentCodec.encode(writer, document, encoderContext);
 			this.rocksDBResource.getRocksDB().put(key.getBytes(StandardCharsets.UTF_8), outputBuffer.toByteArray());
 			if (sequence <= largestSequence) {
 				return;
@@ -88,11 +92,11 @@ public class RocksDBRingBuffer extends PersistenceRingBufferStore<PersistenceRoc
 	}
 
 	@Override
-	public void storeAll(long sequence, Document[] values) {
+	public void storeAll(long sequence, Object[] values) {
 		if (!checkEnable()) {
 			return;
 		}
-		for (Document value : values) {
+		for (Object value : values) {
 			store(sequence, value);
 			sequence = sequence + 1;
 		}

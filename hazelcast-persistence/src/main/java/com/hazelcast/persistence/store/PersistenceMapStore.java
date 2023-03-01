@@ -26,6 +26,7 @@ public abstract class PersistenceMapStore<T extends PersistenceStorageAbstractCo
 
 	@Override
 	public void doInit(T t, R r) {
+		super.doInit(t, r);
 		this.imapName = t.getName();
 	}
 }

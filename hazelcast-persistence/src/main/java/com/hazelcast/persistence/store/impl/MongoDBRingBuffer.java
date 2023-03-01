@@ -4,9 +4,9 @@ import com.hazelcast.persistence.CommonUtils;
 import com.hazelcast.persistence.config.PersistenceMongoDBConfig;
 import com.hazelcast.persistence.resource.impl.MongoDBResource;
 import com.hazelcast.persistence.store.PersistenceRingBufferStore;
+import com.mongodb.bulk.BulkWriteResult;
 import com.mongodb.client.MongoCursor;
 import com.mongodb.client.model.InsertOneModel;
-import com.mongodb.client.model.ReplaceOptions;
 import com.mongodb.client.model.Sorts;
 import com.mongodb.client.model.WriteModel;
 import org.apache.commons.collections4.map.LRUMap;
@@ -15,6 +15,10 @@ import org.bson.Document;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static com.mongodb.client.model.Sorts.ascending;
 import static com.mongodb.client.model.Sorts.descending;
@@ -22,12 +26,13 @@ import static com.mongodb.client.model.Sorts.descending;
 public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMongoDBConfig, MongoDBResource> {
 	public static final int DEFAULT_FIND_LIMIT = 100;
 	public static final int LRU_MAP_MAX_SIZE = DEFAULT_FIND_LIMIT + 1;
-	private Long largestSequence = -1L;
-	private Long smallestSequence = 0L;
+	private AtomicLong largestSequence = new AtomicLong(-1L);
+	private AtomicLong smallestSequence = new AtomicLong(0L);
 	private Document sign;
 	private MongoDBResource mongoDBResource;
 	private PersistenceMongoDBConfig persistenceMongoDBConfig;
 	private final LRUMap<String, Document> cacheMap = new LRUMap<>(LRU_MAP_MAX_SIZE);
+	private ScheduledExecutorService flushSequenceThreadPool;
 
 	private Document sign() {
 		return new Document(sign);
@@ -42,8 +47,14 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		this.mongoDBResource = mongoDBResource;
 		this.persistenceMongoDBConfig = persistenceMongoDBConfig;
 		sign = new Document("ringBuffer", super.ringBufferName);
-		this.largestSequence = this._getLargestSequence();
-		this.smallestSequence = this._getSmallestSequence();
+		flushSequence();
+		this.flushSequenceThreadPool = new ScheduledThreadPoolExecutor(1);
+		this.flushSequenceThreadPool.scheduleAtFixedRate(this::flushSequence, 5000L, 5000L, TimeUnit.SECONDS);
+	}
+
+	private void flushSequence() {
+		this.smallestSequence.set(this._getSmallestSequence());
+		this.largestSequence.set(this._getLargestSequence());
 	}
 
 	@Override
@@ -59,33 +70,42 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 	}
 
 	@Override
-	public void store(long sequence, Document value) {
+	public void store(long sequence, Object value) {
+		if (!(value instanceof Document)) {
+			return;
+		}
+		Document document = (Document) value;
 		if (!checkEnable()) {
 			return;
 		}
-		if (sequence <= largestSequence) {
+		if (sequence <= largestSequence.get()) {
 			return;
 		}
-		Document doc = getInsertDocument(sequence, value);
+		Document doc = getInsertDocument(sequence, document);
 		this.mongoDBResource.getMongoCollection().insertOne(doc);
-		this.largestSequence = sequence;
+		this.largestSequence.set(sequence);
 	}
 
 	@Override
-	public void storeAll(long l, Document[] values) {
+	public void storeAll(long l, Object[] values) {
 		if (!checkEnable()) {
 			return;
 		}
-		if (l <= largestSequence) {
+		if (l <= largestSequence.get()) {
 			return;
 		}
 		List<WriteModel<Document>> models = new ArrayList<>();
-		for (Document value : values) {
-			Document doc = getInsertDocument(l++, value);
-			models.add(new InsertOneModel<>(doc));
+		for (Object value : values) {
+			if (!(value instanceof Document)) {
+				continue;
+			}
+			Document document = (Document) value;
+			Document insertDocument = getInsertDocument(l++, document);
+			models.add(new InsertOneModel<>(insertDocument));
 		}
-		this.mongoDBResource.getMongoCollection().bulkWrite(models);
-		this.largestSequence += l;
+		BulkWriteResult bulkWriteResult = this.mongoDBResource.getMongoCollection().bulkWrite(models);
+		int insertedCount = bulkWriteResult.getInsertedCount();
+		this.largestSequence.set(this.largestSequence.get() + insertedCount);
 	}
 
 	private Document getInsertDocument(long sequence, Document value) {
@@ -131,8 +151,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		Document query = sign().append("key", s);
 		try {
 			this.mongoDBResource.getMongoCollection().deleteOne(query);
-			this.smallestSequence = _getSmallestSequence();
-			this.largestSequence = _getLargestSequence();
+			flushSequence();
 		} catch (Exception e) {
 			throw new RuntimeException("Delete from mongodb failed, query: " + query.toJson(), e);
 		}
@@ -140,7 +159,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 
 	@Override
 	public long getLargestSequence() {
-		return this.largestSequence;
+		return this.largestSequence.get();
 	}
 
 	public long _getLargestSequence() {
@@ -154,7 +173,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 
 	@Override
 	public long getSmallestSequence() {
-		return this.smallestSequence;
+		return this.smallestSequence.get();
 	}
 
 	public long _getSmallestSequence() {

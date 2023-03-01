@@ -11,9 +11,14 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * @create 2023-02-07 19:28
  **/
 public abstract class PersistenceStorageStore<T extends PersistenceStorageAbstractConfig, R extends ExternalResource<T>> {
+	protected PersistenceStorageAbstractConfig persistenceStorageAbstractConfig;
+	protected ExternalResource<T> externalResource;
 	protected AtomicBoolean enable = new AtomicBoolean(true);
 
-	public abstract void doInit(T t, R r);
+	public void doInit(T t, R r) {
+		this.persistenceStorageAbstractConfig = t;
+		this.externalResource = r;
+	}
 
 	/**
 	 * Do some release operation, do not clear data
@@ -30,5 +35,14 @@ public abstract class PersistenceStorageStore<T extends PersistenceStorageAbstra
 
 	protected boolean checkEnable() {
 		return this.enable.get();
+	}
+
+	public boolean configEquals(PersistenceStorageAbstractConfig config) {
+		if (null == config && null == persistenceStorageAbstractConfig) {
+			return true;
+		} else if (null == config || null == persistenceStorageAbstractConfig) {
+			return false;
+		}
+		return config.equals(persistenceStorageAbstractConfig);
 	}
 }

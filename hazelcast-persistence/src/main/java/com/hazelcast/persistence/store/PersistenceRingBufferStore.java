@@ -11,11 +11,12 @@ import org.bson.Document;
  * @create 2023-02-07 19:43
  **/
 public abstract class PersistenceRingBufferStore<T extends PersistenceStorageAbstractConfig, R extends ExternalResource<T>> extends PersistenceStorageStore<T, R>
-		implements RingbufferStore<Document> {
+		implements RingbufferStore<Object> {
 	protected String ringBufferName;
 
 	@Override
 	public void doInit(T t, R r) {
+		super.doInit(t, r);
 		this.ringBufferName = t.getName();
 	}
 
