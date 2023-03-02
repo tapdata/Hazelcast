@@ -17,10 +17,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Properties;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static com.mongodb.client.model.Sorts.ascending;
@@ -40,7 +36,6 @@ public class MongoDBRingBuffer implements RingbufferStore<Document> {
 	private AtomicLong smallestSequence = new AtomicLong(0L);
 	private Document sign;
 	private final LRUMap<String, Document> cacheMap = new LRUMap<>(LRU_MAP_MAX_SIZE);
-	private ScheduledExecutorService flushSequenceThreadPool;
 
 	private Document sign() {
 		return new Document(sign);
@@ -68,7 +63,7 @@ public class MongoDBRingBuffer implements RingbufferStore<Document> {
 		cacheCollection = mongoClient.getDatabase(db).getCollection(collection);
 
 		IndexOptions indexOptions = new IndexOptions().background(true);
-		Bson keyIndex = Indexes.ascending("key", "ringBuffer");
+		Bson keyIndex = Indexes.ascending("ringBuffer", "key");
 		cacheCollection.createIndex(keyIndex, indexOptions);
 		keyIndex = Indexes.ascending("value.timestamp");
 		cacheCollection.createIndex(keyIndex, indexOptions);
@@ -76,8 +71,6 @@ public class MongoDBRingBuffer implements RingbufferStore<Document> {
 		sign = new Document("ringBuffer", this.ringBufferName);
 
 		flushSequence();
-		this.flushSequenceThreadPool = new ScheduledThreadPoolExecutor(1);
-		this.flushSequenceThreadPool.scheduleAtFixedRate(this::flushSequence, 5L, 5L, TimeUnit.SECONDS);
 	}
 
 	private void flushSequence() {
@@ -87,7 +80,6 @@ public class MongoDBRingBuffer implements RingbufferStore<Document> {
 
 	@Override
 	public void destroy() {
-		Optional.ofNullable(this.flushSequenceThreadPool).ifPresent(ExecutorService::shutdownNow);
 		Optional.ofNullable(this.mongoClient).ifPresent(MongoClient::close);
 	}
 
