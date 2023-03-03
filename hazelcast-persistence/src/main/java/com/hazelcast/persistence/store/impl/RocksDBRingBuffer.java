@@ -47,6 +47,10 @@ public class RocksDBRingBuffer extends PersistenceRingBufferStore<PersistenceRoc
 		this.rocksDBResource = rocksDBResource;
 		this.persistenceRocksDBConfig = persistenceRocksDBConfig;
 		this.sign = super.ringBufferName + keySplit;
+		flushSequence();
+	}
+
+	private void flushSequence() {
 		this.largestSequence = this._getLargestSequence();
 		this.smallestSequence = this._getSmallestSequence();
 	}
@@ -154,6 +158,28 @@ public class RocksDBRingBuffer extends PersistenceRingBufferStore<PersistenceRoc
 	@Override
 	public long getSmallestSequence() {
 		return this._getSmallestSequence();
+	}
+
+	@Override
+	public long findSequenceByTimestamp(long timestamp) {
+		flushSequence();
+		if (largestSequence == -1) {
+			return 0;
+		}
+		for (long i = smallestSequence; i <= largestSequence; i++) {
+			try {
+				Document document = load(i);
+				if (document == null) {
+					continue;
+				}
+				if (document.getLong("timestamp") >= timestamp) {
+					return i;
+				}
+			} catch (Exception e) {
+				throw new RuntimeException(e);
+			}
+		}
+		return largestSequence + 1L;
 	}
 
 	public long _getSmallestSequence() {

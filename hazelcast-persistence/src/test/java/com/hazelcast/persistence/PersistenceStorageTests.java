@@ -18,7 +18,9 @@ import com.hazelcast.persistence.config.PersistenceInMemConfig;
 import com.hazelcast.persistence.config.PersistenceMongoDBConfig;
 import com.hazelcast.persistence.config.PersistenceRocksDBConfig;
 import com.hazelcast.persistence.config.PersistenceStorageAbstractConfig;
+import com.hazelcast.ringbuffer.Ringbuffer;
 import org.apache.commons.lang3.RandomStringUtils;
+import org.bson.Document;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
@@ -29,6 +31,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.IntStream;
 
 /**
  * @author samuel
@@ -115,6 +118,21 @@ public class PersistenceStorageTests {
 		Assertions.assertFalse(PersistenceMongoDBConfig.create(ConstructType.IMAP, "imap").equals(PersistenceHttpConfig.create(ConstructType.IMAP, "imap", "", "")));
 		Assertions.assertTrue(PersistenceRocksDBConfig.create(ConstructType.RINGBUFFER, "ringbuffer").equals(PersistenceRocksDBConfig.create(ConstructType.RINGBUFFER, "ringbuffer")));
 		Assertions.assertFalse(PersistenceInMemConfig.create(ConstructType.IMAP).equals(PersistenceInMemConfig.create(ConstructType.RINGBUFFER)));
+	}
+
+	@Test
+	public void test() throws Exception {
+		PersistenceInMemConfig config = PersistenceInMemConfig.create(ConstructType.RINGBUFFER, "ringbuffer");
+		persistenceStorage.addConfig(config);
+		persistenceStorage.initRingBufferConfig(hazelcastInstance.getConfig(), config.getName());
+		Ringbuffer<Object> ringbuffer = hazelcastInstance.getRingbuffer(config.getName());
+		IntStream.range(0, 102).forEach(i -> {
+			try {
+				ringbuffer.add(new Document("id", i + 1));
+				System.out.println(String.join(",", String.valueOf(ringbuffer.headSequence()), String.valueOf(ringbuffer.tailSequence()), ringbuffer.readOne(i).toString()));
+			} catch (InterruptedException ignored) {
+			}
+		});
 	}
 
 	public static void main(String[] args) throws Throwable {

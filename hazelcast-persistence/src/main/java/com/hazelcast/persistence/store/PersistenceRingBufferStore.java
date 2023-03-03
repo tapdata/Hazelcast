@@ -13,6 +13,7 @@ import org.bson.Document;
 public abstract class PersistenceRingBufferStore<T extends PersistenceStorageAbstractConfig, R extends ExternalResource<T>> extends PersistenceStorageStore<T, R>
 		implements RingbufferStore<Object> {
 	protected String ringBufferName;
+	protected final static Document EMPTY_DOCUMENT = new Document();
 
 	@Override
 	public void doInit(T t, R r) {
@@ -23,4 +24,6 @@ public abstract class PersistenceRingBufferStore<T extends PersistenceStorageAbs
 	abstract public void delete(long s);
 
 	abstract public long getSmallestSequence();
+
+	abstract public long findSequenceByTimestamp(long timestamp);
 }

@@ -15,9 +15,6 @@ import org.bson.Document;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static com.mongodb.client.model.Sorts.ascending;
@@ -33,7 +30,6 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 	private MongoDBResource mongoDBResource;
 	private PersistenceMongoDBConfig persistenceMongoDBConfig;
 	private final LRUMap<String, Document> cacheMap = new LRUMap<>(LRU_MAP_MAX_SIZE);
-	private ScheduledExecutorService flushSequenceThreadPool;
 
 	private Document sign() {
 		return new Document(sign);
@@ -49,8 +45,6 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		this.persistenceMongoDBConfig = persistenceMongoDBConfig;
 		sign = new Document("ringBuffer", super.ringBufferName);
 		flushSequence();
-		this.flushSequenceThreadPool = new ScheduledThreadPoolExecutor(1);
-		this.flushSequenceThreadPool.scheduleAtFixedRate(this::flushSequence, PERIOD_SECONDS, PERIOD_SECONDS, TimeUnit.SECONDS);
 	}
 
 	private void flushSequence() {
@@ -60,16 +54,6 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 
 	@Override
 	public void doDestroy() {
-		Optional.ofNullable(this.flushSequenceThreadPool).ifPresent(tp -> CommonUtils.ignoreAnyError(() -> {
-			tp.shutdown();
-			try {
-				if (!tp.awaitTermination(10L, TimeUnit.SECONDS)) {
-					tp.shutdownNow();
-				}
-			} catch (InterruptedException e) {
-				tp.shutdownNow();
-			}
-		}));
 		Optional.ofNullable(this.mongoDBResource).ifPresent(mr -> CommonUtils.handleWithError(
 				() -> {
 					mr.close();
@@ -185,6 +169,20 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 	@Override
 	public long getSmallestSequence() {
 		return this.smallestSequence.get();
+	}
+
+	@Override
+	public long findSequenceByTimestamp(long timestamp) {
+		flushSequence();
+		if (largestSequence.get() == -1L) {
+			return 0L;
+		}
+		Document query = new Document(sign()).append("value.timestamp", new Document("$gte", timestamp));
+		Document document = mongoDBResource.getMongoCollection().find(query).sort(ascending("_id")).first();
+		if (document == null) {
+			return largestSequence.get() + 1L;
+		}
+		return document.getLong("key");
 	}
 
 	public long _getSmallestSequence() {

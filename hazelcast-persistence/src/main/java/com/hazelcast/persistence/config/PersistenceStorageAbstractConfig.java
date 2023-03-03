@@ -14,7 +14,7 @@ public abstract class PersistenceStorageAbstractConfig {
 	protected ConstructType constructType;
 	protected String name = "default";
 	protected StorageMode storageMode;
-	protected Integer inMemSize = 1;
+	protected Integer inMemSize = 100;
 
 	public PersistenceStorageAbstractConfig(ConstructType constructType, StorageMode storageMode) {
 		this.constructType = constructType;

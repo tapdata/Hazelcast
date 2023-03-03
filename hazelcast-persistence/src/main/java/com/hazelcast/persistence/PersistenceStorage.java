@@ -12,7 +12,6 @@ import com.hazelcast.config.RingbufferConfig;
 import com.hazelcast.config.RingbufferStoreConfig;
 import com.hazelcast.map.IMap;
 import com.hazelcast.persistence.config.HazelcastStoreConfig;
-import com.hazelcast.persistence.config.PersistenceMongoDBConfig;
 import com.hazelcast.persistence.config.PersistenceStorageAbstractConfig;
 import com.hazelcast.persistence.resource.ExternalResource;
 import com.hazelcast.persistence.resource.ExternalResourceFactory;
@@ -21,9 +20,6 @@ import com.hazelcast.persistence.store.PersistenceRingBufferStore;
 import com.hazelcast.persistence.store.PersistenceStorageStore;
 import com.hazelcast.persistence.store.PersistenceStoreFactory;
 import com.hazelcast.ringbuffer.Ringbuffer;
-import com.mongodb.MongoClient;
-import com.mongodb.MongoClientURI;
-import com.mongodb.client.MongoCollection;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.Logger;
 import org.bson.Document;
@@ -33,9 +29,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
-
-import static com.mongodb.client.model.Sorts.ascending;
-import static com.mongodb.client.model.Sorts.descending;
 
 public class PersistenceStorage {
 	private final ConcurrentHashMap<String, Thread> ttlThreadMap = new ConcurrentHashMap<>();
@@ -449,39 +442,32 @@ public class PersistenceStorage {
 	public long findSequence(Ringbuffer<Document> rb, long timestamp) {
 		PersistenceStorageAbstractConfig persistenceStorageAbstractConfig = getPersistenceStorageConfig(ConstructType.RINGBUFFER, rb.getName());
 		StorageMode storageMode = persistenceStorageAbstractConfig.getStorageMode();
-		if (storageMode == StorageMode.MongoDB) {
-			PersistenceMongoDBConfig persistenceMongoDBConfig = (PersistenceMongoDBConfig) persistenceStorageAbstractConfig;
-			try (MongoClient mongoClient = new MongoClient(new MongoClientURI(persistenceMongoDBConfig.getUri()))) {
-				MongoCollection<Document> cacheCollection = mongoClient.getDatabase(persistenceMongoDBConfig.getDatabase()).getCollection(persistenceMongoDBConfig.getCollection());
-				Document query = new Document("ringBuffer", rb.getName()).append("value.timestamp", new Document("$gte", timestamp));
-				Document document = cacheCollection.find(query).sort(ascending("_id")).first();
-				if (document == null) {
-					query = new Document("ringBuffer", rb.getName());
-					document = cacheCollection.find(query).sort(descending("_id")).first();
-					if (document == null) {
-						return 0;
-					}
-					return document.getLong("key") + 1L;
-				}
-				return document.getLong("key");
-			}
-		}
+		PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> store = storeImplementationMap.get(rb.getName());
 
-		if (storageMode == StorageMode.RocksDB) {
-			if (rb.tailSequence() == -1) {
-				return 0;
+		if (store instanceof PersistenceRingBufferStore) {
+			return ((PersistenceRingBufferStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>>) store).findSequenceByTimestamp(timestamp);
+		}
+		if (storageMode == StorageMode.Mem) {
+			long headSequence = rb.headSequence();
+			long tailSequence = rb.tailSequence();
+			if (headSequence == 0L && tailSequence == -1L) {
+				return 0L;
 			}
-			for (long i = rb.headSequence(); i <= rb.tailSequence(); i++) {
+			for (long i = headSequence; i <= tailSequence; i++) {
+				Document document;
 				try {
-					Document document = rb.readOne(i);
-					if (document == null) {
-						continue;
-					}
-					if (document.getLong("timestamp") >= timestamp) {
+					document = rb.readOne(i);
+				} catch (InterruptedException e) {
+					break;
+				}
+				if (null == document) {
+					continue;
+				}
+				if (document.containsKey("timestamp") && document.get("timestamp") instanceof Long) {
+					Long valueTs = document.getLong("timestamp");
+					if (valueTs >= timestamp) {
 						return i;
 					}
-				} catch (Exception e) {
-					throw new RuntimeException(e);
 				}
 			}
 		}
