@@ -4,16 +4,20 @@ import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.map.MapLoaderLifecycleSupport;
 import com.hazelcast.map.MapStore;
 import com.mongodb.MongoClient;
-import com.mongodb.MongoClientURI;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
+import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.Indexes;
 import com.mongodb.client.model.ReplaceOptions;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 
-import java.util.*;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Properties;
 import java.util.function.Consumer;
 
 public class MongoDBIMap implements MapStore<String, Object>, MapLoaderLifecycleSupport {
@@ -51,14 +55,11 @@ public class MongoDBIMap implements MapStore<String, Object>, MapLoaderLifecycle
 		mongoClient = MongodbUtil.createClient(mongoUri);
 		cacheCollection = mongoClient.getDatabase(db).getCollection(collection);
 
-		Long cacheCollectionCount = cacheCollection.countDocuments();
-		if (cacheCollectionCount > autoCreateIndexDocumentLimit) {
-			throw new RuntimeException(String.format("mongo uri: %s, db: %s, collection: %s config as cache collection, but no index on key field, and because its document count is too many, %d: more than: %d, we stop auto create it, please manual create index with {\"key\":1}", mongoUri, db, collection, cacheCollectionCount, autoCreateIndexDocumentLimit));
-		}
+		IndexOptions indexOptions = new IndexOptions().background(true);
 		Bson keyIndex = Indexes.ascending("key", "imap");
-		cacheCollection.createIndex(keyIndex);
+		cacheCollection.createIndex(keyIndex, indexOptions);
 		Bson tsIndex = Indexes.ascending("key", "ts");
-		cacheCollection.createIndex(tsIndex);
+		cacheCollection.createIndex(tsIndex, indexOptions);
 		this.imapName = s;
 		sign = new Document("imap", this.imapName);
 	}
