@@ -48,12 +48,6 @@ public class MongoDBResource extends ExternalResource<PersistenceMongoDBConfig> 
 		this.mongoClient = MongodbUtil.createClient(mongoUri);
 		this.mongoDatabase = mongoClient.getDatabase(db);
 		this.mongoCollection = mongoClient.getDatabase(db).getCollection(collection);
-
-		IndexOptions indexOptions = new IndexOptions().background(true);
-		Bson keyIndex = Indexes.ascending("key", "ringBuffer");
-		this.mongoCollection.createIndex(keyIndex, indexOptions);
-		keyIndex = Indexes.ascending("value.timestamp");
-		this.mongoCollection.createIndex(keyIndex, indexOptions);
 	}
 
 	@Override
