@@ -5,12 +5,16 @@ import com.hazelcast.persistence.config.PersistenceMongoDBConfig;
 import com.hazelcast.persistence.resource.impl.MongoDBResource;
 import com.hazelcast.persistence.store.PersistenceRingBufferStore;
 import com.mongodb.bulk.BulkWriteResult;
+import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
+import com.mongodb.client.model.IndexOptions;
+import com.mongodb.client.model.Indexes;
 import com.mongodb.client.model.InsertOneModel;
 import com.mongodb.client.model.Sorts;
 import com.mongodb.client.model.WriteModel;
 import org.apache.commons.collections4.map.LRUMap;
 import org.bson.Document;
+import org.bson.conversions.Bson;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -43,8 +47,20 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		super.doInit(persistenceMongoDBConfig, mongoDBResource);
 		this.mongoDBResource = mongoDBResource;
 		this.persistenceMongoDBConfig = persistenceMongoDBConfig;
+		createIndex();
 		sign = new Document("ringBuffer", super.ringBufferName);
 		flushSequence();
+	}
+
+	private void createIndex() {
+		IndexOptions indexOptions = new IndexOptions().background(true);
+		MongoCollection<Document> mongoCollection = mongoDBResource.getMongoCollection();
+		Bson keyIndex = Indexes.ascending("ringBuffer", "key");
+		mongoCollection.createIndex(keyIndex, indexOptions);
+		keyIndex = Indexes.ascending("value.timestamp");
+		mongoCollection.createIndex(keyIndex, indexOptions);
+		keyIndex = Indexes.ascending("ringBuffer", "value.timestamp", "_id");
+		mongoCollection.createIndex(keyIndex, indexOptions);
 	}
 
 	private void flushSequence() {

@@ -5,10 +5,14 @@ import com.hazelcast.persistence.config.PersistenceMongoDBConfig;
 import com.hazelcast.persistence.resource.impl.MongoDBResource;
 import com.hazelcast.persistence.store.PersistenceMapStore;
 import com.mongodb.client.FindIterable;
+import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
+import com.mongodb.client.model.IndexOptions;
+import com.mongodb.client.model.Indexes;
 import com.mongodb.client.model.ReplaceOptions;
 import org.apache.commons.collections4.CollectionUtils;
 import org.bson.Document;
+import org.bson.conversions.Bson;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -36,7 +40,17 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 		super.doInit(persistenceMongoDBConfig, mongoDBResource);
 		this.mongoDBResource = mongoDBResource;
 		this.persistenceMongoDBConfig = persistenceMongoDBConfig;
+		createIndex();
 		this.sign = new Document("imap", super.imapName);
+	}
+
+	private void createIndex() {
+		IndexOptions indexOptions = new IndexOptions().background(true);
+		MongoCollection<Document> mongoCollection = mongoDBResource.getMongoCollection();
+		Bson keyIndex = Indexes.ascending("key", "imap");
+		mongoCollection.createIndex(keyIndex, indexOptions);
+		Bson tsIndex = Indexes.ascending("key", "ts");
+		mongoCollection.createIndex(tsIndex, indexOptions);
 	}
 
 	@Override
