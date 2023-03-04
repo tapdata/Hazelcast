@@ -32,6 +32,7 @@ public class HttpResource extends ExternalResource<PersistenceHttpConfig> {
 		if (readTimeoutObj instanceof String) {
 			this.readTimeout = Integer.parseInt(readTimeoutObj.toString());
 		}
+		this.restTemplate = HttpUtil.getRestTemplate(connectTimeout, readTimeout);
 	}
 
 	@Override
