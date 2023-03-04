@@ -62,15 +62,22 @@ public class MongoDBRingBuffer implements RingbufferStore<Document> {
 		mongoClient = MongodbUtil.createClient(mongoUri);
 		cacheCollection = mongoClient.getDatabase(db).getCollection(collection);
 
+		createIndex();
+
+		this.ringBufferName = s;
+		sign = new Document("ringBuffer", this.ringBufferName);
+
+		flushSequence();
+	}
+
+	private void createIndex() {
 		IndexOptions indexOptions = new IndexOptions().background(true);
 		Bson keyIndex = Indexes.ascending("ringBuffer", "key");
 		cacheCollection.createIndex(keyIndex, indexOptions);
 		keyIndex = Indexes.ascending("value.timestamp");
 		cacheCollection.createIndex(keyIndex, indexOptions);
-		this.ringBufferName = s;
-		sign = new Document("ringBuffer", this.ringBufferName);
-
-		flushSequence();
+		keyIndex = Indexes.ascending("ringBuffer", "value.timestamp", "_id");
+		cacheCollection.createIndex(keyIndex, indexOptions);
 	}
 
 	private void flushSequence() {
