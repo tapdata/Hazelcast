@@ -1,5 +1,6 @@
 package com.hazelcast.persistence.http;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.hazelcast.persistence.CommonUtils;
 import com.hazelcast.persistence.config.PersistenceHttpConfig;
@@ -169,7 +170,10 @@ public class HttpTMIMap extends HttpIMap<PersistenceHttpConfig, HttpResource> {
 
 	private Map<String, Object> filterQuery(Map<String, Object> param) {
 		HashMap<String, Object> where = new HashMap<String, Object>() {{
-			put("where", param);
+			try {
+				put("where", JacksonUtil.toJson(param));
+			} catch (JsonProcessingException ignore) {
+			}
 		}};
 		return new HashMap<String, Object>() {{
 			put("filter", where);
@@ -179,7 +183,10 @@ public class HttpTMIMap extends HttpIMap<PersistenceHttpConfig, HttpResource> {
 
 	private Map<String, Object> whereQuery(Map<String, Object> param) {
 		return new HashMap<String, Object>() {{
-			put("where", param);
+			try {
+				put("where", JacksonUtil.toJson(param));
+			} catch (JsonProcessingException ignore) {
+			}
 			put("access_token", loginResp.getId());
 		}};
 	}
