@@ -106,7 +106,7 @@ public class PersistenceStorage {
 	}
 
 	public PersistenceStorage initMapStoreConfig(Config c, String mapName) {
-		//checkInitConfig(mapName, ConstructType.IMAP);
+		checkInitConfig(mapName, ConstructType.IMAP);
 		PersistenceStorageAbstractConfig persistenceStorageAbstractConfig = getPersistenceStorageConfig(ConstructType.IMAP, mapName);
 		if (null == persistenceStorageAbstractConfig) {
 			throw new IllegalArgumentException(String.format("IMap name %s's persistence storage config is not exists, please add config", mapName));
