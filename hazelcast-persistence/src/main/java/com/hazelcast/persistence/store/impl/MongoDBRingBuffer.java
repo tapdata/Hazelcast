@@ -19,6 +19,8 @@ import org.bson.conversions.Bson;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static com.mongodb.client.model.Sorts.ascending;
@@ -27,13 +29,14 @@ import static com.mongodb.client.model.Sorts.descending;
 public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMongoDBConfig, MongoDBResource> {
 	public static final int DEFAULT_FIND_LIMIT = 100;
 	public static final int LRU_MAP_MAX_SIZE = DEFAULT_FIND_LIMIT + 1;
-	public static final long PERIOD_SECONDS = 5L;
+	public static final long PERIOD_MS = 500L;
 	private AtomicLong largestSequence = new AtomicLong(-1L);
 	private AtomicLong smallestSequence = new AtomicLong(0L);
 	private Document sign;
 	private MongoDBResource mongoDBResource;
 	private PersistenceMongoDBConfig persistenceMongoDBConfig;
 	private final LRUMap<String, Document> cacheMap = new LRUMap<>(LRU_MAP_MAX_SIZE);
+	private ScheduledThreadPoolExecutor flushSequenceScheduler;
 
 	private Document sign() {
 		return new Document(sign);
@@ -50,6 +53,13 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		createIndex();
 		sign = new Document("ringBuffer", super.ringBufferName);
 		flushSequence();
+		this.flushSequenceScheduler = new ScheduledThreadPoolExecutor(1, r -> new Thread(r, "Flush-Ringbuffer-Sequence-Scheduler-" + ringBufferName));
+		this.flushSequenceScheduler.scheduleWithFixedDelay(() -> {
+			try {
+				this.flushSequence();
+			} catch (Throwable ignored) {
+			}
+		}, PERIOD_MS, PERIOD_MS, TimeUnit.MILLISECONDS);
 	}
 
 	private void createIndex() {
@@ -78,6 +88,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 					throw new RuntimeException("Close IMap[" + ringBufferName + "]'s MongoDB resource failed, config: " + persistenceMongoDBConfig, throwable);
 				})
 		);
+		Optional.ofNullable(this.flushSequenceScheduler).ifPresent(f -> CommonUtils.ignoreAnyError(f::shutdownNow));
 	}
 
 	@Override
