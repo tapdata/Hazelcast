@@ -95,7 +95,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 
 	@Override
 	public long getLargestSequence() {
-		return this.largestSequence;
+		return this._getLargestSequence();
 	}
 
 	public long _getLargestSequence() {

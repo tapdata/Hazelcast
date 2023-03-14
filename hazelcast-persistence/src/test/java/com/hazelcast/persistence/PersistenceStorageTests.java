@@ -18,7 +18,10 @@ import com.hazelcast.persistence.config.PersistenceInMemConfig;
 import com.hazelcast.persistence.config.PersistenceMongoDBConfig;
 import com.hazelcast.persistence.config.PersistenceRocksDBConfig;
 import com.hazelcast.persistence.config.PersistenceStorageAbstractConfig;
+import com.hazelcast.ringbuffer.Ringbuffer;
+import com.hazelcast.sql.impl.schema.TableResolver;
 import org.apache.commons.lang3.RandomStringUtils;
+import org.bson.Document;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -39,14 +42,14 @@ public class PersistenceStorageTests {
 	public void addConfigTest() {
 		PersistenceStorage persistenceStorage = PersistenceStorage.getInstance();
 		PersistenceMongoDBConfig imapMongoDBConfig = PersistenceMongoDBConfig.create(ConstructType.IMAP, "imap")
-				.uri("mongodb://root:sldk!342@127.0.0.1:27017")
+				.uri("mongodb://root:Gotapd8!@139.198.127.204:32550/qa?authSource=admin")
 				.database("hazelcast")
 				.collection("imap_default_config");
 		persistenceStorage.addConfig(imapMongoDBConfig);
 		PersistenceStorageAbstractConfig persistenceStorageAbstractConfig = persistenceStorage.getPersistenceStorageConfig(imapMongoDBConfig.getConstructType(), imapMongoDBConfig.getName());
 		Assertions.assertEquals(PersistenceMongoDBConfig.class.getName(), persistenceStorageAbstractConfig.getClass().getName());
 		PersistenceMongoDBConfig persistenceMongoDBConfig = (PersistenceMongoDBConfig) persistenceStorageAbstractConfig;
-		Assertions.assertEquals("mongodb://root:sldk!342@127.0.0.1:27017", persistenceMongoDBConfig.getUri());
+		Assertions.assertEquals("mongodb://root:Gotapd8!@139.198.127.204:32550/qa?authSource=admin", persistenceMongoDBConfig.getUri());
 		Assertions.assertEquals("hazelcast", persistenceMongoDBConfig.getDatabase());
 		Assertions.assertEquals("imap_default_config", persistenceMongoDBConfig.getCollection());
 		System.out.println(persistenceStorageAbstractConfig);
@@ -93,32 +96,27 @@ public class PersistenceStorageTests {
 	public static void main(String[] args) throws Throwable {
 		Config config = new Config();
 		config.getJetConfig().setEnabled(true);
-		JoinConfig joinConfig = new JoinConfig();
-		joinConfig.setTcpIpConfig(new TcpIpConfig().setEnabled(true));
-		NetworkConfig networkConfig = new NetworkConfig();
-		networkConfig.setJoin(joinConfig);
-		config.setNetworkConfig(networkConfig);
-		config.setInstanceName("test");
-		HazelcastInstance hazelcastInstance = Hazelcast.newHazelcastInstance(config);
-		/*PersistenceMongoDBConfig mongoDBConfig = PersistenceMongoDBConfig.create(ConstructType.IMAP)
-				.database("test").collection("ttl_test");
-		PersistenceStorage.getInstance().addConfig(mongoDBConfig);
-		PersistenceStorage.getInstance().initMapStoreConfig(config);
-		IMap<Object, Object> imap = hazelcastInstance.getMap("imap");
-		imap.put("test", new Document("name", "test1").append("age", 12));*/
-		JetService jet = hazelcastInstance.getJet();
-		DAG dag = new DAG();
-		Vertex src = new Vertex("src", DummySourceProcessor::new).localParallelism(1);
-		Vertex tgt = new Vertex("tgt", DummyTargetProcessor::new).localParallelism(1);
-		dag.vertex(src);
-		dag.vertex(tgt);
-		Edge edge = Edge.between(src, tgt);
-		dag.edge(edge);
-		Job job = jet.newJob(dag);
-		TimeUnit.SECONDS.sleep(2L);
-		job.cancel();
-		TimeUnit.SECONDS.sleep(2L);
-		hazelcastInstance.shutdown();
+		PersistenceStorage persistenceStorage = PersistenceStorage.getInstance();
+		PersistenceMongoDBConfig rbMongoDBConfig = PersistenceMongoDBConfig.create(ConstructType.RINGBUFFER, "rb")
+				.uri("mongodb://root:Gotapd8!@139.198.127.204:32550/qa?authSource=admin")
+				.database("hazelcast")
+				.collection("ringBuffer_default_config");
+		PersistenceMongoDBConfig imapMongoDBConfig = PersistenceMongoDBConfig.create(ConstructType.IMAP, "imap")
+				.uri("mongodb://root:Gotapd8!@139.198.127.204:32550/qa?authSource=admin")
+				.database("hazelcast")
+				.collection("imap_default_config");
+		persistenceStorage.addConfig(rbMongoDBConfig);
+		persistenceStorage.addConfig(imapMongoDBConfig);
+		persistenceStorage.initRingBufferConfig(config, "rb");
+		persistenceStorage.initMapStoreConfig(config, "imap");
+		HazelcastInstance hz = Hazelcast.newHazelcastInstance(config);
+		Ringbuffer<Document> rb = hz.getRingbuffer("rb");
+		rb.add(new Document().append("x", 1).append("y", "sss"));
+		rb.add(new Document().append("x", 2).append("y", "sss"));
+		while (true) {
+			rb.tailSequence();
+		}
+		//System.out.println(rb.readOne(rb.tailSequence()));
 	}
 
 	static class DummySourceProcessor extends AbstractProcessor {
