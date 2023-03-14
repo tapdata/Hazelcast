@@ -75,5 +75,7 @@ public interface RingbufferStore<T> {
      */
     long getLargestSequence();
 
-    long getSmallestSequence();
+    default long getSmallestSequence() {
+        return 0L;
+    }
 }
