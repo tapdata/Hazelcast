@@ -216,4 +216,9 @@ public final class RingbufferStoreWrapper implements RingbufferStore<Data> {
     public long getLargestSequence() {
         return store.getLargestSequence();
     }
+
+    @Override
+    public long getSmallestSequence() {
+        return store.getSmallestSequence();
+    }
 }

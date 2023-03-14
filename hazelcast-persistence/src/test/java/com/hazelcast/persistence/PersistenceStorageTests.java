@@ -69,14 +69,14 @@ public class PersistenceStorageTests {
 	public void addConfigTest() {
 		PersistenceStorage persistenceStorage = PersistenceStorage.getInstance();
 		PersistenceMongoDBConfig imapMongoDBConfig = PersistenceMongoDBConfig.create(ConstructType.IMAP, "imap")
-				.uri("mongodb://root:sldk!342@127.0.0.1:27017")
+				.uri("mongodb://root:Gotapd8!@139.198.127.204:32550/qa?authSource=admin")
 				.database("hazelcast")
 				.collection("imap_default_config");
 		persistenceStorage.addConfig(imapMongoDBConfig);
 		PersistenceStorageAbstractConfig persistenceStorageAbstractConfig = persistenceStorage.getPersistenceStorageConfig(imapMongoDBConfig.getConstructType(), imapMongoDBConfig.getName());
 		Assertions.assertEquals(PersistenceMongoDBConfig.class.getName(), persistenceStorageAbstractConfig.getClass().getName());
 		PersistenceMongoDBConfig persistenceMongoDBConfig = (PersistenceMongoDBConfig) persistenceStorageAbstractConfig;
-		Assertions.assertEquals("mongodb://root:sldk!342@127.0.0.1:27017", persistenceMongoDBConfig.getUri());
+		Assertions.assertEquals("mongodb://root:Gotapd8!@139.198.127.204:32550/qa?authSource=admin", persistenceMongoDBConfig.getUri());
 		Assertions.assertEquals("hazelcast", persistenceMongoDBConfig.getDatabase());
 		Assertions.assertEquals("imap_default_config", persistenceMongoDBConfig.getCollection());
 		System.out.println(persistenceStorageAbstractConfig);
@@ -158,6 +158,29 @@ public class PersistenceStorageTests {
 		job.cancel();
 		TimeUnit.SECONDS.sleep(2L);
 		hazelcastInstance.shutdown();
+
+		/*Config config = new Config();
+		config.getJetConfig().setEnabled(true);
+		PersistenceStorage persistenceStorage = PersistenceStorage.getInstance();
+		PersistenceMongoDBConfig rbMongoDBConfig = PersistenceMongoDBConfig.create(ConstructType.RINGBUFFER, "rb")
+				.uri("mongodb://root:Gotapd8!@139.198.127.204:32550/qa?authSource=admin")
+				.database("hazelcast")
+				.collection("ringBuffer_default_config");
+		PersistenceMongoDBConfig imapMongoDBConfig = PersistenceMongoDBConfig.create(ConstructType.IMAP, "imap")
+				.uri("mongodb://root:Gotapd8!@139.198.127.204:32550/qa?authSource=admin")
+				.database("hazelcast")
+				.collection("imap_default_config");
+		persistenceStorage.addConfig(rbMongoDBConfig);
+		persistenceStorage.addConfig(imapMongoDBConfig);
+		persistenceStorage.initRingBufferConfig(config, "rb");
+		persistenceStorage.initMapStoreConfig(config, "imap");
+		HazelcastInstance hz = Hazelcast.newHazelcastInstance(config);
+		Ringbuffer<Document> rb = hz.getRingbuffer("rb");
+		rb.add(new Document().append("x", 1).append("y", "sss"));
+		rb.add(new Document().append("x", 2).append("y", "sss"));
+		while (true) {
+			rb.tailSequence();
+		}*/
 	}
 
 	static class DummySourceProcessor extends AbstractProcessor {
