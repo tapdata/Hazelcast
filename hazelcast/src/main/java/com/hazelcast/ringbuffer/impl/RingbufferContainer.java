@@ -529,6 +529,11 @@ public class RingbufferContainer<T, E> implements IdentifiedDataSerializable, No
      */
     private Object readOrLoadItem(long sequence) {
         Object item;
+        if (store.isEnabled()) {
+            item = store.load(sequence);
+            return item;
+        }
+        
         if (sequence < ringbuffer.headSequence() && store.isEnabled()) {
             item = store.load(sequence);
         } else {
