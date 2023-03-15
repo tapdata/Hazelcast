@@ -516,7 +516,7 @@ public abstract class Operation implements DataSerializable, Tenantable {
      * @see #setCallTimeout(long)
      * @see OperationAccessor#setCallTimeout(Operation, long)
      */
-    public final long getCallTimeout() {
+    public long getCallTimeout() {
         return callTimeout;
     }
 

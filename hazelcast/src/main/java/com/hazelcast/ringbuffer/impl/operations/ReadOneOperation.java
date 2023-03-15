@@ -30,6 +30,7 @@ import static com.hazelcast.ringbuffer.impl.RingbufferDataSerializerHook.READ_ON
 
 public class ReadOneOperation extends AbstractRingBufferOperation implements BlockingOperation, ReadonlyOperation {
 
+    public static final long DEFAULT_CALL_TIMEOUT_MS = 1000L;
     private long sequence;
     private Data result;
 
@@ -104,5 +105,10 @@ public class ReadOneOperation extends AbstractRingBufferOperation implements Blo
     protected void readInternal(ObjectDataInput in) throws IOException {
         super.readInternal(in);
         sequence = in.readLong();
+    }
+
+    @Override
+    public long getCallTimeout() {
+        return DEFAULT_CALL_TIMEOUT_MS;
     }
 }
