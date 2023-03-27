@@ -7,6 +7,7 @@ import com.hazelcast.persistence.store.PersistenceRingBufferStore;
 import com.mongodb.bulk.BulkWriteResult;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
+import com.mongodb.client.model.BulkWriteOptions;
 import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.Indexes;
 import com.mongodb.client.model.InsertOneModel;
@@ -125,7 +126,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 			Document insertDocument = getInsertDocument(l++, document);
 			models.add(new InsertOneModel<>(insertDocument));
 		}
-		BulkWriteResult bulkWriteResult = this.mongoDBResource.getMongoCollection().bulkWrite(models);
+		BulkWriteResult bulkWriteResult = this.mongoDBResource.getMongoCollection().bulkWrite(models, new BulkWriteOptions().ordered(true));
 		int insertedCount = bulkWriteResult.getInsertedCount();
 		this.largestSequence.set(this.largestSequence.get() + insertedCount);
 	}
