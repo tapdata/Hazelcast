@@ -25,6 +25,9 @@ public abstract class PersistenceStorageStore<T extends PersistenceStorageAbstra
 	 */
 	public abstract void doDestroy();
 
+	public void doClear() {
+	}
+
 	public void enable() {
 		this.enable.compareAndSet(false, true);
 	}

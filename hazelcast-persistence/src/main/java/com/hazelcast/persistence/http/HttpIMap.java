@@ -24,4 +24,10 @@ public abstract class HttpIMap<T extends PersistenceStorageAbstractConfig, R ext
 		this.hazelcastInstance = hazelcastInstance;
 		this.mapName = mapName;
 	}
+
+	@Override
+	public void doInit(T t, R r) {
+		super.doInit(t, r);
+		this.mapName = t.getName();
+	}
 }

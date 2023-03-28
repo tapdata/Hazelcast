@@ -54,6 +54,11 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 	}
 
 	@Override
+	public void doClear() {
+		this.deleteAll(null);
+	}
+
+	@Override
 	public void doDestroy() {
 		releaseResource();
 	}

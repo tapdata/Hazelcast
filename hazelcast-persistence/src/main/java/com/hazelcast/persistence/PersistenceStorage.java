@@ -134,14 +134,33 @@ public class PersistenceStorage {
 		if (initResult) {
 			mapStoreCfg.setEnabled(true);
 			mapCfg.setMapStoreConfig(mapStoreCfg);
-			mapCfg.setDataPersistenceConfig(new DataPersistenceConfig().setEnabled(true));
+			mapCfg.setDataPersistenceConfig(new DataPersistenceConfig().setEnabled(true).setFsync(true));
 		}
 		c.addMapConfig(mapCfg);
 		return this;
 	}
 
+	public void clear(ConstructType constructType, String name) {
+		PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> store = storeImplementationMap.get(getConfigKey(constructType, name));
+		if (null != store) {
+			store.doClear();
+		}
+	}
+
+	@Deprecated
 	public void destroy(String name) {
 		CommonUtils.ignoreAnyError(() -> Optional.ofNullable(storeImplementationMap.get(name)).ifPresent(PersistenceStorageStore::doDestroy));
+	}
+
+	public void destroy(ConstructType constructType, String name) {
+		String configKey = getConfigKey(constructType, name);
+		PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> store = storeImplementationMap.get(configKey);
+		if (null != store) {
+			CommonUtils.ignoreAnyError(() -> {
+				store.doDestroy();
+				storeImplementationMap.remove(configKey);
+			});
+		}
 	}
 
 	public PersistenceStorage initRingBufferConfig(Config c) {

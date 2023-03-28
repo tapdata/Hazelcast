@@ -55,13 +55,18 @@ public class HttpTMIMap extends HttpIMap<PersistenceHttpConfig, HttpResource> {
 	}
 
 	@Override
+	public void doClear() {
+		this.deleteAll(null);
+	}
+
+	@Override
 	public void doDestroy() {
 		this.destroy();
 	}
 
 	@Override
 	public void destroy() {
-		Optional.ofNullable(httpResource).ifPresent(hr-> CommonUtils.ignoreAnyError(hr::close));
+		Optional.ofNullable(httpResource).ifPresent(hr -> CommonUtils.ignoreAnyError(hr::close));
 	}
 
 	@Override
@@ -199,6 +204,9 @@ public class HttpTMIMap extends HttpIMap<PersistenceHttpConfig, HttpResource> {
 	@Override
 	public void delete(String key) {
 		validateToken();
+		if (null == key) {
+			return;
+		}
 		Map<String, Object> param = new HashMap<String, Object>() {{
 			put("imap", mapName);
 			put("key", key);
@@ -212,10 +220,12 @@ public class HttpTMIMap extends HttpIMap<PersistenceHttpConfig, HttpResource> {
 		validateToken();
 		Map<String, Object> param = new HashMap<String, Object>() {{
 			put("imap", mapName);
-			put("key", new HashMap<String, Object>() {{
+		}};
+		if (null != keys) {
+			param.put("key", new HashMap<String, Object>() {{
 				put("$in", keys);
 			}});
-		}};
+		}
 		Map<String, Object> queryMap = whereQuery(param);
 		delete(queryMap);
 	}

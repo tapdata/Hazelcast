@@ -51,6 +51,11 @@ public class RocksDBIMap extends PersistenceMapStore<PersistenceRocksDBConfig, R
 	}
 
 	@Override
+	public void doClear() {
+		throw new UnsupportedOperationException();
+	}
+
+	@Override
 	public void doDestroy() {
 		releaseResource();
 	}
