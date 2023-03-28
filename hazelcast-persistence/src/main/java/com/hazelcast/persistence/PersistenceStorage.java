@@ -442,7 +442,7 @@ public class PersistenceStorage {
 	public long findSequence(Ringbuffer<Document> rb, long timestamp) {
 		PersistenceStorageAbstractConfig persistenceStorageAbstractConfig = getPersistenceStorageConfig(ConstructType.RINGBUFFER, rb.getName());
 		StorageMode storageMode = persistenceStorageAbstractConfig.getStorageMode();
-		PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> store = storeImplementationMap.get(rb.getName());
+		PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> store = storeImplementationMap.get(getConfigKey(ConstructType.RINGBUFFER, rb.getName()));
 
 		if (store instanceof PersistenceRingBufferStore) {
 			return ((PersistenceRingBufferStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>>) store).findSequenceByTimestamp(timestamp);
