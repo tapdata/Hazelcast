@@ -72,7 +72,7 @@ public class PersistenceStorage {
 		return persistenceConfigMap.get(configKey);
 	}
 
-	public synchronized void addConfig(PersistenceStorageAbstractConfig persistenceStorageAbstractConfig) {
+	public synchronized PersistenceStorage addConfig(PersistenceStorageAbstractConfig persistenceStorageAbstractConfig) {
 		String configKey;
 		try {
 			configKey = getConfigKey(persistenceStorageAbstractConfig.getConstructType(), persistenceStorageAbstractConfig.getName());
@@ -87,6 +87,7 @@ public class PersistenceStorage {
 			}
 		}
 		persistenceConfigMap.put(configKey, persistenceStorageAbstractConfig);
+		return this;
 	}
 
 	public PersistenceStorage logger(Logger logger) {
@@ -217,11 +218,6 @@ public class PersistenceStorage {
 		}
 		if (storeImplementationMap.containsKey(configKey)) {
 			PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> store = storeImplementationMap.get(configKey);
-			if (!store.configEquals(persistenceStorageAbstractConfig)) {
-				store.doDestroy();
-				externalResource.doInit(persistenceStorageAbstractConfig);
-				store.doInit(persistenceStorageAbstractConfig, externalResource);
-			}
 			store.enable();
 		} else {
 			PersistenceStoreFactory persistenceStoreFactory = new PersistenceStoreFactory();
