@@ -35,12 +35,6 @@ public class HttpResource extends ExternalResource<PersistenceHttpConfig> {
 		this.restTemplate = HttpUtil.getRestTemplate(connectTimeout, readTimeout);
 	}
 
-	@Override
-	public void close() throws IOException {
-		this.baseUrl = null;
-		this.restTemplate = null;
-	}
-
 	public String getBaseUrl() {
 		return baseUrl;
 	}
@@ -55,5 +49,10 @@ public class HttpResource extends ExternalResource<PersistenceHttpConfig> {
 
 	public int getReadTimeout() {
 		return readTimeout;
+	}
+
+	@Override
+	public void close() throws IOException {
+
 	}
 }
