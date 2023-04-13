@@ -133,9 +133,10 @@ public class PersistenceStorage {
 				.setSize(persistenceStorageAbstractConfig.getInMemSize());
 		mapCfg.setEvictionConfig(evictionConfig);
 		if (initResult) {
-			mapStoreCfg.setEnabled(true);
+			mapStoreCfg.setEnabled(true)
+					.setInitialLoadMode(MapStoreConfig.InitialLoadMode.LAZY);
 			mapCfg.setMapStoreConfig(mapStoreCfg);
-			mapCfg.setDataPersistenceConfig(new DataPersistenceConfig().setEnabled(true).setFsync(true));
+			mapCfg.setDataPersistenceConfig(new DataPersistenceConfig().setEnabled(true));
 		}
 		c.addMapConfig(mapCfg);
 		return this;

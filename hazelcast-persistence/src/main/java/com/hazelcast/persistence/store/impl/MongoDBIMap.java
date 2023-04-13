@@ -154,11 +154,11 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 	}
 
 	public Iterable<String> loadAllKeys() {
-		return new MongoDBImapIterable(this.mongoDBResource.getMongoCollection().find(new Document("imap", imapName)));
+		return new MongoDBImapIterable(this.mongoDBResource.getMongoCollection().find(sign()));
 	}
 
-	class MongoDBImapIterable implements Iterable<String> {
-		FindIterable<Document> mongoIterable;
+	static class MongoDBImapIterable implements Iterable<String> {
+		private final FindIterable<Document> mongoIterable;
 
 		public MongoDBImapIterable(FindIterable<Document> mongoIterable) {
 			if (null == mongoIterable) {
@@ -178,8 +178,8 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 		}
 	}
 
-	class MongoDBImapIterator implements Iterator<String> {
-		private MongoCursor<Document> mongoCursor;
+	static class MongoDBImapIterator implements Iterator<String> {
+		private final MongoCursor<Document> mongoCursor;
 
 		public MongoDBImapIterator(MongoCursor<Document> mongoCursor) {
 			if (null == mongoCursor) {
