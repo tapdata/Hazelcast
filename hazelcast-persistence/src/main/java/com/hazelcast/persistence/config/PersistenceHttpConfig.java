@@ -4,6 +4,8 @@ import com.hazelcast.persistence.ConstructType;
 import com.hazelcast.persistence.StorageMode;
 import com.hazelcast.persistence.http.HttpConstant;
 
+import java.util.HashSet;
+import java.util.List;
 import java.util.StringJoiner;
 
 /**
@@ -13,28 +15,29 @@ import java.util.StringJoiner;
  **/
 public class PersistenceHttpConfig extends PersistenceStorageAbstractConfig {
 
-	private String baseUrl;
 
-	private String accessCode;
+	private final List<String> baseURLs;
 
-	private PersistenceHttpConfig(ConstructType constructType, StorageMode storageMode, String baseUrl, String accessCode) {
+	private final String accessCode;
+
+	private PersistenceHttpConfig(ConstructType constructType, StorageMode storageMode, List<String> baseURLs, String accessCode) {
 		super(constructType, storageMode);
-		this.baseUrl = baseUrl;
+		this.baseURLs = baseURLs;
 		this.accessCode = accessCode;
 	}
 
-	public PersistenceHttpConfig(ConstructType constructType, StorageMode storageMode, String name, String baseUrl, String accessCode) {
+	public PersistenceHttpConfig(ConstructType constructType, StorageMode storageMode, String name, List<String> baseURLs, String accessCode) {
 		super(constructType, storageMode, name);
-		this.baseUrl = baseUrl;
+		this.baseURLs = baseURLs;
 		this.accessCode = accessCode;
 	}
 
-	public static PersistenceHttpConfig create(ConstructType constructType, String baseUrl, String accessCode) {
-		return new PersistenceHttpConfig(constructType, StorageMode.HTTP_TM, baseUrl, accessCode);
+	public static PersistenceHttpConfig create(ConstructType constructType, List<String> baseURLs, String accessCode) {
+		return new PersistenceHttpConfig(constructType, StorageMode.HTTP_TM, baseURLs, accessCode);
 	}
 
-	public static PersistenceHttpConfig create(ConstructType constructType, String name, String baseUrl, String accessCode) {
-		return new PersistenceHttpConfig(constructType, StorageMode.HTTP_TM, name, baseUrl, accessCode);
+	public static PersistenceHttpConfig create(ConstructType constructType, String name, List<String> baseURLs, String accessCode) {
+		return new PersistenceHttpConfig(constructType, StorageMode.HTTP_TM, name, baseURLs, accessCode);
 	}
 
 	private Integer connectTimeoutMs = HttpConstant.DEFAULT_CONNECT_TIMEOUT;
@@ -51,8 +54,8 @@ public class PersistenceHttpConfig extends PersistenceStorageAbstractConfig {
 		return this;
 	}
 
-	public String getBaseUrl() {
-		return baseUrl;
+	public List<String> getBaseURLs() {
+		return baseURLs;
 	}
 
 	public String getAccessCode() {
@@ -74,7 +77,7 @@ public class PersistenceHttpConfig extends PersistenceStorageAbstractConfig {
 				.add("name='" + name + "'")
 				.add("storageMode=" + storageMode)
 				.add("inMemSize=" + inMemSize)
-				.add("baseUrl='" + baseUrl + "'")
+				.add("baseURLs='" + baseURLs + "'")
 				.add("accessCode='******'")
 				.add("connectTimeoutMs=" + connectTimeoutMs)
 				.add("readTimeoutMs=" + readTimeoutMs)
@@ -85,7 +88,7 @@ public class PersistenceHttpConfig extends PersistenceStorageAbstractConfig {
 	public boolean equals(PersistenceStorageAbstractConfig config) {
 		if (config instanceof PersistenceHttpConfig) {
 			return super.equals(config)
-					&& ((PersistenceHttpConfig) config).getBaseUrl().equals(baseUrl)
+					&& new HashSet<>(baseURLs).containsAll(((PersistenceHttpConfig) config).getBaseURLs())
 					&& ((PersistenceHttpConfig) config).getAccessCode().equals(accessCode);
 		}
 		return super.equals(config);
