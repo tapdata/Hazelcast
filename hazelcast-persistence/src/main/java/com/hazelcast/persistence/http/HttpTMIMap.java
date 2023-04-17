@@ -242,24 +242,27 @@ public class HttpTMIMap extends HttpIMap<PersistenceHttpConfig, HttpResource> {
 	}
 
 	private void refreshToken() {
-		Map<String, Object> params = new HashMap<>();
-		params.put("accesscode", accessCode);
-		HttpEntity<Map<String, Object>> httpEntity = new HttpEntity<>(params, headers);
-		URI uri = getURI(Resource.USER_GENERATE_TOKEN);
-		try {
-			loginResp = post(uri, httpEntity, new TypeReference<LoginResp>() {
-			});
-			if (null == loginResp) {
-				throw new RuntimeException(String.format("Login response is null, uri: %s", uri));
+		this.httpResource.retryWrap((retryInfo) -> {
+			Map<String, Object> params = new HashMap<>();
+			params.put("accesscode", accessCode);
+			HttpEntity<Map<String, Object>> httpEntity = new HttpEntity<>(params, headers);
+			URI uri = retryInfo.getURI(Resource.USER_GENERATE_TOKEN.getResource());
+			try {
+				loginResp = post(uri, httpEntity, new TypeReference<LoginResp>() {
+				});
+				if (null == loginResp) {
+					throw new RuntimeException(String.format("Login response is null, uri: %s", uri));
+				}
+				loginResp.calcExpiredTimestamp();
+			} catch (Throwable e) {
+				if (e instanceof TMRequestException) {
+					throw e;
+				} else {
+					throw new TMRequestException(String.format("Request uri[%s] failed, error: %s\n Request: %s", uri, e.getMessage(), httpEntity), e);
+				}
 			}
-			loginResp.calcExpiredTimestamp();
-		} catch (Throwable e) {
-			if (e instanceof TMRequestException) {
-				throw e;
-			} else {
-				throw new TMRequestException(String.format("Request uri[%s] failed, error: %s\n Request: %s", uri, e.getMessage(), httpEntity), e);
-			}
-		}
+			return false;
+		}, null);
 	}
 
 	protected boolean successResp(ResponseEntity<ResponseBody> responseEntity) {
@@ -288,73 +291,63 @@ public class HttpTMIMap extends HttpIMap<PersistenceHttpConfig, HttpResource> {
 	}
 
 	protected void upsert(Map<String, Object> param, HttpEntity<IMapEntity> httpEntity) {
-		URI uri = getURI(param, Resource.HAZELCAST_PERSISTENCE, Resource.UPSERT_WITH_WHERE);
-		ResponseEntity<ResponseBody> response = this.httpResource.getRestTemplate().exchange(uri, HttpMethod.POST, httpEntity, ResponseBody.class);
-		if (!successResp(response)) {
-			throw new TMRequestException(String.format("Request upsert[%s] failed\n Request: %s\n Response: %s", uri, httpEntity, response));
-		}
+		this.httpResource.retryWrap((retryInfo) -> {
+			URI uri = retryInfo.getURI(param, Resource.HAZELCAST_PERSISTENCE.getResource(), Resource.UPSERT_WITH_WHERE.getResource());
+			ResponseEntity<ResponseBody> response = this.httpResource.getRestTemplate().exchange(uri, HttpMethod.POST, httpEntity, ResponseBody.class);
+			if (!successResp(response)) {
+				throw new TMRequestException(String.format("Request upsert[%s] failed\n Request: %s\n Response: %s", uri, httpEntity, response));
+			}
+			return false;
+		}, null);
 	}
 
 	protected <E> List<E> find(Map<String, Object> param, TypeReference<E> typeReference) {
-		URI uri = getURI(param, Resource.HAZELCAST_PERSISTENCE);
-		ResponseEntity<ResponseBody> response = this.httpResource.getRestTemplate().exchange(uri, HttpMethod.GET, null, ResponseBody.class);
-		if (!successResp(response)) {
-			return null;
-		}
-		Object data = response.getBody().getData();
-		if (data instanceof Map && ((Map<?, ?>) data).containsKey("items")) {
-			Object items = ((Map<?, ?>) data).get("items");
-			if (items instanceof List) {
-				List<E> retList = new ArrayList<>();
-				((List<?>) items).forEach(obj -> retList.add(JacksonUtil.convertValue(obj, typeReference)));
-				return retList;
+		return this.httpResource.retryWrap((retryInfo) -> {
+			URI uri = retryInfo.getURI(param, Resource.HAZELCAST_PERSISTENCE.getResource());
+			ResponseEntity<ResponseBody> response = this.httpResource.getRestTemplate().exchange(uri, HttpMethod.GET, null, ResponseBody.class);
+			if (!successResp(response)) {
+				return null;
+			}
+			Object data = response.getBody().getData();
+			if (data instanceof Map && ((Map<?, ?>) data).containsKey("items")) {
+				Object items = ((Map<?, ?>) data).get("items");
+				if (items instanceof List) {
+					List<E> retList = new ArrayList<>();
+					((List<?>) items).forEach(obj -> retList.add(JacksonUtil.convertValue(obj, typeReference)));
+					return retList;
+				} else {
+					return null;
+				}
 			} else {
 				return null;
 			}
-		} else {
-			return null;
-		}
+		}, null);
 	}
 
 	protected <E> E findOne(Map<String, Object> param, TypeReference<E> typeReference) {
-		URI uri = getURI(param, Resource.HAZELCAST_PERSISTENCE, Resource.FIND_ONE);
-		ResponseEntity<ResponseBody> response = this.httpResource.getRestTemplate().exchange(uri, HttpMethod.GET, null, ResponseBody.class);
-		if (!successResp(response)) {
-			return null;
-		}
-		Object data = response.getBody().getData();
-		if (null == data) {
-			return null;
-		}
-		return JacksonUtil.convertValue(data, typeReference);
+		return this.httpResource.retryWrap((retryInfo) -> {
+			URI uri = retryInfo.getURI(param, Resource.HAZELCAST_PERSISTENCE.getResource(), Resource.FIND_ONE.getResource());
+			ResponseEntity<ResponseBody> response = this.httpResource.getRestTemplate().exchange(uri, HttpMethod.GET, null, ResponseBody.class);
+			if (!successResp(response)) {
+				return null;
+			}
+			Object data = response.getBody().getData();
+			if (null == data) {
+				return null;
+			}
+			return JacksonUtil.convertValue(data, typeReference);
+		}, null);
 	}
 
 	protected void delete(Map<String, Object> param) {
-		URI uri = getURI(param, Resource.HAZELCAST_PERSISTENCE, Resource.DELETE_ALL);
-		ResponseEntity<ResponseBody> response = this.httpResource.getRestTemplate().exchange(uri, HttpMethod.DELETE, null, ResponseBody.class);
-		if (!successResp(response)) {
-			throw new TMRequestException(String.format("Request deleteAll[%s] failed\n Response: %s", uri, response));
-		}
-	}
-
-	protected URI getURI(Resource... resources) {
-		return getURI(null, resources);
-	}
-
-	protected URI getURI(Map<String, ?> params, Resource... resources) {
-		StringBuilder url = new StringBuilder(this.httpResource.getBaseUrl());
-		if (resources != null) {
-			for (Resource resource : resources) {
-				url.append("/").append(resource.getResource());
+		this.httpResource.retryWrap((retryInfo) -> {
+			URI uri = retryInfo.getURI(param, Resource.HAZELCAST_PERSISTENCE.getResource(), Resource.DELETE_ALL.getResource());
+			ResponseEntity<ResponseBody> response = this.httpResource.getRestTemplate().exchange(uri, HttpMethod.DELETE, null, ResponseBody.class);
+			if (!successResp(response)) {
+				throw new TMRequestException(String.format("Request deleteAll[%s] failed\n Response: %s", uri, response));
 			}
-		}
-		UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(url.toString());
-		if (MapUtils.isNotEmpty(params)) {
-			for (Map.Entry<String, ?> entry : params.entrySet()) {
-				builder.queryParam(entry.getKey(), UriUtils.encode(String.valueOf(entry.getValue()), StandardCharsets.UTF_8));
-			}
-		}
-		return builder.build(true).toUri();
+			return false;
+		}, null);
 	}
 
 	protected enum Resource {
