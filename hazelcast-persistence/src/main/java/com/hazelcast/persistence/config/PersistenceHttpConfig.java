@@ -4,6 +4,7 @@ import com.hazelcast.persistence.ConstructType;
 import com.hazelcast.persistence.StorageMode;
 import com.hazelcast.persistence.http.HttpConstant;
 
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.StringJoiner;
@@ -24,6 +25,18 @@ public class PersistenceHttpConfig extends PersistenceStorageAbstractConfig {
 		super(constructType, storageMode);
 		this.baseURLs = baseURLs;
 		this.accessCode = accessCode;
+	}
+
+	public PersistenceHttpConfig(ConstructType constructType, StorageMode storageMode, String name, String baseUrl, String accessCode) {
+		this(constructType, storageMode, name, Collections.singletonList(baseUrl), accessCode);
+	}
+
+	public static PersistenceHttpConfig create(ConstructType constructType, String baseUrl, String accessCode) {
+		return new PersistenceHttpConfig(constructType, StorageMode.HTTP_TM, Collections.singletonList(baseUrl), accessCode);
+	}
+
+	public static PersistenceHttpConfig create(ConstructType constructType, String name, String baseUrl, String accessCode) {
+		return new PersistenceHttpConfig(constructType, StorageMode.HTTP_TM, name, baseUrl, accessCode);
 	}
 
 	public PersistenceHttpConfig(ConstructType constructType, StorageMode storageMode, String name, List<String> baseURLs, String accessCode) {
