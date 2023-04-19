@@ -3,6 +3,8 @@ package com.hazelcast.persistence.http;
 import com.tapdata.tm.sdk.available.CloudRestTemplate;
 import com.tapdata.tm.sdk.interceptor.VersionHeaderInterceptor;
 import com.tapdata.tm.sdk.util.CloudSignUtil;
+import org.apache.http.client.config.CookieSpecs;
+import org.apache.http.client.config.RequestConfig;
 import org.apache.http.conn.ssl.NoopHostnameVerifier;
 import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
 import org.apache.http.impl.client.CloseableHttpClient;
@@ -47,7 +49,9 @@ public class HttpUtil {
 			SSLConnectionSocketFactory connectionSocketFactory =
 					new SSLConnectionSocketFactory(sslContext, new NoopHostnameVerifier());
 
-			HttpClientBuilder httpClientBuilder = HttpClients.custom();
+			HttpClientBuilder httpClientBuilder = HttpClients.custom()
+							.setDefaultRequestConfig(RequestConfig.custom().setCookieSpec(CookieSpecs.STANDARD).build())
+							.disableAutomaticRetries();
 			httpClientBuilder.setSSLSocketFactory(connectionSocketFactory);
 			CloseableHttpClient httpClient = httpClientBuilder.build();
 			factory = new HttpComponentsClientHttpRequestFactory();
