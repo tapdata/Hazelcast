@@ -22,7 +22,7 @@ function deployRoot() {
 function deployPersistence() {
   echo "Deploy hazelcast persistence"
   cd "hazelcast-persistence"
-  mvn clean deploy -DskipTests
+  mvn clean deploy
 }
 
 if [[ "${module}" == "root" ]]; then
