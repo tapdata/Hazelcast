@@ -9,7 +9,9 @@ import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
 import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.Indexes;
+import com.mongodb.client.model.ReplaceOneModel;
 import com.mongodb.client.model.ReplaceOptions;
+import com.mongodb.client.model.WriteModel;
 import org.apache.commons.collections4.CollectionUtils;
 import org.bson.Document;
 import org.bson.conversions.Bson;
@@ -24,6 +26,7 @@ import java.util.Optional;
 import java.util.function.Consumer;
 
 public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, MongoDBResource> {
+	public static final int STORE_ALL_BATCH_SIZE = 1000;
 	protected Document sign;
 	private MongoDBResource mongoDBResource;
 	private PersistenceMongoDBConfig persistenceMongoDBConfig;
@@ -98,8 +101,27 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 		if (!checkEnable()) {
 			return;
 		}
+		List<WriteModel<Document>> writeModels = new ArrayList<>();
 		for (Map.Entry<String, Object> entry : map.entrySet()) {
-			store(entry.getKey(), entry.getValue());
+			if (!(entry.getValue() instanceof Document)) {
+				continue;
+			}
+			String key = entry.getKey();
+			Object value = entry.getValue();
+			value = ((Document) value).append("_ts", System.currentTimeMillis() / 1000);
+			Document query = sign().append("key", key);
+			Document doc = new Document(query).append("value", value);
+			ReplaceOptions replaceOptions = new ReplaceOptions().upsert(true);
+			ReplaceOneModel<Document> replaceOneModel = new ReplaceOneModel<>(query, doc, replaceOptions);
+			writeModels.add(replaceOneModel);
+			if (writeModels.size() % STORE_ALL_BATCH_SIZE == 0) {
+				this.mongoDBResource.getMongoCollection().bulkWrite(writeModels);
+				writeModels.clear();
+			}
+		}
+		if (CollectionUtils.isNotEmpty(writeModels)) {
+			this.mongoDBResource.getMongoCollection().bulkWrite(writeModels);
+			writeModels.clear();
 		}
 	}
 
