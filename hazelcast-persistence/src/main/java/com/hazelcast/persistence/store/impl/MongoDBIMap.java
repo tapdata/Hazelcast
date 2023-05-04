@@ -16,6 +16,7 @@ import org.apache.commons.collections4.CollectionUtils;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -23,6 +24,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, MongoDBResource> {
@@ -176,7 +178,10 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 	}
 
 	public Iterable<String> loadAllKeys() {
-		return new MongoDBImapIterable(this.mongoDBResource.getMongoCollection().find(sign()));
+		/*FindIterable<Document> findIterable = this.mongoDBResource.getMongoCollection().find(sign());
+		MongoDBImapIterable mongoDBImapIterable = new MongoDBImapIterable(findIterable);
+		return mongoDBImapIterable;*/
+		return null;
 	}
 
 	static class MongoDBImapIterable implements Iterable<String> {
