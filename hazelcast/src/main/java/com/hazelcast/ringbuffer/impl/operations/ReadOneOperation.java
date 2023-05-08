@@ -52,16 +52,7 @@ public class ReadOneOperation extends AbstractRingBufferOperation implements Blo
 
     @Override
     public boolean shouldWait() {
-        RingbufferContainer ringbuffer = getRingBufferContainerOrNull();
-        if (ringbuffer == null) {
-            return true;
-        }
-        if (ringbuffer.isTooLargeSequence(sequence) || ringbuffer.isStaleSequence(sequence)) {
-            //no need to wait, let the operation continue and fail in beforeRun
-            return false;
-        }
-        // the sequence is not readable
-        return sequence == ringbuffer.tailSequence() + 1;
+        return false;
     }
 
     @Override
