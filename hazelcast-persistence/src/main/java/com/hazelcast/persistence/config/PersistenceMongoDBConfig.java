@@ -5,7 +5,6 @@ import com.hazelcast.persistence.StorageMode;
 import com.mongodb.MongoClientURI;
 import org.apache.commons.lang3.StringUtils;
 
-import java.util.Arrays;
 import java.util.StringJoiner;
 
 /**
@@ -52,6 +51,13 @@ public class PersistenceMongoDBConfig extends PersistenceStorageAbstractConfig {
 		return this;
 	}
 
+	private boolean exclusiveCollection;
+
+	public PersistenceMongoDBConfig exclusiveCollection(boolean exclusiveCollection) {
+		this.exclusiveCollection = exclusiveCollection;
+		return this;
+	}
+
 	public String getUri() {
 		return uri;
 	}
@@ -62,6 +68,10 @@ public class PersistenceMongoDBConfig extends PersistenceStorageAbstractConfig {
 
 	public String getCollection() {
 		return collection;
+	}
+
+	public boolean isExclusiveCollection() {
+		return exclusiveCollection;
 	}
 
 	public String maskUri() {
@@ -93,6 +103,7 @@ public class PersistenceMongoDBConfig extends PersistenceStorageAbstractConfig {
 				.add("uri='" + maskUri() + "'")
 				.add("database='" + database + "'")
 				.add("collection='" + collection + "'")
+				.add("exclusiveCollection=" + exclusiveCollection)
 				.toString();
 	}
 

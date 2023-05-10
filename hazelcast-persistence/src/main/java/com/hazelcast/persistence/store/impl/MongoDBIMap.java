@@ -16,7 +16,6 @@ import org.apache.commons.collections4.CollectionUtils;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -24,7 +23,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, MongoDBResource> {
@@ -60,7 +58,11 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 
 	@Override
 	public void doClear() {
-		this.deleteAll(null);
+		if (this.persistenceMongoDBConfig.isExclusiveCollection()) {
+			mongoDBResource.getMongoCollection().drop();
+		} else {
+			this.deleteAll(null);
+		}
 	}
 
 	@Override
@@ -70,7 +72,11 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 
 	@Override
 	public void destroy() {
-		this.deleteAll(null);
+		if (this.persistenceMongoDBConfig.isExclusiveCollection()) {
+			mongoDBResource.getMongoCollection().drop();
+		} else {
+			this.deleteAll(null);
+		}
 		releaseResource();
 	}
 
