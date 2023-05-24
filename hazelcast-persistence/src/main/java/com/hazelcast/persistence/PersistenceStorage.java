@@ -15,10 +15,7 @@ import com.hazelcast.persistence.config.HazelcastStoreConfig;
 import com.hazelcast.persistence.config.PersistenceStorageAbstractConfig;
 import com.hazelcast.persistence.resource.ExternalResource;
 import com.hazelcast.persistence.resource.ExternalResourceFactory;
-import com.hazelcast.persistence.store.PersistenceMapStore;
-import com.hazelcast.persistence.store.PersistenceRingBufferStore;
-import com.hazelcast.persistence.store.PersistenceStorageStore;
-import com.hazelcast.persistence.store.PersistenceStoreFactory;
+import com.hazelcast.persistence.store.*;
 import com.hazelcast.ringbuffer.Ringbuffer;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.Logger;
@@ -29,32 +26,25 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class PersistenceStorage {
 	private final ConcurrentHashMap<String, Thread> ttlThreadMap = new ConcurrentHashMap<>();
 	private Logger logger;
 	private final ConcurrentHashMap<String, PersistenceStorageAbstractConfig> persistenceConfigMap = new ConcurrentHashMap<>();
-	private final ConcurrentHashMap<String, PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>>> storeImplementationMap = new ConcurrentHashMap<>();
+	private final MultiReferenceMap<String, PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>>> storeImplementationMap = new MultiReferenceMap<String, PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>>>() {
+		@Override
+		protected void destroyValue(PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> value) {
+			value.doDestroy();
+		}
+	};
 
 	private PersistenceStorage() {
 	}
 
+	private static final PersistenceStorage persistenceStorage  = new PersistenceStorage();
 	public static PersistenceStorage getInstance() {
-		return PersistenceStorageSingleton.INSTANCE.getInstance();
-	}
-
-	private enum PersistenceStorageSingleton {
-		INSTANCE;
-
-		private final PersistenceStorage persistenceStorage;
-
-		public PersistenceStorage getInstance() {
-			return persistenceStorage;
-		}
-
-		PersistenceStorageSingleton() {
-			this.persistenceStorage = new PersistenceStorage();
-		}
+		return persistenceStorage;
 	}
 
 	public static String getConfigKey(ConstructType constructType, String name) {
@@ -100,6 +90,10 @@ public class PersistenceStorage {
 	}
 
 	public PersistenceStorage initMapStoreConfig(Config c, String mapName) {
+		return initMapStoreConfig(MultiReferenceMap.DEFAULT_REFERENCE_ID, c, mapName);
+	}
+
+	public PersistenceStorage initMapStoreConfig(String referenceId, Config c, String mapName) {
 		//checkInitConfig(mapName, ConstructType.IMAP);
 		PersistenceStorageAbstractConfig persistenceStorageAbstractConfig = getPersistenceStorageConfig(ConstructType.IMAP, mapName);
 		if (null == persistenceStorageAbstractConfig) {
@@ -118,6 +112,7 @@ public class PersistenceStorage {
 			HazelcastStoreConfig<MapStoreConfig> hazelcastStoreConfig = new HazelcastStoreConfig<>(mapStoreCfg);
 			initResult = initStore(
 					ConstructType.IMAP,
+				referenceId,
 					mapName,
 					persistenceStorageAbstractConfig,
 					externalResource,
@@ -151,18 +146,18 @@ public class PersistenceStorage {
 
 	@Deprecated
 	public void destroy(String name) {
-		CommonUtils.ignoreAnyError(() -> Optional.ofNullable(storeImplementationMap.get(name)).ifPresent(PersistenceStorageStore::doDestroy));
+		CommonUtils.ignoreAnyError(() -> storeImplementationMap.destroy(MultiReferenceMap.DEFAULT_REFERENCE_ID, name));
 	}
 
 	public void destroy(ConstructType constructType, String name) {
+		destroy(MultiReferenceMap.DEFAULT_REFERENCE_ID, constructType, name);
+	}
+
+	public boolean destroy(String referenceId, ConstructType constructType, String name) {
+		AtomicBoolean removed = new AtomicBoolean(false);
 		String configKey = getConfigKey(constructType, name);
-		PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> store = storeImplementationMap.get(configKey);
-		if (null != store) {
-			CommonUtils.ignoreAnyError(() -> {
-				store.doDestroy();
-				storeImplementationMap.remove(configKey);
-			});
-		}
+		CommonUtils.ignoreAnyError(() -> removed.set(storeImplementationMap.destroy(referenceId, configKey)));
+		return removed.get();
 	}
 
 	public PersistenceStorage initRingBufferConfig(Config c) {
@@ -170,6 +165,10 @@ public class PersistenceStorage {
 	}
 
 	public PersistenceStorage initRingBufferConfig(Config c, String ringBufferName) {
+		return initRingBufferConfig(MultiReferenceMap.DEFAULT_REFERENCE_ID, c, ringBufferName);
+	}
+
+	public PersistenceStorage initRingBufferConfig(String referenceId, Config c, String ringBufferName) {
 		checkInitConfig(ringBufferName, ConstructType.RINGBUFFER);
 		PersistenceStorageAbstractConfig persistenceStorageAbstractConfig = getPersistenceStorageConfig(ConstructType.RINGBUFFER, ringBufferName);
 		if (null == persistenceStorageAbstractConfig) {
@@ -188,6 +187,7 @@ public class PersistenceStorage {
 			HazelcastStoreConfig<RingbufferStoreConfig> hazelcastStoreConfig = new HazelcastStoreConfig<>(ringbufferStoreConfig);
 			initResult = initStore(
 					ConstructType.RINGBUFFER,
+				referenceId,
 					ringBufferName,
 					persistenceStorageAbstractConfig,
 					externalResource,
@@ -208,6 +208,7 @@ public class PersistenceStorage {
 	}
 
 	private synchronized boolean initStore(ConstructType constructType,
+																				 String referenceId,
 										   String name,
 										   PersistenceStorageAbstractConfig persistenceStorageAbstractConfig,
 										   ExternalResource<PersistenceStorageAbstractConfig> externalResource,
@@ -220,6 +221,7 @@ public class PersistenceStorage {
 		if (storeImplementationMap.containsKey(configKey)) {
 			PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> store = storeImplementationMap.get(configKey);
 			store.enable();
+			storeImplementationMap.addReference(referenceId, configKey);
 		} else {
 			PersistenceStoreFactory persistenceStoreFactory = new PersistenceStoreFactory();
 			externalResource.doInit(persistenceStorageAbstractConfig);
@@ -232,7 +234,10 @@ public class PersistenceStorage {
 			}
 			store.doInit(persistenceStorageAbstractConfig, externalResource);
 			hazelcastStoreConfig.implementation(store);
-			storeImplementationMap.put(configKey, store);
+			if (null == referenceId) {
+				throw new RuntimeException("Reference id can not be null");
+			}
+			storeImplementationMap.init(referenceId, configKey, store);
 		}
 		return true;
 	}
