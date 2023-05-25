@@ -80,7 +80,7 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 		releaseResource();
 	}
 
-	private void releaseResource() {
+	private synchronized void releaseResource() {
 		Optional.ofNullable(this.mongoDBResource).ifPresent(mr -> CommonUtils.handleWithError(
 				() -> {
 					mr.close();
@@ -92,7 +92,7 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 	}
 
 	public synchronized void store(String key, Object value) {
-		if (!checkEnable()) {
+		if (!checkEnable() || null == mongoDBResource) {
 			return;
 		}
 		if (!(value instanceof Document)) {
@@ -106,7 +106,7 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 	}
 
 	public synchronized void storeAll(Map<String, Object> map) {
-		if (!checkEnable()) {
+		if (!checkEnable() || null == mongoDBResource) {
 			return;
 		}
 		List<WriteModel<Document>> writeModels = new ArrayList<>();
@@ -134,14 +134,14 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 	}
 
 	public synchronized void delete(String key) {
-		if (!checkEnable()) {
+		if (!checkEnable() || null == mongoDBResource) {
 			return;
 		}
 		this.mongoDBResource.getMongoCollection().deleteOne(sign().append("key", key));
 	}
 
 	public synchronized void deleteAll(Collection<String> keys) {
-		if (!checkEnable()) {
+		if (!checkEnable() || null == mongoDBResource) {
 			return;
 		}
 		if (CollectionUtils.isNotEmpty(keys)) {
