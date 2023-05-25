@@ -167,12 +167,14 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 	}
 
 	public synchronized Document load(String key) {
-		Document query = sign().append("key", key);
-		Document doc = this.mongoDBResource.getMongoCollection().find(query).first();
-		if (doc == null) {
-			return null;
+		if (null != this.mongoDBResource) {
+			Document query = sign().append("key", key);
+			Document doc = this.mongoDBResource.getMongoCollection().find(query).first();
+			if (doc != null) {
+				return (Document) doc.get("value");
+			}
 		}
-		return (Document) doc.get("value");
+		return null;
 	}
 
 	public synchronized Map<String, Object> loadAll(Collection<String> keys) {
