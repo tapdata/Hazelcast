@@ -16,6 +16,7 @@
         <rocksdbjni.version>7.9.2</rocksdbjni.version>
         <hazelcast.version>5.2.1</hazelcast.version>
         <mongo-java-driver.version>3.12.10</mongo-java-driver.version>
+        <org.bouncycastle.version>1.60</org.bouncycastle.version>
         <bson.version>4.4.1</bson.version>
         <httpclient.version>4.5.5</httpclient.version>
         <spring-web.version>5.2.8.RELEASE</spring-web.version>
@@ -95,6 +96,11 @@
             <artifactId>mongo-java-driver</artifactId>
             <version>${mongo-java-driver.version}</version>
         </dependency>
+			<dependency>
+				<groupId>org.bouncycastle</groupId>
+				<artifactId>bcprov-jdk15on</artifactId>
+				<version>${org.bouncycastle.version}</version>
+			</dependency>
         <dependency>
             <groupId>org.rocksdb</groupId>
             <artifactId>rocksdbjni</artifactId>

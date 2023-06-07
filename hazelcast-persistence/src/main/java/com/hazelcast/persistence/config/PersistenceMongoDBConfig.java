@@ -58,6 +58,48 @@ public class PersistenceMongoDBConfig extends PersistenceStorageAbstractConfig {
 		return this;
 	}
 
+	private boolean ssl;
+
+	public PersistenceMongoDBConfig ssl(boolean ssl) {
+		this.ssl = ssl;
+		return this;
+	}
+
+	private String sslCA;
+
+	public PersistenceMongoDBConfig sslCA(String sslCA) {
+		this.sslCA = sslCA;
+		return this;
+	}
+
+	private String sslKey;
+
+	public PersistenceMongoDBConfig sslKey(String sslKey) {
+		this.sslKey = sslKey;
+		return this;
+	}
+
+	private String sslPass;
+
+	public PersistenceMongoDBConfig sslPass(String sslPass) {
+		this.sslPass = sslPass;
+		return this;
+	}
+
+	private boolean sslValidate;
+
+	public PersistenceMongoDBConfig sslValidate(boolean sslValidate) {
+		this.sslValidate = sslValidate;
+		return this;
+	}
+
+	private boolean checkServerIdentity;
+
+	public PersistenceMongoDBConfig checkServerIdentity(boolean checkServerIdentity) {
+		this.checkServerIdentity = checkServerIdentity;
+		return this;
+	}
+
 	public String getUri() {
 		return uri;
 	}
@@ -72,6 +114,30 @@ public class PersistenceMongoDBConfig extends PersistenceStorageAbstractConfig {
 
 	public boolean isExclusiveCollection() {
 		return exclusiveCollection;
+	}
+
+	public boolean isSsl() {
+		return ssl;
+	}
+
+	public String getSslCA() {
+		return sslCA;
+	}
+
+	public String getSslKey() {
+		return sslKey;
+	}
+
+	public String getSslPass() {
+		return sslPass;
+	}
+
+	public boolean isSslValidate() {
+		return sslValidate;
+	}
+
+	public boolean isCheckServerIdentity() {
+		return checkServerIdentity;
 	}
 
 	public String maskUri() {
@@ -104,17 +170,37 @@ public class PersistenceMongoDBConfig extends PersistenceStorageAbstractConfig {
 				.add("database='" + database + "'")
 				.add("collection='" + collection + "'")
 				.add("exclusiveCollection=" + exclusiveCollection)
+			.add("ssl=" + ssl)
+			.add("sslCA='" + sslCA + "'")
+			.add("sslKey='" + sslKey + "'")
+			.add("sslPass='" + sslPass + "'")
+			.add("sslValidate=" + sslValidate)
+			.add("checkServerIdentity=" + checkServerIdentity)
 				.toString();
 	}
 
 	@Override
 	public boolean equals(PersistenceStorageAbstractConfig config) {
 		if (config instanceof PersistenceMongoDBConfig) {
+			PersistenceMongoDBConfig mongoDBConfig = (PersistenceMongoDBConfig) config;
 			return super.equals(config)
-					&& ((PersistenceMongoDBConfig) config).getUri().equals(uri)
-					&& ((PersistenceMongoDBConfig) config).getDatabase().equals(database)
-					&& ((PersistenceMongoDBConfig) config).getCollection().equals(collection);
+				&& equals(mongoDBConfig.getUri(), uri)
+				&& equals(mongoDBConfig.getDatabase(), database)
+				&& equals(mongoDBConfig.getCollection(), collection)
+				&& mongoDBConfig.isSsl() == ssl
+				&& equals(mongoDBConfig.getSslCA(), sslCA)
+				&& equals(mongoDBConfig.getSslKey(), sslKey)
+				&& equals(mongoDBConfig.getSslPass(), sslPass)
+				&& mongoDBConfig.isSslValidate() == sslValidate
+				&& mongoDBConfig.isCheckServerIdentity() == checkServerIdentity;
 		}
 		return super.equals(config);
+	}
+
+	private boolean equals(String v1, String v2) {
+		if (null == v1) {
+			return null == v2;
+		}
+		return v1.equals(v2);
 	}
 }
