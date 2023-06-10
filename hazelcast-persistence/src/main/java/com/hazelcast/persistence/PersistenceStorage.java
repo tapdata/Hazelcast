@@ -416,22 +416,17 @@ public class PersistenceStorage {
 	}
 
 	private static Long getTs(Document document) {
-		if (null == document) {
-			return null;
+		if (null != document) {
+			if (document.get("value") instanceof Document) {
+				document = (Document) document.get("value");
+			}
+
+			if (document.containsKey("_ts")) {
+				return document.getLong("_ts");
+			}
 		}
-		Document value = null;
-		if (document.get("value") instanceof Document) {
-			value = (Document) document.get("value");
-		}
-		if (null == value) {
-			return null;
-		}
-		long _ts;
-		if (!value.containsKey("_ts")) {
-			return null;
-		}
-		_ts = value.getLong("_ts");
-		return _ts;
+
+		return null;
 	}
 
 	private static PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> createStore(
