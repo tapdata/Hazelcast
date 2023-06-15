@@ -122,9 +122,18 @@ public class PersistenceStorage {
 			CommonUtils.ignoreAnyError(externalResource::close);
 			throw new RuntimeException(e);
 		}
+		String maxSizePolicy = persistenceStorageAbstractConfig.getMaxSizePolicy();
+		MaxSizePolicy maxSizePolicyEnum = MaxSizePolicy.PER_NODE;
+		if (StringUtils.isNotEmpty(maxSizePolicy)) {
+			try {
+				maxSizePolicyEnum = MaxSizePolicy.valueOf(maxSizePolicy);
+			} catch (IllegalArgumentException e) {
+				logger.warn("Max size policy {} is not supported, use default {}", maxSizePolicy, maxSizePolicyEnum);
+			}
+		}
 		EvictionConfig evictionConfig = new EvictionConfig()
 				.setEvictionPolicy(EvictionPolicy.LRU)
-				.setMaxSizePolicy(MaxSizePolicy.PER_NODE)
+				.setMaxSizePolicy(maxSizePolicyEnum)
 				.setSize(persistenceStorageAbstractConfig.getInMemSize());
 		mapCfg.setEvictionConfig(evictionConfig);
 		if (initResult) {

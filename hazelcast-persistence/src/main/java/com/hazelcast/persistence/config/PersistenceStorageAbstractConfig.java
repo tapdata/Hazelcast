@@ -15,6 +15,7 @@ public abstract class PersistenceStorageAbstractConfig {
 	protected String name = "default";
 	protected StorageMode storageMode;
 	protected Integer inMemSize = 100;
+	protected String maxSizePolicy;
 
 	public PersistenceStorageAbstractConfig(ConstructType constructType, StorageMode storageMode) {
 		this.constructType = constructType;
@@ -25,6 +26,14 @@ public abstract class PersistenceStorageAbstractConfig {
 		this.constructType = constructType;
 		this.storageMode = storageMode;
 		this.name = name;
+	}
+
+	public PersistenceStorageAbstractConfig(ConstructType constructType, String name, StorageMode storageMode, Integer inMemSize, String maxSizePolicy) {
+		this.constructType = constructType;
+		this.name = name;
+		this.storageMode = storageMode;
+		this.inMemSize = inMemSize;
+		this.maxSizePolicy = maxSizePolicy;
 	}
 
 	public void setInMemSize(Integer inMemSize) {
@@ -47,6 +56,14 @@ public abstract class PersistenceStorageAbstractConfig {
 		return inMemSize;
 	}
 
+	public String getMaxSizePolicy() {
+		return maxSizePolicy;
+	}
+
+	public void setMaxSizePolicy(String maxSizePolicy) {
+		this.maxSizePolicy = maxSizePolicy;
+	}
+
 	@Override
 	public String toString() {
 		return new StringJoiner(", ", PersistenceStorageAbstractConfig.class.getSimpleName() + "[", "]")
@@ -54,6 +71,7 @@ public abstract class PersistenceStorageAbstractConfig {
 				.add("name='" + name + "'")
 				.add("storageMode=" + storageMode)
 				.add("inMemSize=" + inMemSize)
+				.add("maxSizePolicy=" + maxSizePolicy)
 				.toString();
 	}
 
