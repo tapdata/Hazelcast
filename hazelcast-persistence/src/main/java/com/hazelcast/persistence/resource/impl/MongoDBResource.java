@@ -53,10 +53,10 @@ public class MongoDBResource extends ExternalResource<PersistenceMongoDBConfig> 
 			if (persistenceMongoDBConfig.isSslValidate()) {
 				trustCertificates = SSLUtil.retriveCertificates(persistenceMongoDBConfig.getSslCA());
 			}
-			List<String> certificates = SSLUtil.retriveCertificates(persistenceMongoDBConfig.getSslCA());
-			String sslKey = SSLUtil.retrivePrivateKey(persistenceMongoDBConfig.getSslKey());
-			if (StringUtils.isNotBlank(sslKey) && CollectionUtils.isNotEmpty(certificates)) {
-				SSLContext sslContext = SSLUtil.createSSLContext(sslKey, certificates, trustCertificates, persistenceMongoDBConfig.getSslPass());
+			List<String> clientCertificates = SSLUtil.retriveCertificates(persistenceMongoDBConfig.getSslKey());
+			String clientPrivateKey = SSLUtil.retrivePrivateKey(persistenceMongoDBConfig.getSslKey());
+			if (StringUtils.isNotBlank(clientPrivateKey) && CollectionUtils.isNotEmpty(clientCertificates)) {
+				SSLContext sslContext = SSLUtil.createSSLContext(clientPrivateKey, clientCertificates, trustCertificates, persistenceMongoDBConfig.getSslPass());
 				builder.sslContext(sslContext);
 				builder.sslEnabled(true);
 				builder.sslInvalidHostNameAllowed(!persistenceMongoDBConfig.isCheckServerIdentity());
