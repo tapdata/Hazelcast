@@ -64,6 +64,9 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 	}
 
 	private void createIndex() {
+		if (mongoDBResource == null) {
+			return;
+		}
 		IndexOptions indexOptions = new IndexOptions().background(true);
 		MongoCollection<Document> mongoCollection = mongoDBResource.getMongoCollection();
 		Bson keyIndex = Indexes.ascending("ringBuffer", "key");
@@ -98,7 +101,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 			return;
 		}
 		Document document = (Document) value;
-		if (!checkEnable()) {
+		if (!checkEnable() || mongoDBResource == null) {
 			return;
 		}
 		if (sequence <= largestSequence.get()) {
@@ -111,7 +114,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 
 	@Override
 	public void storeAll(long l, Object[] values) {
-		if (!checkEnable()) {
+		if (!checkEnable() || mongoDBResource == null) {
 			return;
 		}
 		if (l <= largestSequence.get()) {
@@ -137,6 +140,9 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 
 	@Override
 	public Document load(long sequence) {
+		if (mongoDBResource == null) {
+			return null;
+		}
 		String sequenceStr = String.valueOf(sequence);
 		if (!cacheMap.containsKey(sequenceStr)) {
 			Document query = sign().append("key", new Document("$gte", sequence));
@@ -168,7 +174,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 
 	@Override
 	public void delete(long s) {
-		if (!checkEnable()) {
+		if (!checkEnable() || mongoDBResource == null) {
 			return;
 		}
 		Document query = sign().append("key", s);
@@ -186,6 +192,9 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 	}
 
 	public long _getLargestSequence() {
+		if (mongoDBResource == null) {
+			return -1;
+		}
 		Document query = sign();
 		Document doc = this.mongoDBResource.getMongoCollection().find(query).sort(descending("key")).first();
 		if (doc == null) {
@@ -201,6 +210,9 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 
 	@Override
 	public long findSequenceByTimestamp(long timestamp) {
+		if (mongoDBResource == null) {
+			return 0L;
+		}
 		flushSequence();
 		if (largestSequence.get() == -1L) {
 			return 0L;
@@ -214,6 +226,9 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 	}
 
 	public long _getSmallestSequence() {
+		if (mongoDBResource == null) {
+			return 0;
+		}
 		Document query = sign();
 		Document doc = this.mongoDBResource.getMongoCollection().find(query).sort(ascending("key")).first();
 		if (doc == null) {
