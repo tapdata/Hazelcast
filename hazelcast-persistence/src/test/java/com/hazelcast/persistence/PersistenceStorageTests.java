@@ -1,9 +1,6 @@
 package com.hazelcast.persistence;
 
-import com.hazelcast.config.Config;
-import com.hazelcast.config.JoinConfig;
-import com.hazelcast.config.NetworkConfig;
-import com.hazelcast.config.TcpIpConfig;
+import com.hazelcast.config.*;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.jet.JetService;
@@ -13,6 +10,7 @@ import com.hazelcast.jet.core.DAG;
 import com.hazelcast.jet.core.Edge;
 import com.hazelcast.jet.core.Inbox;
 import com.hazelcast.jet.core.Vertex;
+import com.hazelcast.map.IMap;
 import com.hazelcast.persistence.config.PersistenceHttpConfig;
 import com.hazelcast.persistence.config.PersistenceInMemConfig;
 import com.hazelcast.persistence.config.PersistenceMongoDBConfig;
@@ -204,6 +202,31 @@ public class PersistenceStorageTests {
 				list.forEach(System.out::println);
 			}
 		}
+	}
+
+	@Test
+	public void test999() {
+		PersistenceMongoDBConfig mongoDBConfig = PersistenceMongoDBConfig.create(ConstructType.IMAP, "test999")
+				.uri("mongodb://localhost/test")
+				.database("test")
+				.collection("test999");
+		mongoDBConfig.setInMemSize(1000);
+		mongoDBConfig.setWriteDelaySeconds(1);
+
+		PersistenceStorage.getInstance().addConfig(mongoDBConfig).initMapStoreConfig(hazelcastInstance.getConfig(), mongoDBConfig.getName());
+		PersistenceStorage.getInstance().clear(ConstructType.IMAP, mongoDBConfig.getName());
+		IMap<String, Object> map = hazelcastInstance.getMap(mongoDBConfig.getName());
+//		IntStream.range(1, 301).forEach(i -> {
+//			map.put(String.valueOf(i), new Document().append("name", String.valueOf(i)));
+//		});
+//		PersistenceStorage.getInstance().clear(ConstructType.IMAP, mongoDBConfig.getName());
+//		PersistenceStorage.getInstance().destroy(ConstructType.IMAP, mongoDBConfig.getName());
+//		persistenceStorage.addConfig(mongoDBConfig).initMapStoreConfig(hazelcastInstance.getConfig(), mongoDBConfig.getName());
+		Map<String, Object> cache = new HashMap<>();
+		IntStream.range(1,30001).forEach(i->{
+			cache.put(String.valueOf(i), new Document("name", String.valueOf(i)));
+		});
+		map.putAll(cache);
 	}
 
 }

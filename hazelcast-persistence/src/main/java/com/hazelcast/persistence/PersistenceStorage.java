@@ -130,7 +130,8 @@ public class PersistenceStorage {
         mapCfg.setEvictionConfig(evictionConfig);
         if (initResult) {
             mapStoreCfg.setEnabled(true)
-                    .setInitialLoadMode(MapStoreConfig.InitialLoadMode.LAZY);
+                    .setInitialLoadMode(MapStoreConfig.InitialLoadMode.LAZY)
+                    .setWriteDelaySeconds(persistenceStorageAbstractConfig.getWriteDelaySeconds());
             mapCfg.setMapStoreConfig(mapStoreCfg);
             mapCfg.setDataPersistenceConfig(new DataPersistenceConfig().setEnabled(true));
         }

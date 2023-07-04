@@ -7,26 +7,17 @@ import com.hazelcast.persistence.store.PersistenceMapStore;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
-import com.mongodb.client.model.IndexOptions;
-import com.mongodb.client.model.Indexes;
-import com.mongodb.client.model.ReplaceOneModel;
-import com.mongodb.client.model.ReplaceOptions;
-import com.mongodb.client.model.WriteModel;
+import com.mongodb.client.model.*;
 import org.apache.commons.collections4.CollectionUtils;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.function.Consumer;
 
 public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, MongoDBResource> {
-	public static final int STORE_ALL_BATCH_SIZE = 1000;
+	protected static final int STORE_ALL_BATCH_SIZE = 1000;
+	protected static final int QUERY_BATCH_SIZE = 20;
 	protected Document sign;
 	private MongoDBResource mongoDBResource;
 	private PersistenceMongoDBConfig persistenceMongoDBConfig;
@@ -178,11 +169,33 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 	}
 
 	public synchronized Map<String, Object> loadAll(Collection<String> keys) {
+		if (null == this.mongoDBResource || CollectionUtils.isEmpty(keys)) {
+			return null;
+		}
 		Map<String, Object> result = new HashMap<>();
+		Collection<String> cache = new HashSet<>();
 		for (String key : keys) {
-			result.put(key, load(key));
+			if (null == key) {
+				continue;
+			}
+			cache.add(key);
+			if (cache.size() >= QUERY_BATCH_SIZE) {
+				loadAll(cache, result);
+				cache.clear();
+			}
+		}
+		if (CollectionUtils.isNotEmpty(cache)) {
+			loadAll(cache, result);
+			cache.clear();
 		}
 		return result;
+	}
+
+	private void loadAll(Collection<String> keys, Map<String, Object> result) {
+		Document query = sign().append("key", new Document("$in", keys));
+		for (Document data : this.mongoDBResource.getMongoCollection().find(query)) {
+			result.put(data.getString("key"), data);
+		}
 	}
 
 	public Iterable<String> loadAllKeys() {

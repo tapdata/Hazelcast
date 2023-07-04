@@ -16,6 +16,7 @@ public abstract class PersistenceStorageAbstractConfig {
 	protected StorageMode storageMode;
 	protected Integer inMemSize = 100;
 	protected String maxSizePolicy;
+	protected int writeDelaySeconds = 0;
 
 	public PersistenceStorageAbstractConfig(ConstructType constructType, StorageMode storageMode) {
 		this.constructType = constructType;
@@ -62,6 +63,14 @@ public abstract class PersistenceStorageAbstractConfig {
 
 	public void setMaxSizePolicy(String maxSizePolicy) {
 		this.maxSizePolicy = maxSizePolicy;
+	}
+
+	public int getWriteDelaySeconds() {
+		return writeDelaySeconds;
+	}
+
+	public void setWriteDelaySeconds(int writeDelaySeconds) {
+		this.writeDelaySeconds = writeDelaySeconds;
 	}
 
 	@Override
