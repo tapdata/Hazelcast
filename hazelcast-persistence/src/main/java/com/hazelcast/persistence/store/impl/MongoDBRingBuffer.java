@@ -104,9 +104,6 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		if (!checkEnable() || mongoDBResource == null) {
 			return;
 		}
-		if (sequence <= largestSequence.get()) {
-			return;
-		}
 		Document doc = getInsertDocument(sequence, document);
 		this.mongoDBResource.getMongoCollection().insertOne(doc);
 		this.largestSequence.set(sequence);
@@ -115,9 +112,6 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 	@Override
 	public void storeAll(long l, Object[] values) {
 		if (!checkEnable() || mongoDBResource == null) {
-			return;
-		}
-		if (l <= largestSequence.get()) {
 			return;
 		}
 		List<WriteModel<Document>> models = new ArrayList<>();
