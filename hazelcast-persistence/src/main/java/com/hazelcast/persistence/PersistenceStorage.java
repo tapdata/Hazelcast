@@ -171,6 +171,10 @@ public class PersistenceStorage {
     }
 
     public PersistenceStorage initRingBufferConfig(String referenceId, Config c, String ringBufferName) {
+        return initRingBufferConfig(referenceId, c, ringBufferName, null);
+    }
+
+    public PersistenceStorage initRingBufferConfig(String referenceId, Config c, String ringBufferName, SequenceMode sequenceMode) {
         checkInitConfig(ringBufferName, ConstructType.RINGBUFFER);
         PersistenceStorageAbstractConfig persistenceStorageAbstractConfig = getPersistenceStorageConfig(ConstructType.RINGBUFFER, ringBufferName);
         if (null == persistenceStorageAbstractConfig) {
@@ -203,6 +207,8 @@ public class PersistenceStorage {
                 .setInMemoryFormat(InMemoryFormat.OBJECT);
         if (initResult) {
             ringbufferStoreConfig.setEnabled(true);
+            String sequenceModeStr = null == sequenceMode ? SequenceMode.STORE.name() : sequenceMode.name();
+            ringbufferStoreConfig.setProperty("sequence-mode", sequenceModeStr);
             ringbufferConfig.setRingbufferStoreConfig(ringbufferStoreConfig);
         }
         c.addRingBufferConfig(ringbufferConfig);
@@ -490,5 +496,10 @@ public class PersistenceStorage {
             }
         }
         return rb.tailSequence() + 1L;
+    }
+
+    public enum SequenceMode {
+        STORE,
+        HAZELCAST
     }
 }
