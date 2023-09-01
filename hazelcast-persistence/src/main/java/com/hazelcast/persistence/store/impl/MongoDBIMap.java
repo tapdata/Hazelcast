@@ -35,7 +35,7 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 		this.mongoDBResource = mongoDBResource;
 		this.persistenceMongoDBConfig = persistenceMongoDBConfig;
 		createIndex();
-		this.sign = new Document("imap", super.imapName);
+		this.sign = new Document("imap", mongoDBResource.getMongoCollection().getNamespace().getCollectionName());
 	}
 
 	private void createIndex() {

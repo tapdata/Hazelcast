@@ -57,7 +57,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		this.mongoDBResource = mongoDBResource;
 		this.persistenceMongoDBConfig = persistenceMongoDBConfig;
 		createIndex();
-		sign = new Document("ringBuffer", super.ringBufferName);
+		sign = new Document("ringBuffer", this.mongoDBResource.getMongoCollection().getNamespace().getCollectionName());
 		flushSequence();
 		this.flushSequenceScheduler = new ScheduledThreadPoolExecutor(1, r -> new Thread(r, "Flush-MongoDB-Ringbuffer-Sequence-Scheduler-" + ringBufferName));
 		this.flushSequenceScheduler.scheduleWithFixedDelay(() -> {
