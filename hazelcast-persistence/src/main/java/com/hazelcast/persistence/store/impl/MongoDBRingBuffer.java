@@ -19,7 +19,9 @@ import org.bson.conversions.Bson;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
@@ -31,12 +33,15 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 	public static final int DEFAULT_FIND_LIMIT = 100;
 	public static final int LRU_MAP_MAX_SIZE = DEFAULT_FIND_LIMIT + 1;
 	public static final long PERIOD_MS = 500L;
+	public static final long CLEAR_CACHE_MAP_PERIOD_MINUTE = 10L;
 	private AtomicLong largestSequence = new AtomicLong(-1L);
 	private AtomicLong smallestSequence = new AtomicLong(0L);
 	private Document sign;
 	private MongoDBResource mongoDBResource;
 	private PersistenceMongoDBConfig persistenceMongoDBConfig;
-	private final LRUMap<String, Document> cacheMap = new LRUMap<>(LRU_MAP_MAX_SIZE);
+	private final Map<String, LRUMap<String, Document>> threadCacheMap = new ConcurrentHashMap<>();
+	private final Map<String, Long> threadUsageMap = new ConcurrentHashMap<>();
+	private ScheduledThreadPoolExecutor clearCacheMapScheduler;
 	private ScheduledThreadPoolExecutor flushSequenceScheduler;
 
 	private Document sign() {
@@ -54,13 +59,24 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		createIndex();
 		sign = new Document("ringBuffer", super.ringBufferName);
 		flushSequence();
-		this.flushSequenceScheduler = new ScheduledThreadPoolExecutor(1, r -> new Thread(r, "Flush-Ringbuffer-Sequence-Scheduler-" + ringBufferName));
+		this.flushSequenceScheduler = new ScheduledThreadPoolExecutor(1, r -> new Thread(r, "Flush-MongoDB-Ringbuffer-Sequence-Scheduler-" + ringBufferName));
 		this.flushSequenceScheduler.scheduleWithFixedDelay(() -> {
 			try {
 				this.flushSequence();
 			} catch (Throwable ignored) {
 			}
 		}, PERIOD_MS, PERIOD_MS, TimeUnit.MILLISECONDS);
+
+		this.clearCacheMapScheduler = new ScheduledThreadPoolExecutor(1, r -> new Thread("Clear-MongoDB-Ringbuffer-Cache-Map-Scheduler-" + ringBufferName));
+		this.clearCacheMapScheduler.scheduleWithFixedDelay(() -> {
+			for (Map.Entry<String, Long> entry : this.threadUsageMap.entrySet()) {
+				Long value = entry.getValue();
+				if(value == null) continue;
+				if (System.currentTimeMillis() - value >= TimeUnit.MINUTES.toMillis(CLEAR_CACHE_MAP_PERIOD_MINUTE * 2)) {
+					this.threadCacheMap.remove(entry.getKey());
+				}
+			}
+		}, CLEAR_CACHE_MAP_PERIOD_MINUTE, CLEAR_CACHE_MAP_PERIOD_MINUTE, TimeUnit.MINUTES);
 	}
 
 	private void createIndex() {
@@ -93,6 +109,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 				})
 		);
 		Optional.ofNullable(this.flushSequenceScheduler).ifPresent(f -> CommonUtils.ignoreAnyError(f::shutdownNow));
+		this.threadCacheMap.remove(Thread.currentThread().getName());
 	}
 
 	@Override
@@ -137,6 +154,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		if (mongoDBResource == null) {
 			return null;
 		}
+		LRUMap<String, Document> cacheMap = getCacheMap();
 		String sequenceStr = String.valueOf(sequence);
 		if (!cacheMap.containsKey(sequenceStr)) {
 			Document query = sign().append("key", new Document("$gte", sequence));
@@ -229,5 +247,17 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 			return 0;
 		}
 		return doc.getLong("key");
+	}
+
+	private LRUMap<String, Document> getCacheMap() {
+		String threadName = Thread.currentThread().getName();
+		this.threadCacheMap.computeIfPresent(threadName, (k, v) -> {
+			this.threadUsageMap.put(k, System.currentTimeMillis());
+			return v;
+		});
+		return this.threadCacheMap.computeIfAbsent(threadName, k -> {
+			this.threadUsageMap.put(k, System.currentTimeMillis());
+			return new LRUMap<>(LRU_MAP_MAX_SIZE);
+		});
 	}
 }
