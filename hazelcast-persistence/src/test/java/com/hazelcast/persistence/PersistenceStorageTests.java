@@ -1,22 +1,22 @@
 package com.hazelcast.persistence;
 
-import com.hazelcast.config.*;
+import com.hazelcast.config.Config;
+import com.hazelcast.config.JoinConfig;
+import com.hazelcast.config.NetworkConfig;
+import com.hazelcast.config.TcpIpConfig;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.jet.JetService;
 import com.hazelcast.jet.Job;
-import com.hazelcast.jet.core.AbstractProcessor;
-import com.hazelcast.jet.core.DAG;
-import com.hazelcast.jet.core.Edge;
-import com.hazelcast.jet.core.Inbox;
-import com.hazelcast.jet.core.Vertex;
+import com.hazelcast.jet.core.*;
 import com.hazelcast.map.IMap;
-import com.hazelcast.persistence.config.PersistenceHttpConfig;
-import com.hazelcast.persistence.config.PersistenceInMemConfig;
-import com.hazelcast.persistence.config.PersistenceMongoDBConfig;
-import com.hazelcast.persistence.config.PersistenceRocksDBConfig;
-import com.hazelcast.persistence.config.PersistenceStorageAbstractConfig;
+import com.hazelcast.persistence.config.*;
+import com.hazelcast.ringbuffer.OverflowPolicy;
 import com.hazelcast.ringbuffer.Ringbuffer;
+import com.mongodb.ConnectionString;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoClients;
+import com.mongodb.client.MongoCollection;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.bson.Document;
 import org.junit.jupiter.api.AfterAll;
@@ -24,11 +24,8 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.concurrent.CompletionStage;
+import java.util.*;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.IntStream;
@@ -223,10 +220,79 @@ public class PersistenceStorageTests {
 //		PersistenceStorage.getInstance().destroy(ConstructType.IMAP, mongoDBConfig.getName());
 //		persistenceStorage.addConfig(mongoDBConfig).initMapStoreConfig(hazelcastInstance.getConfig(), mongoDBConfig.getName());
 		Map<String, Object> cache = new HashMap<>();
-		IntStream.range(1,30001).forEach(i->{
+		IntStream.range(1, 30001).forEach(i -> {
 			cache.put(String.valueOf(i), new Document("name", String.valueOf(i)));
 		});
 		map.putAll(cache);
+	}
+
+	@Test
+	public void test888() {
+		try (MongoClient mongoClient = MongoClients.create(new ConnectionString("mongodb://localhost/test"))) {
+			MongoCollection<Document> collection = mongoClient.getDatabase("test").getCollection("test888");
+			int testNum = 100000;
+			int time = 1;
+
+			while (true) {
+				collection.drop();
+				PersistenceMongoDBConfig mongoDBConfig = PersistenceMongoDBConfig.create(ConstructType.RINGBUFFER, "test888")
+						.uri("mongodb://localhost/test")
+						.database("test")
+						.collection("test888");
+				mongoDBConfig.setInMemSize(1);
+				mongoDBConfig.setWriteDelaySeconds(1);
+
+				PersistenceStorage.getInstance().addConfig(mongoDBConfig).initRingBufferConfig(hazelcastInstance.getConfig(), mongoDBConfig.getName());
+				PersistenceStorage.getInstance().clear(ConstructType.RINGBUFFER, mongoDBConfig.getName());
+				Ringbuffer<Document> ringbuffer = hazelcastInstance.getRingbuffer(mongoDBConfig.getName());
+				List<Document> list = new ArrayList<>();
+				IntStream.range(1, testNum + 1).forEach(i -> {
+					list.add(new Document("id", String.valueOf(i)));
+					if (list.size() >= 1000) {
+						ringbufferAddAll(ringbuffer, list);
+						list.clear();
+					}
+				});
+				if (!list.isEmpty()) {
+					ringbufferAddAll(ringbuffer, list);
+				}
+
+				long count = collection.count();
+				if (count < testNum) {
+					System.out.println("Found skip: " + (testNum - count) + ", time: " + time);
+				} else {
+					System.out.println("Finish test time: " + time);
+				}
+				time++;
+				/*Document first = collection.find(new Document("ringBuffer", "test888")).sort(new Document("key", 1)).limit(1).iterator().next();
+				Document last = collection.find(new Document("ringBuffer", "test888")).sort(new Document("key", -1)).limit(1).iterator().next();
+				if (last.getLong("key") - first.getLong("key") != 2999998) {
+					System.out.println("skip");
+				}*/
+			}
+		}
+	}
+
+	private static void ringbufferAddAll(Ringbuffer<Document> ringbuffer, List<Document> list) {
+		CountDownLatch countDownLatch = new CountDownLatch(1);
+		ringbuffer.addAllAsync(list, OverflowPolicy.OVERWRITE).whenComplete((r, e) -> {
+			try {
+				if (null != e) {
+					e.printStackTrace();
+				}
+			} finally {
+				countDownLatch.countDown();
+			}
+		});
+		while (true) {
+			try {
+				if (countDownLatch.await(10L, TimeUnit.MILLISECONDS)) {
+					break;
+				}
+			} catch (InterruptedException e) {
+				break;
+			}
+		}
 	}
 
 }

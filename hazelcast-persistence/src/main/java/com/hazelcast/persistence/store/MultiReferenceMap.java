@@ -59,14 +59,11 @@ public abstract class MultiReferenceMap<K, V> {
             referenceMap.computeIfPresent(key, (k, v) -> {
                 v.remove(referenceId);
                 if (CollectionUtils.isEmpty(v)) {
-                    Optional.ofNullable(dataMap.remove(key)).ifPresent(this::destroyValue);
+                    destroyValue(dataMap.get(key));
                     result.set(true);
                 }
                 return v;
             });
-            if (result.get()) {
-                referenceMap.remove(key);
-            }
             return result.get();
         }
     }

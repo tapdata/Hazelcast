@@ -159,6 +159,9 @@ public class PersistenceStorage {
         AtomicBoolean removed = new AtomicBoolean(false);
         String configKey = getConfigKey(constructType, name);
         CommonUtils.ignoreAnyError(() -> removed.set(storeImplementationMap.destroy(referenceId, configKey)));
+        if (removed.get()) {
+            Optional.ofNullable(storeImplementationMap.get(configKey)).ifPresent(PersistenceStorageStore::disable);
+        }
         return removed.get();
     }
 
@@ -228,6 +231,10 @@ public class PersistenceStorage {
         }
         if (storeImplementationMap.containsKey(configKey)) {
             PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> store = storeImplementationMap.get(configKey);
+            if (!store.checkEnable()) {
+                externalResource.doInit(persistenceStorageAbstractConfig);
+                store.doInit(persistenceStorageAbstractConfig, externalResource);
+            }
             store.enable();
             storeImplementationMap.addReference(referenceId, configKey);
         } else {

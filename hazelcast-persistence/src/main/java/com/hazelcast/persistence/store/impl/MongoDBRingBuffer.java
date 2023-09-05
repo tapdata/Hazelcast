@@ -90,6 +90,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 				})
 		);
 		Optional.ofNullable(this.flushSequenceScheduler).ifPresent(f -> CommonUtils.ignoreAnyError(f::shutdownNow));
+		Optional.ofNullable(cacheMap).ifPresent(Map::clear);
 	}
 
 	@Override

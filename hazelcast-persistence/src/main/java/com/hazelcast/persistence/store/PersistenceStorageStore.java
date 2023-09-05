@@ -36,7 +36,7 @@ public abstract class PersistenceStorageStore<T extends PersistenceStorageAbstra
 		this.enable.compareAndSet(true, false);
 	}
 
-	protected boolean checkEnable() {
+	public boolean checkEnable() {
 		return this.enable.get();
 	}
 
