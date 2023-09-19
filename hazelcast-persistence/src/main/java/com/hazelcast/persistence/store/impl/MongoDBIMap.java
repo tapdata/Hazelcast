@@ -194,7 +194,10 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 	private void loadAll(Collection<String> keys, Map<String, Object> result) {
 		Document query = sign().append("key", new Document("$in", keys));
 		for (Document data : this.mongoDBResource.getMongoCollection().find(query)) {
-			result.put(data.getString("key"), data);
+			if(null == data) continue;
+			if(!data.containsKey("value")) continue;
+			if(!(data.get("value") instanceof Map)) continue;
+			result.put(data.getString("key"), data.get("value"));
 		}
 	}
 
