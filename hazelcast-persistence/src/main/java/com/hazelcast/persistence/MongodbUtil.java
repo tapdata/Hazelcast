@@ -1,22 +1,18 @@
 package com.hazelcast.persistence;
 
-import com.mongodb.MongoClient;
+import com.mongodb.ConnectionString;
+import com.mongodb.client.MongoClient;
 import com.mongodb.MongoClientOptions;
-import com.mongodb.MongoClientURI;
+import com.mongodb.MongoClientSettings;
+import com.mongodb.client.MongoClients;
 import org.bson.*;
 import org.bson.codecs.*;
 import org.bson.codecs.configuration.CodecRegistries;
 import org.bson.codecs.configuration.CodecRegistry;
 import org.bson.types.Decimal128;
 
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.TrustManager;
-import javax.net.ssl.X509TrustManager;
 import java.math.BigDecimal;
 import java.math.BigInteger;
-import java.security.SecureRandom;
-import java.security.cert.CertificateException;
-import java.security.cert.X509Certificate;
 import java.util.*;
 
 import static java.lang.String.format;
@@ -30,7 +26,8 @@ public class MongodbUtil {
 	public static MongoClient createClient(String uri) {
 		return createClient(uri, null);
 	}
-	public static MongoClient createClient(String uri, MongoClientOptions mongoClientOptions) {
+
+	/*public static MongoClient createClient(String uri, MongoClientOptions mongoClientOptions) {
 		if (null == uri || "".equals(uri)) {
 			throw new IllegalArgumentException("MongoDB uri cannot be blank");
 		}
@@ -73,6 +70,22 @@ public class MongodbUtil {
 			throw new IllegalArgumentException(String.format("Build mongo client uri failed, uri: %s, error: %s", uri, e.getMessage()), e);
 		}
 		return new MongoClient(mongoClientURI);
+	}*/
+
+	public static MongoClient createClient(String uri, MongoClientSettings settings) {
+		if (null == uri || "".equals(uri)) {
+			throw new IllegalArgumentException("MongoDB uri cannot be blank");
+		}
+		MongoClientOptions.Builder builder;
+		MongoClientSettings.Builder settingBuilder;
+		if (null != settings) {
+			settingBuilder = MongoClientSettings.builder(settings);
+		} else {
+			settingBuilder = MongoClientSettings.builder();
+		}
+		settingBuilder.applyConnectionString(new ConnectionString(uri))
+				.codecRegistry(getForJavaCodecRegistry());
+		return MongoClients.create(settingBuilder.build());
 	}
 
 	private static CodecRegistry customCodecRegistry(List<Codec<?>> codecs, Map<BsonType, Class<?>> replacementsForDefaults) {
@@ -80,7 +93,7 @@ public class MongodbUtil {
 		BsonTypeClassMap bsonTypeCodecMap = new BsonTypeClassMap(replacementsForDefaults);
 		DocumentCodecProvider documentCodecProvider = new DocumentCodecProvider(bsonTypeCodecMap);
 
-		CodecRegistry defaultCodecRegistry = MongoClient.getDefaultCodecRegistry();
+		CodecRegistry defaultCodecRegistry = MongoClientSettings.getDefaultCodecRegistry();
 
 		return CodecRegistries.fromRegistries(
 				CodecRegistries.fromCodecs(codecs),

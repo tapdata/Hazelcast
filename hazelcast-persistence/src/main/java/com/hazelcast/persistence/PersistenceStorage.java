@@ -364,8 +364,9 @@ public class PersistenceStorage {
             ttlThreadMap.get(ttlThreadKey).interrupt();
         }
         Thread ttlThread = new Thread(() -> {
-            Thread.currentThread().setName(String.format("Clear-RingBuffer-TTL-%s-%s", storageMode.name(), rb.getName()));
+            Thread.currentThread().setName(String.format("Clear-RingBuffer-TTL-%s-%s-%s", storageMode.name(), rb.getName(), ttlSeconds));
             long sleepSeconds = 60;
+            long ttlMillis = TimeUnit.SECONDS.toMillis(ttlSeconds);
             if (ttlSeconds < 60) {
                 sleepSeconds = ttlSeconds;
             }
@@ -408,9 +409,12 @@ public class PersistenceStorage {
                             if (null == document) {
                                 continue;
                             }
+                            if (document.containsKey("type") && "SIGN".equals(document.getString("type"))) {
+                                continue;
+                            }
                             Long _ts = getTs(document);
                             if (_ts == null) continue;
-                            if (System.currentTimeMillis() - _ts * 1000 < ttlSeconds * 1000) {
+                            if (System.currentTimeMillis() - TimeUnit.SECONDS.toMillis(_ts) < ttlMillis) {
                                 break;
                             }
                             persistenceRingBufferStore.delete(s);
