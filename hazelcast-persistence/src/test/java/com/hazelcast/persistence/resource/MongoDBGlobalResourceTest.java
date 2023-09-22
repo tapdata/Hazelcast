@@ -6,6 +6,8 @@ import com.hazelcast.persistence.resource.impl.MongoDBGlobalResource;
 import com.mongodb.ConnectionString;
 import com.mongodb.MongoClientSettings;
 import com.mongodb.client.*;
+import com.mongodb.client.model.InsertOneModel;
+import com.mongodb.client.model.WriteModel;
 import org.apache.commons.lang3.RandomUtils;
 import org.bson.Document;
 import org.junit.jupiter.api.Assertions;
@@ -13,6 +15,7 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
@@ -126,27 +129,30 @@ public class MongoDBGlobalResourceTest {
 		PersistenceMongoDBConfig mongoDBConfig = PersistenceMongoDBConfig.create(ConstructType.IMAP, "map1")
 				.uri("mongodb://localhost/27107")
 				.database("test");
-		MongoDBGlobalResource.getInstance().getMongoClient(mongoDBConfig).getDatabase("test").getCollection("imap1").drop();
-		MongoDBGlobalResource.getInstance().close(mongoDBConfig.getUri());
-		int poolSize = 2000;
+		int poolSize = 500;
 		ExecutorService executorService = new ThreadPoolExecutor(poolSize, poolSize, 0L, TimeUnit.MILLISECONDS, new SynchronousQueue<>());
 		List<CompletableFuture<?>> list = new ArrayList<>();
 		IntStream.range(0, poolSize).forEach(i -> list.add(CompletableFuture.runAsync(() -> {
 			try {
 				MongoClient mongoClient = MongoDBGlobalResource.getInstance().getMongoClient(mongoDBConfig);
 				MongoDatabase database = mongoClient.getDatabase(mongoDBConfig.getDatabase());
-				MongoCollection<Document> collection = database.getCollection("imap1");
-				try (
+				MongoCollection<Document> collection = database.getCollection("imap" + i);
+				collection.drop();
+				*//*try (
 						MongoCursor<Document> iterator = collection.find().iterator()
 				) {
 					while (iterator.hasNext()) {
 						Document doc = iterator.next();
 					}
-				}
-				try {
-					collection.insertOne(new Document("thread-name", Thread.currentThread().getName()));
-				} catch (Exception e) {
-					System.out.println(Thread.currentThread().getName() + " insert failed: " + e.getMessage());
+				}*//*
+				while (true) {
+					List<WriteModel<Document>> writeModels = new ArrayList<>();
+					IntStream.range(0,10).forEach(i1-> writeModels.add(new InsertOneModel<>(new Document("thread-name", Thread.currentThread().getName()).append("index", i1).append("now", new Date()))));
+					collection.bulkWrite(writeModels);
+					try {
+						TimeUnit.MILLISECONDS.sleep(1000L);
+					} catch (InterruptedException ignored) {
+					}
 				}
 			} finally {
 				MongoDBGlobalResource.getInstance().close(mongoDBConfig.getUri());

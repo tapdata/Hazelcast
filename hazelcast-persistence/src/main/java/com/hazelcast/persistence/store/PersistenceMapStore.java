@@ -29,4 +29,8 @@ public abstract class PersistenceMapStore<T extends PersistenceStorageAbstractCo
 		super.doInit(t, r);
 		this.imapName = t.getName();
 	}
+
+	public Iterable<?> iterator() {
+		return null;
+	}
 }

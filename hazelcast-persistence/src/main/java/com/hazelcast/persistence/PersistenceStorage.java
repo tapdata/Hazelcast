@@ -7,6 +7,7 @@ import com.hazelcast.persistence.config.PersistenceStorageAbstractConfig;
 import com.hazelcast.persistence.resource.ExternalResource;
 import com.hazelcast.persistence.resource.ExternalResourceFactory;
 import com.hazelcast.persistence.store.*;
+import com.hazelcast.persistence.store.ttl.TTLService;
 import com.hazelcast.ringbuffer.Ringbuffer;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.Logger;
@@ -287,7 +288,7 @@ public class PersistenceStorage {
     }
 
     public PersistenceStorage setImapTTL(IMap<String, Object> imap, long ttlSeconds) {
-        ConstructType constructType = ConstructType.IMAP;
+        /*ConstructType constructType = ConstructType.IMAP;
         PersistenceStorageAbstractConfig persistenceStorageAbstractConfig = getPersistenceStorageConfig(constructType, imap.getName());
         StorageMode storageMode = persistenceStorageAbstractConfig.getStorageMode();
         if (storageMode == StorageMode.Mem || storageMode == StorageMode.HTTP_TM) {
@@ -300,13 +301,7 @@ public class PersistenceStorage {
         }
         Thread ttlThread = new Thread(() -> {
             Thread.currentThread().setName(String.format("Clear-IMap-TTL-%s", ttlThreadKey));
-            long sleepSeconds = 60;
-            if (ttlSeconds < 60) {
-                sleepSeconds = ttlSeconds;
-            }
-            if (sleepSeconds < 10) {
-                sleepSeconds = 10;
-            }
+            long sleepSeconds = TimeUnit.HOURS.toSeconds(1L);
             PersistenceMapStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> persistenceMapStore = null;
             try {
                 PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> store = createStore(persistenceStorageAbstractConfig);
@@ -348,11 +343,12 @@ public class PersistenceStorage {
         });
         ttlThread.start();
         ttlThreadMap.put(ttlThreadKey, ttlThread);
-        return this;
+        return this;*/
+        return setTTL(ConstructType.IMAP, imap.getName(), ttlSeconds);
     }
 
     public PersistenceStorage setRingBufferTTL(Ringbuffer<Document> rb, long ttlSeconds) {
-        ConstructType constructType = ConstructType.RINGBUFFER;
+        /*ConstructType constructType = ConstructType.RINGBUFFER;
         PersistenceStorageAbstractConfig persistenceStorageAbstractConfig = getPersistenceStorageConfig(constructType, rb.getName());
         StorageMode storageMode = persistenceStorageAbstractConfig.getStorageMode();
         if (storageMode == StorageMode.Mem || storageMode == StorageMode.HTTP_TM) {
@@ -431,6 +427,23 @@ public class PersistenceStorage {
         });
         ttlThread.start();
         ttlThreadMap.put(ttlThreadKey, ttlThread);
+        return this;*/
+        return setTTL(ConstructType.RINGBUFFER, rb.getName(), ttlSeconds);
+    }
+
+    private static volatile TTLService ttlService;
+    private PersistenceStorage setTTL(ConstructType constructType, String name, long ttlSeconds) {
+        if (null == ttlService) {
+            synchronized (TTLService.class) {
+                if (null == ttlService) {
+                    ttlService = new TTLService(this::createStore, logger);
+                }
+            }
+        }
+        PersistenceStorageAbstractConfig persistenceStorageConfig = getPersistenceStorageConfig(constructType, name);
+        ttlService.registerTTL(persistenceStorageConfig, ttlSeconds);
+        ttlService.start();
+
         return this;
     }
 
@@ -448,7 +461,7 @@ public class PersistenceStorage {
         return null;
     }
 
-    private static PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> createStore(
+    private PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> createStore(
             PersistenceStorageAbstractConfig persistenceStorageAbstractConfig
     ) {
         if (null == persistenceStorageAbstractConfig) {

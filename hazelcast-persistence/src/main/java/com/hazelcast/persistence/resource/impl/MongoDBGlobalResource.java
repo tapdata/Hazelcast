@@ -28,9 +28,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  **/
 public class MongoDBGlobalResource {
 	private final static Map<String, MongoClientHolder> RESOURCE_MAP = new ConcurrentHashMap<>();
-	public static final String MONGODB_MAX_WAIT_QUEUE_SIZE = "mongodb.maxWaitQueueSize";
+	public static final String MONGODB_MAX_WAIT_QUEUE_SIZE = "mongodb-maxWaitQueueSize";
 	public static final int DEFAULT_MONGODB_MAX_WAIT_QUEUE_SIZE = 5000;
-	public static final String MONGODB_MAX_SIZE = "mongodb.maxSize";
+	public static final String MONGODB_MAX_SIZE = "mongodb-maxSize";
 	public static final int DEFAULT_MONGODB_MAX_SIZE = 100;
 
 	private MongoDBGlobalResource() {

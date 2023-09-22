@@ -202,13 +202,17 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 	}
 
 	public Iterable<String> loadAllKeys() {
-		/*FindIterable<Document> findIterable = this.mongoDBResource.getMongoCollection().find(sign());
-		MongoDBImapIterable mongoDBImapIterable = new MongoDBImapIterable(findIterable);
-		return mongoDBImapIterable;*/
+		// do not support this function
 		return null;
 	}
 
-	static class MongoDBImapIterable implements Iterable<String> {
+	@Override
+	public Iterable<Document> iterator() {
+		FindIterable<Document> findIterable = this.mongoDBResource.getMongoCollection().find(sign());
+		return new MongoDBImapIterable(findIterable);
+	}
+
+	static class MongoDBImapIterable implements Iterable<Document> {
 		private final FindIterable<Document> mongoIterable;
 
 		public MongoDBImapIterable(FindIterable<Document> mongoIterable) {
@@ -219,17 +223,17 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 		}
 
 		@Override
-		public void forEach(Consumer<? super String> action) {
-			mongoIterable.forEach((Consumer<Document>) document -> action.accept(document.getString("key")));
+		public void forEach(Consumer<? super Document> action) {
+			mongoIterable.forEach((Consumer<Document>) action::accept);
 		}
 
 		@Override
-		public Iterator<String> iterator() {
+		public Iterator<Document> iterator() {
 			return new MongoDBImapIterator(mongoIterable.iterator());
 		}
 	}
 
-	static class MongoDBImapIterator implements Iterator<String> {
+	static class MongoDBImapIterator implements Iterator<Document> {
 		private final MongoCursor<Document> mongoCursor;
 
 		public MongoDBImapIterator(MongoCursor<Document> mongoCursor) {
@@ -245,8 +249,8 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 		}
 
 		@Override
-		public String next() {
-			return mongoCursor.next().getString("key");
+		public Document next() {
+			return mongoCursor.next();
 		}
 	}
 }
