@@ -18,6 +18,7 @@ import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -27,10 +28,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  * @create 2023-09-19 16:49
  **/
 public class MongoDBGlobalResource {
-	private final static Map<String, MongoClientHolder> RESOURCE_MAP = new ConcurrentHashMap<>();
-	public static final String MONGODB_MAX_WAIT_QUEUE_SIZE = "mongodb-maxWaitQueueSize";
+	private final static Map<String, MongoClientPartition> RESOURCE_MAP = new ConcurrentHashMap<>();
+	public static final String MONGODB_MAX_WAIT_QUEUE_SIZE = "mongodb_maxWaitQueueSize";
 	public static final int DEFAULT_MONGODB_MAX_WAIT_QUEUE_SIZE = 5000;
-	public static final String MONGODB_MAX_SIZE = "mongodb-maxSize";
+	public static final String MONGODB_MAX_SIZE = "mongodb_maxSize";
 	public static final int DEFAULT_MONGODB_MAX_SIZE = 100;
 
 	private MongoDBGlobalResource() {
@@ -48,17 +49,16 @@ public class MongoDBGlobalResource {
 			throw new IllegalArgumentException("MongoDB uri can not be null");
 		}
 		String mongoClientKey = getMongoClientKey(persistenceMongoDBConfig.getUri());
-		MongoClientHolder mongoClientHolder = RESOURCE_MAP.computeIfAbsent(mongoClientKey, key -> new MongoClientHolder(persistenceMongoDBConfig));
-		return mongoClientHolder.getMongoClient();
+		return RESOURCE_MAP.computeIfAbsent(mongoClientKey, key -> new MongoClientPartition()).getMongoClientWithPartition(persistenceMongoDBConfig);
 	}
 
-	public void close(String mongodbUri) {
-		if (StringUtils.isBlank(mongodbUri)) {
+	public void close(PersistenceMongoDBConfig persistenceMongoDBConfig) {
+		if (null == persistenceMongoDBConfig) {
 			return;
 		}
-		String mongoClientKey = getMongoClientKey(mongodbUri);
+		String mongoClientKey = getMongoClientKey(persistenceMongoDBConfig.getUri());
 		RESOURCE_MAP.computeIfPresent(mongoClientKey, (key, value) -> {
-			if (value.close()) {
+			if (value.close(persistenceMongoDBConfig)) {
 				RESOURCE_MAP.remove(mongoClientKey);
 			}
 			return value;
@@ -83,6 +83,42 @@ public class MongoDBGlobalResource {
 
 		public MongoDBGlobalResource getInstance() {
 			return mongoDBGlobalResource;
+		}
+	}
+
+	private static class MongoClientPartition {
+		public static final int DEFAULT_PARTITION_SIZE = 8;
+		private Map<String, MongoClientHolder> mongoClientHolderMap = new ConcurrentHashMap<>();
+		private int partitionSize = DEFAULT_PARTITION_SIZE;
+
+		public MongoClientPartition partitionSize(int partitionSize) {
+			this.partitionSize = partitionSize;
+			return this;
+		}
+
+		public int getPartitionSize() {
+			return partitionSize;
+		}
+
+		public MongoClient getMongoClientWithPartition(PersistenceMongoDBConfig persistenceMongoDBConfig) {
+			int partitionCode = getPartitionCode(persistenceMongoDBConfig);
+			return mongoClientHolderMap.computeIfAbsent(partitionCode + "", key -> new MongoClientHolder(persistenceMongoDBConfig)).getMongoClient();
+		}
+
+		private int getPartitionCode(PersistenceMongoDBConfig persistenceMongoDBConfig) {
+			String name = persistenceMongoDBConfig.getName();
+			int hash = Objects.hash(name);
+			return hash % partitionSize;
+		}
+
+		public boolean close(PersistenceMongoDBConfig persistenceMongoDBConfig) {
+			int partitionCode = getPartitionCode(persistenceMongoDBConfig);
+			return mongoClientHolderMap.computeIfPresent(partitionCode + "", (k, v) -> {
+				if (v.close()) {
+					return null;
+				}
+				return v;
+			}) == null;
 		}
 	}
 

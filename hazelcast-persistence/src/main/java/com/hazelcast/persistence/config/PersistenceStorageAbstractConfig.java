@@ -1,6 +1,7 @@
 package com.hazelcast.persistence.config;
 
 import com.hazelcast.persistence.ConstructType;
+import com.hazelcast.persistence.PersistenceStorage;
 import com.hazelcast.persistence.StorageMode;
 
 import java.util.StringJoiner;
@@ -17,6 +18,8 @@ public abstract class PersistenceStorageAbstractConfig {
 	protected Integer inMemSize = 100;
 	protected String maxSizePolicy;
 	protected int writeDelaySeconds = 0;
+
+	private PersistenceStorage.SequenceMode sequenceMode;
 
 	public PersistenceStorageAbstractConfig(ConstructType constructType, StorageMode storageMode) {
 		this.constructType = constructType;
@@ -71,6 +74,15 @@ public abstract class PersistenceStorageAbstractConfig {
 
 	public void setWriteDelaySeconds(int writeDelaySeconds) {
 		this.writeDelaySeconds = writeDelaySeconds;
+	}
+
+	public PersistenceStorage.SequenceMode getSequenceMode() {
+		return sequenceMode;
+	}
+
+	public PersistenceStorageAbstractConfig sequenceMode(PersistenceStorage.SequenceMode sequenceMode) {
+		this.sequenceMode = sequenceMode;
+		return this;
 	}
 
 	@Override

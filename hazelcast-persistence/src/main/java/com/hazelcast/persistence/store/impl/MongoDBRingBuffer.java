@@ -1,6 +1,7 @@
 package com.hazelcast.persistence.store.impl;
 
 import com.hazelcast.persistence.CommonUtils;
+import com.hazelcast.persistence.PersistenceStorage;
 import com.hazelcast.persistence.config.PersistenceMongoDBConfig;
 import com.hazelcast.persistence.resource.impl.MongoDBResource;
 import com.hazelcast.persistence.store.PersistenceRingBufferStore;
@@ -53,20 +54,22 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		createIndex();
 		sign = new Document("ringBuffer", this.mongoDBResource.getMongoCollection().getNamespace().getCollectionName());
 		flushSequence();
-		this.flushLargestSequenceScheduler = new ScheduledThreadPoolExecutor(1, r -> new Thread(r, "Flush-MongoDB-Ringbuffer-Largest-Sequence-Scheduler-" + ringBufferName));
-		this.flushLargestSequenceScheduler.scheduleWithFixedDelay(() -> {
-			try {
-				this.largestSequence.set(_getLargestSequence());
-			} catch (Throwable ignored) {
-			}
-		}, FLUSH_LARGEST_PERIOD_MS, FLUSH_LARGEST_PERIOD_MS, TimeUnit.MILLISECONDS);
-		this.flushSmallestSequenceScheduler = new ScheduledThreadPoolExecutor(1, r -> new Thread(r, "Flush-MongoDB-Ringbuffer-Smallest-Sequence-Scheduler-" + ringBufferName));
-		this.flushSmallestSequenceScheduler.scheduleWithFixedDelay(()->{
-			try {
-				this.smallestSequence.set(_getSmallestSequence());
-			} catch (Throwable ignored) {
-			}
-		}, FLUSH_SMALLEST_PERIOD_MS, FLUSH_SMALLEST_PERIOD_MS, TimeUnit.MILLISECONDS);
+		if (persistenceMongoDBConfig.getSequenceMode() == PersistenceStorage.SequenceMode.STORE) {
+			this.flushLargestSequenceScheduler = new ScheduledThreadPoolExecutor(1, r -> new Thread(r, "Flush-MongoDB-Ringbuffer-Largest-Sequence-Scheduler-" + ringBufferName));
+			this.flushLargestSequenceScheduler.scheduleWithFixedDelay(() -> {
+				try {
+					this.largestSequence.set(_getLargestSequence());
+				} catch (Throwable ignored) {
+				}
+			}, FLUSH_LARGEST_PERIOD_MS, FLUSH_LARGEST_PERIOD_MS, TimeUnit.MILLISECONDS);
+			this.flushSmallestSequenceScheduler = new ScheduledThreadPoolExecutor(1, r -> new Thread(r, "Flush-MongoDB-Ringbuffer-Smallest-Sequence-Scheduler-" + ringBufferName));
+			this.flushSmallestSequenceScheduler.scheduleWithFixedDelay(() -> {
+				try {
+					this.smallestSequence.set(_getSmallestSequence());
+				} catch (Throwable ignored) {
+				}
+			}, FLUSH_SMALLEST_PERIOD_MS, FLUSH_SMALLEST_PERIOD_MS, TimeUnit.MILLISECONDS);
+		}
 	}
 
 	private void createIndex() {

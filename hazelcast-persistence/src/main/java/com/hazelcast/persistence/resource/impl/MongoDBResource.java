@@ -48,7 +48,7 @@ public class MongoDBResource extends ExternalResource<PersistenceMongoDBConfig> 
 
 	@Override
 	public void close() throws IOException {
-		MongoDBGlobalResource.getInstance().close(((PersistenceMongoDBConfig) persistenceStorageAbstractConfig).getUri());
+		MongoDBGlobalResource.getInstance().close(((PersistenceMongoDBConfig) persistenceStorageAbstractConfig));
 		this.mongoClient = null;
 	}
 

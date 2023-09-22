@@ -180,10 +180,12 @@ public class PersistenceStorage {
 
     public PersistenceStorage initRingBufferConfig(String referenceId, Config c, String ringBufferName, SequenceMode sequenceMode) {
         checkInitConfig(ringBufferName, ConstructType.RINGBUFFER);
+        sequenceMode = (null == sequenceMode) ? SequenceMode.STORE : sequenceMode;
         PersistenceStorageAbstractConfig persistenceStorageAbstractConfig = getPersistenceStorageConfig(ConstructType.RINGBUFFER, ringBufferName);
         if (null == persistenceStorageAbstractConfig) {
             throw new IllegalArgumentException(String.format("Ring buffer name %s's persistence storage config is not exists, please add config", ringBufferName));
         }
+        persistenceStorageAbstractConfig.sequenceMode(sequenceMode);
         StorageMode storageMode = persistenceStorageAbstractConfig.getStorageMode();
         RingbufferConfig ringbufferConfig = c.getRingbufferConfig(ringBufferName);
         RingbufferStoreConfig ringbufferStoreConfig = ringbufferConfig.getRingbufferStoreConfig();
@@ -211,7 +213,7 @@ public class PersistenceStorage {
                 .setInMemoryFormat(InMemoryFormat.OBJECT);
         if (initResult) {
             ringbufferStoreConfig.setEnabled(true);
-            String sequenceModeStr = null == sequenceMode ? SequenceMode.STORE.name() : sequenceMode.name();
+            String sequenceModeStr = sequenceMode.name();
             ringbufferStoreConfig.setProperty("sequence-mode", sequenceModeStr);
             ringbufferConfig.setRingbufferStoreConfig(ringbufferStoreConfig);
         }
