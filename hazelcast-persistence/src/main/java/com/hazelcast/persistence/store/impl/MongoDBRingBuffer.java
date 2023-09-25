@@ -9,6 +9,9 @@ import com.mongodb.bulk.BulkWriteResult;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
 import com.mongodb.client.model.*;
+import io.tapdata.entity.memory.MemoryFetcher;
+import io.tapdata.entity.utils.DataMap;
+import io.tapdata.pdk.core.api.PDKIntegration;
 import org.apache.commons.collections4.map.LRUMap;
 import org.bson.Document;
 import org.bson.conversions.Bson;
@@ -24,7 +27,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import static com.mongodb.client.model.Sorts.ascending;
 import static com.mongodb.client.model.Sorts.descending;
 
-public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMongoDBConfig, MongoDBResource> {
+public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMongoDBConfig, MongoDBResource> implements MemoryFetcher {
 	public static final int DEFAULT_FIND_LIMIT = 100;
 	public static final int LRU_MAP_MAX_SIZE = DEFAULT_FIND_LIMIT + 1;
 	public static final long FLUSH_SMALLEST_PERIOD_MS = TimeUnit.SECONDS.toMillis(10L);
@@ -70,6 +73,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 				}
 			}, FLUSH_SMALLEST_PERIOD_MS, FLUSH_SMALLEST_PERIOD_MS, TimeUnit.MILLISECONDS);
 		}
+		PDKIntegration.registerMemoryFetcher(String.format("MongoDB-RingBuffer-%s", ringBufferName), this);
 	}
 
 	private void createIndex() {
@@ -153,7 +157,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 			Document query = sign().append("key", new Document("$gte", sequence));
 			try (
 					MongoCursor<Document> iterator = this.mongoDBResource.getMongoCollection().find(query)
-							.sort(Sorts.ascending("key"))
+							.sort(Sorts.ascending("_id"))
 							.limit(DEFAULT_FIND_LIMIT).iterator()
 			) {
 				while (iterator.hasNext()) {
@@ -201,7 +205,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 			return -1;
 		}
 		Document query = sign();
-		Document doc = this.mongoDBResource.getMongoCollection().find(query).sort(descending("key")).first();
+		Document doc = this.mongoDBResource.getMongoCollection().find(query).sort(descending("_id")).first();
 		if (doc == null) {
 			return -1;
 		}
@@ -235,10 +239,18 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 			return 0;
 		}
 		Document query = sign();
-		Document doc = this.mongoDBResource.getMongoCollection().find(query).sort(ascending("key")).first();
+		Document doc = this.mongoDBResource.getMongoCollection().find(query).sort(ascending("_id")).first();
 		if (doc == null) {
 			return 0;
 		}
 		return doc.getLong("key");
+	}
+
+	@Override
+	public DataMap memory(String keyRegex, String memoryLevel) {
+		DataMap dataMap = new DataMap();
+		dataMap.put("smallest sequence", this.smallestSequence.get());
+		dataMap.put("largest sequence", this.largestSequence.get());
+		return dataMap;
 	}
 }
