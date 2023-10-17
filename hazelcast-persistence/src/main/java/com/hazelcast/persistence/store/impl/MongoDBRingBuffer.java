@@ -13,6 +13,7 @@ import io.tapdata.entity.memory.MemoryFetcher;
 import io.tapdata.entity.utils.DataMap;
 import io.tapdata.pdk.core.api.PDKIntegration;
 import org.apache.commons.collections4.map.LRUMap;
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 
@@ -33,6 +34,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 	public static final long FLUSH_SMALLEST_PERIOD_MS = TimeUnit.SECONDS.toMillis(10L);
 	public static final long FLUSH_LARGEST_PERIOD_MS = TimeUnit.SECONDS.toMillis(1L);
 	public static final long CLEAR_CACHE_MAP_PERIOD_MINUTE = 10L;
+	public static final String TAG = MongoDBRingBuffer.class.getSimpleName();
 	private AtomicLong largestSequence = new AtomicLong(-1L);
 	private AtomicLong smallestSequence = new AtomicLong(0L);
 	private Document sign;
@@ -73,7 +75,11 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 				}
 			}, FLUSH_SMALLEST_PERIOD_MS, FLUSH_SMALLEST_PERIOD_MS, TimeUnit.MILLISECONDS);
 		}
-		PDKIntegration.registerMemoryFetcher(String.format("MongoDB-RingBuffer-%s", ringBufferName), this);
+		CommonUtils.ignoreAnyError(() -> PDKIntegration.registerMemoryFetcher(genMemoryKey(), this));
+	}
+
+	private String genMemoryKey() {
+		return String.format("%s-%s", TAG, ringBufferName);
 	}
 
 	private void createIndex() {
@@ -108,6 +114,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		Optional.ofNullable(this.flushSmallestSequenceScheduler).ifPresent(f -> CommonUtils.ignoreAnyError(f::shutdownNow));
 		Optional.ofNullable(this.flushLargestSequenceScheduler).ifPresent(f -> CommonUtils.ignoreAnyError(f::shutdownNow));
 		Optional.ofNullable(cacheMap).ifPresent(Map::clear);
+		CommonUtils.ignoreAnyError(() -> PDKIntegration.unregisterMemoryFetcher(genMemoryKey()));
 	}
 
 	@Override
@@ -249,8 +256,12 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 	@Override
 	public DataMap memory(String keyRegex, String memoryLevel) {
 		DataMap dataMap = new DataMap();
-		dataMap.put("smallest sequence", this.smallestSequence.get());
-		dataMap.put("largest sequence", this.largestSequence.get());
+		try {
+			dataMap.kv("smallest sequence", this.smallestSequence.get());
+			dataMap.kv("largest sequence", this.largestSequence.get());
+		} catch (Exception e) {
+			dataMap.kv("error", e.getMessage() + "; Stack: " + ExceptionUtils.getStackTrace(e));
+		}
 		return dataMap;
 	}
 }
