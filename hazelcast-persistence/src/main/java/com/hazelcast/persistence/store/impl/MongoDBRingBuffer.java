@@ -86,7 +86,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		}else{
 			currentSeq = this.smallestSequence.get();
 		}
-		long sleepMS = calcSleepTime(NULL -> currentSeq != lastSeq, type == 1 ? flushLargestSleepTime : flushSmallestSleepTime);
+		long sleepMS = calcSleepTime(NULL -> currentSeq == lastSeq, type == 1 ? flushLargestSleepTime : flushSmallestSleepTime);
 		if (sleepMS > 0) {
 			try {
 				Thread.sleep(sleepMS);
@@ -111,7 +111,8 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 			return 0L;
 		}
 		if (needSleep.test(null)) {
-			int factor = Math.max(sleepTime, 10);
+			int factor = Math.min(sleepTime, 10);
+			factor = Math.max(1, factor);
 			return factor * 500L;
 		} else {
 			return 0L;
