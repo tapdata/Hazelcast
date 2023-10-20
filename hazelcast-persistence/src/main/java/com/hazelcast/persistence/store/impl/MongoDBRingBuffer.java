@@ -129,11 +129,11 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		}
 		IndexOptions indexOptions = new IndexOptions().background(true);
 		MongoCollection<Document> mongoCollection = mongoDBResource.getMongoCollection();
-		Bson keyIndex = Indexes.ascending("ringBuffer", "key");
+		Bson keyIndex = Indexes.ascending("ringBuffer", "key", "_id"); // For load,loadAll
 		mongoCollection.createIndex(keyIndex, indexOptions);
-		keyIndex = Indexes.ascending("value.timestamp");
+		keyIndex = Indexes.ascending("ringBuffer", "value.timestamp", "_id"); // For findSequenceByTimestamp
 		mongoCollection.createIndex(keyIndex, indexOptions);
-		keyIndex = Indexes.ascending("ringBuffer", "value.timestamp", "_id");
+		keyIndex = Indexes.ascending("ringBuffer", "_id"); // For _getLargestSequence,_getSmallestSequence
 		mongoCollection.createIndex(keyIndex, indexOptions);
 	}
 
