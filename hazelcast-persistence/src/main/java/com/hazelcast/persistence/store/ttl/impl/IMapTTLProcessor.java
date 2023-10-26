@@ -46,7 +46,7 @@ public class IMapTTLProcessor extends BaseTTLProcessor {
 				if (null == _ts) {
 					return;
 				}
-				if (System.currentTimeMillis() - TimeUnit.MILLISECONDS.toMillis(_ts) < ttlMillis) {
+				if (System.currentTimeMillis() - TimeUnit.SECONDS.toMillis(_ts) < ttlMillis) {
 					return;
 				}
 				keys.add(map.get("key").toString());

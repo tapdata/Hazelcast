@@ -26,7 +26,7 @@ public class TTLService {
 	private static final Map<String, TTLConfig> configs = new ConcurrentHashMap<>();
 	public static final int DEFAULT_TTL_PROCESS_THREAD_NUMBER = 4;
 	private final static Map<String, TTLProcessor> TTL_PROCESSOR_MAP = new HashMap<>();
-	public static final long TTL_INTERVAL_HOURS = 1L;
+	public static final long TTL_INTERVAL_MS = TimeUnit.MINUTES.toMillis(60L);
 	private final AtomicBoolean isRunning = new AtomicBoolean();
 	private final Function<PersistenceStorageAbstractConfig, PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>>> createStoreFunc;
 	private final Logger logger;
@@ -61,7 +61,7 @@ public class TTLService {
 	public void start() {
 		if (isRunning.compareAndSet(false, true)) {
 			ScheduledExecutorService scheduledExecutorService = new ScheduledThreadPoolExecutor(1);
-			scheduledExecutorService.scheduleWithFixedDelay(this::doTTL, 0L, TTL_INTERVAL_HOURS, TimeUnit.HOURS);
+			scheduledExecutorService.scheduleWithFixedDelay(this::doTTL, TTL_INTERVAL_MS, TTL_INTERVAL_MS, TimeUnit.MILLISECONDS);
 		}
 	}
 
