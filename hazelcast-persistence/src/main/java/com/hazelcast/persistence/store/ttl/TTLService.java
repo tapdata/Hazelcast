@@ -5,6 +5,9 @@ import com.hazelcast.persistence.StorageMode;
 import com.hazelcast.persistence.config.PersistenceStorageAbstractConfig;
 import com.hazelcast.persistence.resource.ExternalResource;
 import com.hazelcast.persistence.store.PersistenceStorageStore;
+import io.tapdata.entity.memory.MemoryFetcher;
+import io.tapdata.entity.utils.DataMap;
+import io.tapdata.pdk.core.api.PDKIntegration;
 import org.apache.commons.collections4.ListUtils;
 import org.apache.logging.log4j.Logger;
 
@@ -22,7 +25,7 @@ import java.util.function.Supplier;
  * @Description
  * @create 2023-09-21 15:59
  **/
-public class TTLService {
+public class TTLService implements MemoryFetcher {
 	private static final Map<String, TTLConfig> configs = new ConcurrentHashMap<>();
 	public static final int DEFAULT_TTL_PROCESS_THREAD_NUMBER = 4;
 	private final static Map<String, TTLProcessor> TTL_PROCESSOR_MAP = new HashMap<>();
@@ -46,6 +49,7 @@ public class TTLService {
 				TTL_PROCESSOR_MAP.put(value.name(), ttlProcessor.get());
 			}
 		}
+		PDKIntegration.registerMemoryFetcher(TTLService.class.getSimpleName(), this);
 	}
 
 	public TTLConfig registerTTL(PersistenceStorageAbstractConfig persistenceStorageAbstractConfig, long ttlSeconds) {
@@ -93,6 +97,17 @@ public class TTLService {
 				ttlExecutorService.shutdownNow();
 			}
 		}
+	}
+
+	@Override
+	public DataMap memory(String keyRegex, String memoryLevel) {
+		DataMap dataMap = DataMap.create();
+		for (Map.Entry<String, TTLConfig> entry : configs.entrySet()) {
+			String key = entry.getKey();
+			TTLConfig value = entry.getValue();
+			dataMap.kv(key, "ttl seconds: " + value.getTtlSeconds());
+		}
+		return dataMap;
 	}
 
 	private class TTLRunner {
