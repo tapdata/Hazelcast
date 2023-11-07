@@ -36,6 +36,10 @@ public abstract class PersistenceStorageStore<T extends PersistenceStorageAbstra
 		this.enable.compareAndSet(true, false);
 	}
 
+	public PersistenceStorageAbstractConfig getPersistenceStorageAbstractConfig() {
+		return persistenceStorageAbstractConfig;
+	}
+
 	public boolean checkEnable() {
 		return this.enable.get();
 	}

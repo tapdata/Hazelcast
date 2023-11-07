@@ -162,6 +162,7 @@ public class PersistenceStorage {
         CommonUtils.ignoreAnyError(() -> removed.set(storeImplementationMap.destroy(referenceId, configKey)));
         if (removed.get()) {
             Optional.ofNullable(storeImplementationMap.get(configKey)).ifPresent(PersistenceStorageStore::disable);
+            Optional.ofNullable(ttlService).ifPresent(ts -> ts.removeTTL(persistenceConfigMap.get(configKey)));
         }
         return removed.get();
     }
