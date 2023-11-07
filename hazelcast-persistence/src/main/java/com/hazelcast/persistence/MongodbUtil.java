@@ -1,10 +1,11 @@
 package com.hazelcast.persistence;
 
 import com.mongodb.ConnectionString;
-import com.mongodb.client.MongoClient;
 import com.mongodb.MongoClientOptions;
 import com.mongodb.MongoClientSettings;
+import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
+import io.tapdata.entity.schema.value.DateTime;
 import org.bson.*;
 import org.bson.codecs.*;
 import org.bson.codecs.configuration.CodecRegistries;
@@ -23,60 +24,11 @@ import static java.lang.String.format;
  * @create 2022-11-16 15:48
  **/
 public class MongodbUtil {
-	public static MongoClient createClient(String uri) {
-		return createClient(uri, null);
-	}
-
-	/*public static MongoClient createClient(String uri, MongoClientOptions mongoClientOptions) {
-		if (null == uri || "".equals(uri)) {
-			throw new IllegalArgumentException("MongoDB uri cannot be blank");
-		}
-		MongoClientOptions.Builder builder;
-		if (null != mongoClientOptions) {
-			builder = MongoClientOptions.builder(mongoClientOptions);
-		} else {
-			builder = new MongoClientOptions.Builder();
-		}
-		builder.cursorFinalizerEnabled(false);
-		if (uri.indexOf("tlsAllowInvalidCertificates=true") > 0 ||
-				uri.indexOf("sslAllowInvalidCertificates=true") > 0) {
-			SSLContext sslContext;
-			try {
-				sslContext = SSLContext.getInstance("SSL");
-				sslContext.init(null, new TrustManager[]{new X509TrustManager() {
-					@Override
-					public void checkClientTrusted(X509Certificate[] x509Certificates, String s) throws CertificateException {
-					}
-
-					@Override
-					public void checkServerTrusted(X509Certificate[] x509Certificates, String s) throws CertificateException {
-					}
-
-					@Override
-					public X509Certificate[] getAcceptedIssuers() {
-						return null;
-					}
-				}}, new SecureRandom());
-			} catch (Exception e) {
-				throw new RuntimeException(String.format("Init SSL context failed, error: %s", e.getMessage()), e);
-			}
-			builder.sslEnabled(true).sslContext(sslContext).sslInvalidHostNameAllowed(true);
-		}
-		builder.codecRegistry(getForJavaCodecRegistry());
-		MongoClientURI mongoClientURI;
-		try {
-			mongoClientURI = new MongoClientURI(uri, builder);
-		} catch (Exception e) {
-			throw new IllegalArgumentException(String.format("Build mongo client uri failed, uri: %s, error: %s", uri, e.getMessage()), e);
-		}
-		return new MongoClient(mongoClientURI);
-	}*/
 
 	public static MongoClient createClient(String uri, MongoClientSettings settings) {
 		if (null == uri || "".equals(uri)) {
 			throw new IllegalArgumentException("MongoDB uri cannot be blank");
 		}
-		MongoClientOptions.Builder builder;
 		MongoClientSettings.Builder settingBuilder;
 		if (null != settings) {
 			settingBuilder = MongoClientSettings.builder(settings);
@@ -116,7 +68,7 @@ public class MongodbUtil {
 		return MongodbUtil.customCodecRegistry(
 				Arrays.asList(
 						new BigIntegerCodec(), new BigDecimalCodec(), new FloatCodec(), new ByteArrayCodec(),
-						new DateCodec(), new StringCodec()
+						new DateCodec(), new StringCodec(), new DateTimeCodec()
 				),
 				replacements
 		);
@@ -279,5 +231,26 @@ public class MongodbUtil {
 			return String.class;
 		}
 
+	}
+
+	private static class DateTimeCodec implements Codec<DateTime> {
+		@Override
+		public DateTime decode(BsonReader bsonReader, DecoderContext decoderContext) {
+			return new DateTime(bsonReader.readDateTime());
+		}
+
+		@Override
+		public void encode(BsonWriter bsonWriter, DateTime dateTime, EncoderContext encoderContext) {
+			if (null == dateTime) {
+				bsonWriter.writeNull();
+			} else {
+				bsonWriter.writeDateTime(dateTime.toLong());
+			}
+		}
+
+		@Override
+		public Class<DateTime> getEncoderClass() {
+			return DateTime.class;
+		}
 	}
 }
