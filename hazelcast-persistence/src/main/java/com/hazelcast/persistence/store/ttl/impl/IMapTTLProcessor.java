@@ -53,10 +53,12 @@ public class IMapTTLProcessor extends BaseTTLProcessor {
 				if (keys.size() == BATCH_SIZE) {
 					mapStore.deleteAll(keys);
 					keys.clear();
+					ttlProcessorContext.getLogger().info("TTL delete imap keys: {}, config: {}, persistence: {}", keys, ttlConfig, ttlProcessorContext.getStore().getPersistenceStorageAbstractConfig());
 				}
 			});
 			if (CollectionUtils.isNotEmpty(keys)) {
 				mapStore.deleteAll(keys);
+				ttlProcessorContext.getLogger().info("TTL delete imap keys: {}, config: {}, persistence: {}", keys, ttlConfig, ttlProcessorContext.getStore().getPersistenceStorageAbstractConfig());
 				keys.clear();
 			}
 		} catch (Exception e) {
