@@ -5,7 +5,6 @@ import com.hazelcast.persistence.PersistenceStorage;
 import com.hazelcast.persistence.config.PersistenceMongoDBConfig;
 import com.hazelcast.persistence.resource.impl.MongoDBResource;
 import com.hazelcast.persistence.store.PersistenceRingBufferStore;
-import com.mongodb.bulk.BulkWriteResult;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
 import com.mongodb.client.model.*;
@@ -36,6 +35,9 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 	public static final long FLUSH_LARGEST_PERIOD_MS = TimeUnit.SECONDS.toMillis(1L);
 	public static final long CLEAR_CACHE_MAP_PERIOD_MINUTE = 10L;
 	public static final String TAG = MongoDBRingBuffer.class.getSimpleName();
+	public static final String LOG_PREFIX = "[" + TAG + "]";
+	public static final String SIGN_KEY = "ringBuffer";
+	public static final String VALUE_KEY = "value";
 	private final AtomicLong largestSequence = new AtomicLong(-1L);
 	private final AtomicLong smallestSequence = new AtomicLong(0L);
 	private Document sign;
@@ -50,17 +52,15 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		return new Document(sign);
 	}
 
-	public MongoDBRingBuffer() {
-	}
-
 	@Override
 	public void doInit(PersistenceMongoDBConfig persistenceMongoDBConfig, MongoDBResource mongoDBResource) {
 		super.doInit(persistenceMongoDBConfig, mongoDBResource);
 		this.mongoDBResource = mongoDBResource;
 		this.persistenceMongoDBConfig = persistenceMongoDBConfig;
 		createIndex();
-		sign = new Document("ringBuffer", this.mongoDBResource.getMongoCollection().getNamespace().getCollectionName());
+		sign = new Document(SIGN_KEY, this.mongoDBResource.getMongoCollection().getNamespace().getCollectionName());
 		flushSequence();
+
 		if (persistenceMongoDBConfig.getSequenceMode() == PersistenceStorage.SequenceMode.STORE) {
 			this.flushSeqScheduler = new ScheduledThreadPoolExecutor(2);
 			this.flushSeqScheduler.scheduleWithFixedDelay(() -> {
@@ -76,6 +76,9 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 				flushSeqSleep(lastSeq, 2);
 			}, 0, FLUSH_SMALLEST_PERIOD_MS, TimeUnit.MILLISECONDS);
 		}
+		persistenceMongoDBConfig.getLogger().info(LOG_PREFIX + " Init finished, ringbuffer name: '{}', name space: '{}', head seq: {}, tail seq: {}",
+				persistenceMongoDBConfig.getName(), mongoDBResource.getMongoCollection().getNamespace().getFullName(),
+				this.smallestSequence.get(), this.largestSequence.get());
 		CommonUtils.ignoreAnyError(() -> PDKIntegration.registerMemoryFetcher(genMemoryKey(), this));
 	}
 
@@ -83,24 +86,25 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		long currentSeq;
 		if (type == 1) {
 			currentSeq = this.largestSequence.get();
-		}else{
+		} else {
 			currentSeq = this.smallestSequence.get();
 		}
-		long sleepMS = calcSleepTime(NULL -> currentSeq == lastSeq, type == 1 ? flushLargestSleepTime : flushSmallestSleepTime);
+		long sleepMS = calcSleepTime(unused -> currentSeq == lastSeq, type == 1 ? flushLargestSleepTime : flushSmallestSleepTime);
 		if (sleepMS > 0) {
 			try {
 				Thread.sleep(sleepMS);
-			} catch (InterruptedException ignored) {
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
 			}
 			if (type == 1) {
 				flushLargestSleepTime++;
-			}else{
+			} else {
 				flushSmallestSleepTime++;
 			}
 		} else {
 			if (type == 1) {
 				flushLargestSleepTime = 0;
-			}else{
+			} else {
 				flushSmallestSleepTime = 0;
 			}
 		}
@@ -129,11 +133,11 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		}
 		IndexOptions indexOptions = new IndexOptions().background(true);
 		MongoCollection<Document> mongoCollection = mongoDBResource.getMongoCollection();
-		Bson keyIndex = Indexes.ascending("ringBuffer", "key", "_id"); // For load,loadAll
+		Bson keyIndex = Indexes.ascending(SIGN_KEY, "key", "_id"); // For load,loadAll
 		mongoCollection.createIndex(keyIndex, indexOptions);
-		keyIndex = Indexes.ascending("ringBuffer", "value.timestamp", "_id"); // For findSequenceByTimestamp
+		keyIndex = Indexes.ascending(SIGN_KEY, "value.timestamp", "_id"); // For findSequenceByTimestamp
 		mongoCollection.createIndex(keyIndex, indexOptions);
-		keyIndex = Indexes.ascending("ringBuffer", "_id"); // For _getLargestSequence,_getSmallestSequence
+		keyIndex = Indexes.ascending(SIGN_KEY, "_id"); // For _getLargestSequence,_getSmallestSequence
 		mongoCollection.createIndex(keyIndex, indexOptions);
 	}
 
@@ -166,9 +170,8 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		if (!checkEnable() || mongoDBResource == null) {
 			return;
 		}
-		Document doc = getInsertDocument(sequence, document);
+		Document doc = getInsertDocument(largestSequence.incrementAndGet(), document);
 		this.mongoDBResource.getMongoCollection().insertOne(doc);
-		this.largestSequence.set(sequence);
 	}
 
 	@Override
@@ -182,16 +185,14 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 				continue;
 			}
 			Document document = (Document) value;
-			Document insertDocument = getInsertDocument(l++, document);
+			Document insertDocument = getInsertDocument(largestSequence.incrementAndGet(), document);
 			models.add(new InsertOneModel<>(insertDocument));
 		}
-		BulkWriteResult bulkWriteResult = this.mongoDBResource.getMongoCollection().bulkWrite(models, new BulkWriteOptions().ordered(true));
-		int insertedCount = bulkWriteResult.getInsertedCount();
-		this.largestSequence.set(this.largestSequence.get() + insertedCount);
+		this.mongoDBResource.getMongoCollection().bulkWrite(models, new BulkWriteOptions().ordered(true));
 	}
 
 	private Document getInsertDocument(long sequence, Document value) {
-		return new Document(sign()).append("key", sequence).append("value", value.append("_ts", System.currentTimeMillis() / 1000));
+		return new Document(sign()).append("key", sequence).append(VALUE_KEY, value.append("_ts", System.currentTimeMillis() / 1000));
 	}
 
 	@Override
@@ -221,8 +222,8 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		if (null == document) {
 			return null;
 		}
-		if (document.containsKey("value")) {
-			return (Document) document.get("value");
+		if (document.containsKey(VALUE_KEY)) {
+			return (Document) document.get(VALUE_KEY);
 		} else {
 			return null;
 		}
