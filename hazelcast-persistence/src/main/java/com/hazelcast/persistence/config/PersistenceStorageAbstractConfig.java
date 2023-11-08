@@ -3,6 +3,7 @@ package com.hazelcast.persistence.config;
 import com.hazelcast.persistence.ConstructType;
 import com.hazelcast.persistence.PersistenceStorage;
 import com.hazelcast.persistence.StorageMode;
+import com.hazelcast.persistence.store.StoreLogger;
 
 import java.util.StringJoiner;
 
@@ -18,6 +19,8 @@ public abstract class PersistenceStorageAbstractConfig {
 	protected Integer inMemSize = 100;
 	protected String maxSizePolicy;
 	protected int writeDelaySeconds = 0;
+	private StoreLogger logger = new StoreLogger() {
+	};
 
 	private PersistenceStorage.SequenceMode sequenceMode;
 
@@ -83,6 +86,14 @@ public abstract class PersistenceStorageAbstractConfig {
 	public PersistenceStorageAbstractConfig sequenceMode(PersistenceStorage.SequenceMode sequenceMode) {
 		this.sequenceMode = sequenceMode;
 		return this;
+	}
+
+	public StoreLogger getLogger() {
+		return logger;
+	}
+
+	public void setLogger(StoreLogger logger) {
+		this.logger = logger;
 	}
 
 	@Override
