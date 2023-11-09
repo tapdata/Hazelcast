@@ -1414,6 +1414,14 @@
                 <maven.source.skip>true</maven.source.skip>
             </properties>
         </profile>
+
+        <profile>
+            <id>tapdata-hazelcast-root</id>
+            <modules>
+                <module>hazelcast</module>
+                <module>hazelcast-archunit-rules</module>
+            </modules>
+        </profile>
     </profiles>
 
 <!--    <distributionManagement>
