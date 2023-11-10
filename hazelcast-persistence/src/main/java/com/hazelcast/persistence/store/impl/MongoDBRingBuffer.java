@@ -82,6 +82,15 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		CommonUtils.ignoreAnyError(() -> PDKIntegration.registerMemoryFetcher(genMemoryKey(), this));
 	}
 
+	@Override
+	public void lightInit() {
+		super.lightInit();
+		flushSequence();
+		persistenceMongoDBConfig.getLogger().info(LOG_PREFIX + " Light init finished, ringbuffer name: '{}', name space: '{}', head seq: {}, tail seq: {}",
+				persistenceMongoDBConfig.getName(), mongoDBResource.getMongoCollection().getNamespace().getFullName(),
+				this.smallestSequence.get(), this.largestSequence.get());
+	}
+
 	private void flushSeqSleep(long lastSeq, int type) {
 		long currentSeq;
 		if (type == 1) {

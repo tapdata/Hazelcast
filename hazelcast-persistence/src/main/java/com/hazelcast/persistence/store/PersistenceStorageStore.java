@@ -21,6 +21,13 @@ public abstract class PersistenceStorageStore<T extends PersistenceStorageAbstra
 	}
 
 	/**
+	 * Do some light init operation, do not load data
+	 */
+	public void lightInit() {
+		// do nothing
+	}
+
+	/**
 	 * Do some release operation, do not clear data
 	 */
 	public abstract void doDestroy();

@@ -238,6 +238,8 @@ public class PersistenceStorage {
             if (!store.checkEnable()) {
                 externalResource.doInit(persistenceStorageAbstractConfig);
                 store.doInit(persistenceStorageAbstractConfig, externalResource);
+            } else {
+                store.lightInit();
             }
             store.enable();
             storeImplementationMap.addReference(referenceId, configKey);
