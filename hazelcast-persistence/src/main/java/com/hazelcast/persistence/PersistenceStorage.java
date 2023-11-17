@@ -7,12 +7,15 @@ import com.hazelcast.persistence.config.PersistenceStorageAbstractConfig;
 import com.hazelcast.persistence.resource.ExternalResource;
 import com.hazelcast.persistence.resource.ExternalResourceFactory;
 import com.hazelcast.persistence.store.*;
+import com.hazelcast.persistence.store.ttl.TTLCleanMode;
+import com.hazelcast.persistence.store.ttl.TTLCleanRuleBase;
 import com.hazelcast.persistence.store.ttl.TTLService;
 import com.hazelcast.ringbuffer.Ringbuffer;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.Logger;
 import org.bson.Document;
 
+import java.lang.reflect.Constructor;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Optional;
@@ -352,6 +355,17 @@ public class PersistenceStorage {
         return setTTL(ConstructType.IMAP, imap.getName(), ttlSeconds);
     }
 
+    public PersistenceStorage setImapTTL(IMap<String, Object> imap,Long keyTTlSeconds ,Object condition,TTLCleanMode mode) throws Exception {
+        if(condition.getClass().equals(mode.getCondition()) && keyTTlSeconds > 0){
+            Class<?> clazz = Class.forName(mode.getTtlCleanRuleClazz());
+            Constructor<?> constructor = clazz.getConstructor(Long.class,mode.getCondition());
+            TTLCleanRuleBase ttlCleanRuleBase = (TTLCleanRuleBase) constructor.newInstance(keyTTlSeconds,condition);
+            return setTTL(ConstructType.IMAP,imap.getName(),0,ttlCleanRuleBase);
+        }
+        logger.warn("Register ttl failed needClass:{},inputClass:{},keyTTlSeconds:{}",mode.getCondition(),condition.getClass(),keyTTlSeconds);
+        return null;
+    }
+
     public PersistenceStorage setRingBufferTTL(Ringbuffer<Document> rb, long ttlSeconds) {
         /*ConstructType constructType = ConstructType.RINGBUFFER;
         PersistenceStorageAbstractConfig persistenceStorageAbstractConfig = getPersistenceStorageConfig(constructType, rb.getName());
@@ -438,6 +452,10 @@ public class PersistenceStorage {
 
     private static volatile TTLService ttlService;
     private PersistenceStorage setTTL(ConstructType constructType, String name, long ttlSeconds) {
+        return setTTL(constructType,name,ttlSeconds,null);
+    }
+
+    private PersistenceStorage setTTL(ConstructType constructType, String name, long ttlSeconds,TTLCleanRuleBase ttlCleanRuleBase) {
         if (null == ttlService) {
             synchronized (TTLService.class) {
                 if (null == ttlService) {
@@ -446,9 +464,9 @@ public class PersistenceStorage {
             }
         }
         PersistenceStorageAbstractConfig persistenceStorageConfig = getPersistenceStorageConfig(constructType, name);
-        ttlService.registerTTL(persistenceStorageConfig, ttlSeconds);
+        ttlService.registerTTL(persistenceStorageConfig,ttlSeconds,ttlCleanRuleBase);
+        logger.info("Register ttl successfully,ttlRule:{},ttlSeconds:{}",ttlCleanRuleBase,ttlCleanRuleBase.getKeyTTLSeconds());
         ttlService.start();
-
         return this;
     }
 

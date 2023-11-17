@@ -11,12 +11,14 @@ import com.hazelcast.jet.Job;
 import com.hazelcast.jet.core.*;
 import com.hazelcast.map.IMap;
 import com.hazelcast.persistence.config.*;
+import com.hazelcast.persistence.store.ttl.TTLCleanMode;
 import com.hazelcast.ringbuffer.OverflowPolicy;
 import com.hazelcast.ringbuffer.Ringbuffer;
 import com.mongodb.ConnectionString;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
+import io.jsonwebtoken.lang.Assert;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.bson.Document;
 import org.junit.jupiter.api.AfterAll;
@@ -115,6 +117,38 @@ public class PersistenceStorageTests {
 		Assertions.assertFalse(PersistenceMongoDBConfig.create(ConstructType.IMAP, "imap").equals(PersistenceHttpConfig.create(ConstructType.IMAP, "imap", Collections.singletonList(""), "")));
 		Assertions.assertTrue(PersistenceRocksDBConfig.create(ConstructType.RINGBUFFER, "ringbuffer").equals(PersistenceRocksDBConfig.create(ConstructType.RINGBUFFER, "ringbuffer")));
 		Assertions.assertFalse(PersistenceInMemConfig.create(ConstructType.IMAP).equals(PersistenceInMemConfig.create(ConstructType.RINGBUFFER)));
+	}
+	@Test
+	public void setImapTTLTest() throws Exception {
+		PersistenceMongoDBConfig imapMongoDBConfig = PersistenceMongoDBConfig.create(ConstructType.IMAP, "imap")
+				.uri("mongodb://root:Gotapd8!@139.198.127.204:32550/qa?authSource=admin")
+				.database("hazelcast")
+				.collection("imap_default_config");
+		persistenceStorage.addConfig(imapMongoDBConfig);
+		PersistenceStorage resultPersistenceStorage = persistenceStorage.setImapTTL(hazelcastInstance.getMap("imap"),100L,"check", TTLCleanMode.FUZZY_MATCHING);
+		Assertions.assertTrue(resultPersistenceStorage==persistenceStorage);
+	}
+
+	@Test
+	public void setImapTTLTest_ttlIsZero() throws Exception {
+		PersistenceMongoDBConfig imapMongoDBConfig = PersistenceMongoDBConfig.create(ConstructType.IMAP, "imap")
+				.uri("mongodb://root:Gotapd8!@139.198.127.204:32550/qa?authSource=admin")
+				.database("hazelcast")
+				.collection("imap_default_config");
+		persistenceStorage.addConfig(imapMongoDBConfig);
+		PersistenceStorage resultPersistenceStorage = persistenceStorage.setImapTTL(hazelcastInstance.getMap("imap"),0L,"check", TTLCleanMode.FUZZY_MATCHING);
+		Assert.isNull(resultPersistenceStorage);
+	}
+
+	@Test
+	public void setImapTTLTest_ttlIsNegativeNumber() throws Exception {
+		PersistenceMongoDBConfig imapMongoDBConfig = PersistenceMongoDBConfig.create(ConstructType.IMAP, "imap")
+				.uri("mongodb://root:Gotapd8!@139.198.127.204:32550/qa?authSource=admin")
+				.database("hazelcast")
+				.collection("imap_default_config");
+		persistenceStorage.addConfig(imapMongoDBConfig);
+		PersistenceStorage resultPersistenceStorage = persistenceStorage.setImapTTL(hazelcastInstance.getMap("imap"),-2L,"check", TTLCleanMode.FUZZY_MATCHING);
+		Assert.isNull(resultPersistenceStorage);
 	}
 
 	public static void main(String[] args) throws Throwable {
