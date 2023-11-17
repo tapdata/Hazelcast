@@ -362,6 +362,7 @@ public class PersistenceStorage {
             TTLCleanRuleBase ttlCleanRuleBase = (TTLCleanRuleBase) constructor.newInstance(keyTTlSeconds,condition);
             return setTTL(ConstructType.IMAP,imap.getName(),0,ttlCleanRuleBase);
         }
+        logger.warn("Register ttl failed needClass:{},inputClass:{},keyTTlSeconds:{}",mode.getCondition(),condition.getClass(),keyTTlSeconds);
         return null;
     }
 
@@ -464,6 +465,7 @@ public class PersistenceStorage {
         }
         PersistenceStorageAbstractConfig persistenceStorageConfig = getPersistenceStorageConfig(constructType, name);
         ttlService.registerTTL(persistenceStorageConfig,ttlSeconds,ttlCleanRuleBase);
+        logger.info("Register ttl successfully,ttlRule:{},ttlSeconds:{}",ttlCleanRuleBase,ttlCleanRuleBase.getKeyTTLSeconds());
         ttlService.start();
         return this;
     }
