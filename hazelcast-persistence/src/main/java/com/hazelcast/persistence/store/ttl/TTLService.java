@@ -52,9 +52,16 @@ public class TTLService implements MemoryFetcher {
 		PDKIntegration.registerMemoryFetcher(TTLService.class.getSimpleName(), this);
 	}
 
-	public TTLConfig registerTTL(PersistenceStorageAbstractConfig persistenceStorageAbstractConfig, long ttlSeconds) {
-		configs.computeIfAbsent(persistenceStorageAbstractConfig.getName(), k -> new TTLConfig(persistenceStorageAbstractConfig, ttlSeconds));
-		configs.computeIfPresent(persistenceStorageAbstractConfig.getName(), (k, v) -> new TTLConfig(persistenceStorageAbstractConfig, ttlSeconds));
+	public TTLConfig registerTTL(PersistenceStorageAbstractConfig persistenceStorageAbstractConfig,long ttlSeconds,TTLCleanRuleBase ttlCleanRuleBase) {
+		configs.computeIfAbsent(persistenceStorageAbstractConfig.getName(), k ->{
+			if(ttlCleanRuleBase == null)return new TTLConfig(persistenceStorageAbstractConfig, ttlSeconds);
+			return new TTLConfig(persistenceStorageAbstractConfig,ttlSeconds,ttlCleanRuleBase);
+		});
+		configs.computeIfPresent(persistenceStorageAbstractConfig.getName(), (k, v) -> {
+			if(ttlCleanRuleBase != null) v.addTTLCleanRule(ttlCleanRuleBase);
+			if(ttlSeconds > 0) v.setTtlSeconds(ttlSeconds);
+			return v;
+		});
 		return configs.get(persistenceStorageAbstractConfig.getName());
 	}
 
