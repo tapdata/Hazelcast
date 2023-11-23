@@ -466,7 +466,9 @@ public class PersistenceStorage {
         }
         PersistenceStorageAbstractConfig persistenceStorageConfig = getPersistenceStorageConfig(constructType, name);
         ttlService.registerTTL(persistenceStorageConfig,ttlSeconds,ttlCleanRuleBase);
-        logger.info("Register ttl successfully,ttlRule:{},ttlSeconds:{}",ttlCleanRuleBase,ttlCleanRuleBase.getKeyTTLSeconds());
+        if (null != ttlCleanRuleBase) {
+            logger.info("Register ttl successfully,ttlRule:{},ttlSeconds:{}",ttlCleanRuleBase,ttlCleanRuleBase.getKeyTTLSeconds());
+        }
         ttlService.start();
         return this;
     }
