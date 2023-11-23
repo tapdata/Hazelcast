@@ -12,6 +12,7 @@ import com.hazelcast.persistence.store.ttl.TTLCleanRuleBase;
 import com.hazelcast.persistence.store.ttl.TTLService;
 import com.hazelcast.ringbuffer.Ringbuffer;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.bson.Document;
 
@@ -25,7 +26,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public class PersistenceStorage {
     private final ConcurrentHashMap<String, Thread> ttlThreadMap = new ConcurrentHashMap<>();
-    private Logger logger;
+    private Logger logger = LogManager.getLogger(PersistenceStorage.class);
     private final ConcurrentHashMap<String, PersistenceStorageAbstractConfig> persistenceConfigMap = new ConcurrentHashMap<>();
     private final MultiReferenceMap<String, PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>>> storeImplementationMap = new MultiReferenceMap<String, PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>>>() {
         @Override
