@@ -18,6 +18,7 @@ import java.util.function.Consumer;
 public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, MongoDBResource> {
 	protected static final int STORE_ALL_BATCH_SIZE = 1000;
 	protected static final int QUERY_BATCH_SIZE = 20;
+	public static final String VALUE_KEY = "value";
 	protected Document sign;
 	private MongoDBResource mongoDBResource;
 	private PersistenceMongoDBConfig persistenceMongoDBConfig;
@@ -27,6 +28,7 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 	}
 
 	public MongoDBIMap() {
+		// do nothing
 	}
 
 	@Override
@@ -91,7 +93,7 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 		}
 		value = ((Document) value).append("_ts", System.currentTimeMillis() / 1000);
 		Document query = sign().append("key", key);
-		Document doc = new Document(query).append("value", value);
+		Document doc = new Document(query).append(VALUE_KEY, value);
 		ReplaceOptions options = new ReplaceOptions().upsert(true);
 		this.mongoDBResource.getMongoCollection().replaceOne(query, doc, options);
 	}
@@ -109,7 +111,7 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 			Object value = entry.getValue();
 			value = ((Document) value).append("_ts", System.currentTimeMillis() / 1000);
 			Document query = sign().append("key", key);
-			Document doc = new Document(query).append("value", value);
+			Document doc = new Document(query).append(VALUE_KEY, value);
 			ReplaceOptions replaceOptions = new ReplaceOptions().upsert(true);
 			ReplaceOneModel<Document> replaceOneModel = new ReplaceOneModel<>(query, doc, replaceOptions);
 			writeModels.add(replaceOneModel);
@@ -162,7 +164,7 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 			Document query = sign().append("key", key);
 			Document doc = this.mongoDBResource.getMongoCollection().find(query).first();
 			if (doc != null) {
-				return (Document) doc.get("value");
+				return (Document) doc.get(VALUE_KEY);
 			}
 		}
 		return null;
@@ -194,16 +196,32 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 	private void loadAll(Collection<String> keys, Map<String, Object> result) {
 		Document query = sign().append("key", new Document("$in", keys));
 		for (Document data : this.mongoDBResource.getMongoCollection().find(query)) {
-			if(null == data) continue;
-			if(!data.containsKey("value")) continue;
-			if(!(data.get("value") instanceof Map)) continue;
-			result.put(data.getString("key"), data.get("value"));
+			if (null == data) continue;
+			if (!data.containsKey(VALUE_KEY)) continue;
+			if (!(data.get(VALUE_KEY) instanceof Map)) continue;
+			result.put(data.getString("key"), data.get(VALUE_KEY));
 		}
 	}
 
 	public Iterable<String> loadAllKeys() {
-		// do not support this function
-		return null;
+		return () -> new Iterator<String>() {
+			final MongoCursor<Document> mongoCursor = mongoDBResource.getMongoCollection().find(sign()).projection(new Document("key", 1)).sort(Sorts.ascending("_id")).limit(1000).iterator();
+
+			@Override
+			public boolean hasNext() {
+				return mongoCursor.hasNext();
+			}
+
+			@Override
+			public String next() {
+				Document document = mongoCursor.next();
+				if (document.containsKey("key") && document.get("Key") instanceof String) {
+					return document.getString("key");
+				} else {
+					return "";
+				}
+			}
+		};
 	}
 
 	@Override
