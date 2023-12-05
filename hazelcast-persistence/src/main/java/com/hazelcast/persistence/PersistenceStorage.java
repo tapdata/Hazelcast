@@ -297,62 +297,6 @@ public class PersistenceStorage {
     }
 
     public PersistenceStorage setImapTTL(IMap<String, Object> imap, long ttlSeconds) {
-        /*ConstructType constructType = ConstructType.IMAP;
-        PersistenceStorageAbstractConfig persistenceStorageAbstractConfig = getPersistenceStorageConfig(constructType, imap.getName());
-        StorageMode storageMode = persistenceStorageAbstractConfig.getStorageMode();
-        if (storageMode == StorageMode.Mem || storageMode == StorageMode.HTTP_TM) {
-            return this;
-        }
-        String ttlThreadKey = getTtlThreadKey(constructType, imap.getName());
-        if (ttlThreadMap.containsKey(ttlThreadKey)) {
-            // use thread's interrupt method to stop pre ttl thread
-            ttlThreadMap.get(ttlThreadKey).interrupt();
-        }
-        Thread ttlThread = new Thread(() -> {
-            Thread.currentThread().setName(String.format("Clear-IMap-TTL-%s", ttlThreadKey));
-            long sleepSeconds = TimeUnit.HOURS.toSeconds(1L);
-            PersistenceMapStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> persistenceMapStore = null;
-            try {
-                PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> store = createStore(persistenceStorageAbstractConfig);
-                if (store instanceof PersistenceMapStore) {
-                    persistenceMapStore = (PersistenceMapStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>>) store;
-                } else {
-                    return;
-                }
-                while (ttlIsRunning()) {
-                    try {
-                        TimeUnit.SECONDS.sleep(sleepSeconds);
-                    } catch (InterruptedException e) {
-                        break;
-                    }
-                    try {
-                        Iterator<Map.Entry<String, Object>> iterator = imap.iterator();
-                        while (ttlIsRunning() && iterator.hasNext()) {
-                            Map.Entry<String, Object> entry = iterator.next();
-                            Object value = entry.getValue();
-                            if (!(value instanceof Document)) {
-                                continue;
-                            }
-                            Document document = (Document) entry.getValue();
-                            Long _ts = getTs(document);
-                            if (System.currentTimeMillis() - _ts * 1000 < ttlSeconds * 1000) {
-                                break;
-                            }
-                            persistenceMapStore.delete(entry.getKey());
-                        }
-                    } catch (Exception e) {
-                        if (null != logger) {
-                            logger.warn("IMap [{}] clear ttl data failed, ttl seconds: {}", imap.getName(), ttlSeconds, e);
-                        }
-                    }
-                }
-            } finally {
-                Optional.ofNullable(persistenceMapStore).ifPresent(PersistenceStorageStore::doDestroy);
-            }
-        });
-        ttlThread.start();
-        ttlThreadMap.put(ttlThreadKey, ttlThread);
-        return this;*/
         return setTTL(ConstructType.IMAP, imap.getName(), ttlSeconds);
     }
 
@@ -368,86 +312,6 @@ public class PersistenceStorage {
     }
 
     public PersistenceStorage setRingBufferTTL(Ringbuffer<Document> rb, long ttlSeconds) {
-        /*ConstructType constructType = ConstructType.RINGBUFFER;
-        PersistenceStorageAbstractConfig persistenceStorageAbstractConfig = getPersistenceStorageConfig(constructType, rb.getName());
-        StorageMode storageMode = persistenceStorageAbstractConfig.getStorageMode();
-        if (storageMode == StorageMode.Mem || storageMode == StorageMode.HTTP_TM) {
-            return this;
-        }
-        String ttlThreadKey = getTtlThreadKey(constructType, rb.getName());
-        if (ttlThreadMap.containsKey(ttlThreadKey)) {
-            // use thread's interrupt method to stop pre ttl thread
-            ttlThreadMap.get(ttlThreadKey).interrupt();
-        }
-        Thread ttlThread = new Thread(() -> {
-            Thread.currentThread().setName(String.format("Clear-RingBuffer-TTL-%s-%s-%s", storageMode.name(), rb.getName(), ttlSeconds));
-            long sleepSeconds = 60;
-            long ttlMillis = TimeUnit.SECONDS.toMillis(ttlSeconds);
-            if (ttlSeconds < 60) {
-                sleepSeconds = ttlSeconds;
-            }
-            if (sleepSeconds < 10) {
-                sleepSeconds = 10;
-            }
-            PersistenceRingBufferStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> persistenceRingBufferStore = null;
-            try {
-                PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> store = createStore(persistenceStorageAbstractConfig);
-                if (store instanceof PersistenceRingBufferStore) {
-                    persistenceRingBufferStore = (PersistenceRingBufferStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>>) store;
-                } else {
-                    return;
-                }
-                while (ttlIsRunning()) {
-                    try {
-                        TimeUnit.SECONDS.sleep(sleepSeconds);
-                    } catch (InterruptedException e) {
-                        break;
-                    }
-                    try {
-                        if (rb.tailSequence() < 0) {
-                            continue;
-                        }
-                        long s = rb.headSequence() - 1;
-                        while (ttlIsRunning()) {
-                            s++;
-                            if (s >= rb.tailSequence()) {
-                                break;
-                            }
-                            Document document = null;
-                            try {
-                                Object obj = persistenceRingBufferStore.load(s);
-                                if (obj instanceof Document) {
-                                    document = (Document) obj;
-                                }
-                            } catch (Exception e) {
-                                throw new RuntimeException("Read one from ringBuffer failed, sequence: " + s, e);
-                            }
-                            if (null == document) {
-                                continue;
-                            }
-                            if (document.containsKey("type") && "SIGN".equals(document.getString("type"))) {
-                                continue;
-                            }
-                            Long _ts = getTs(document);
-                            if (_ts == null) continue;
-                            if (System.currentTimeMillis() - TimeUnit.SECONDS.toMillis(_ts) < ttlMillis) {
-                                break;
-                            }
-                            persistenceRingBufferStore.delete(s);
-                        }
-                    } catch (Exception e) {
-                        if (null != logger) {
-                            logger.warn("Ringbuffer [{}] clear ttl data failed, ttl seconds: {}", rb.getName(), ttlSeconds, e);
-                        }
-                    }
-                }
-            } finally {
-                Optional.ofNullable(persistenceRingBufferStore).ifPresent(PersistenceStorageStore::doDestroy);
-            }
-        });
-        ttlThread.start();
-        ttlThreadMap.put(ttlThreadKey, ttlThread);
-        return this;*/
         return setTTL(ConstructType.RINGBUFFER, rb.getName(), ttlSeconds);
     }
 
@@ -546,6 +410,14 @@ public class PersistenceStorage {
             }
         }
         return rb.tailSequence() + 1L;
+    }
+
+    public boolean isEmpty(ConstructType constructType, String name) {
+        PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> store = storeImplementationMap.get(getConfigKey(constructType, name));
+        if (null == store) {
+            return true;
+        }
+        return store.isEmpty();
     }
 
     public enum SequenceMode {

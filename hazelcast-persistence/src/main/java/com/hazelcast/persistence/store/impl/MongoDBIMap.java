@@ -204,24 +204,8 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 	}
 
 	public Iterable<String> loadAllKeys() {
-		return () -> new Iterator<String>() {
-			final MongoCursor<Document> mongoCursor = mongoDBResource.getMongoCollection().find(sign()).projection(new Document("key", 1)).sort(Sorts.ascending("_id")).limit(1000).iterator();
-
-			@Override
-			public boolean hasNext() {
-				return mongoCursor.hasNext();
-			}
-
-			@Override
-			public String next() {
-				Document document = mongoCursor.next();
-				if (document.containsKey("key") && document.get("Key") instanceof String) {
-					return document.getString("key");
-				} else {
-					return "";
-				}
-			}
-		};
+		// do not support this function
+		return null;
 	}
 
 	@Override
@@ -269,6 +253,13 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 		@Override
 		public Document next() {
 			return mongoCursor.next();
+		}
+	}
+
+	@Override
+	public boolean isEmpty() {
+		try (MongoCursor<Document> mongoCursor = mongoDBResource.getMongoCollection().find().limit(1).iterator()) {
+			return !mongoCursor.hasNext();
 		}
 	}
 }

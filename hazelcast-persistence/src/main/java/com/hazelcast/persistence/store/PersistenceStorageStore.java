@@ -59,4 +59,8 @@ public abstract class PersistenceStorageStore<T extends PersistenceStorageAbstra
 		}
 		return config.equals(persistenceStorageAbstractConfig);
 	}
+
+	public boolean isEmpty() {
+		throw new UnsupportedOperationException();
+	}
 }
