@@ -107,7 +107,7 @@ public class MongoDBGlobalResource {
 
 		private int getPartitionCode(PersistenceMongoDBConfig persistenceMongoDBConfig) {
 			String name = persistenceMongoDBConfig.getName();
-			int hash = Objects.hash(name);
+			int hash = Math.abs(Objects.hash(name));
 			return hash % partitionSize;
 		}
 
