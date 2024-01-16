@@ -138,7 +138,7 @@ public class RocksDBRingBuffer extends PersistenceRingBufferStore<PersistenceRoc
 
 	@Override
 	public long getLargestSequence() {
-		return largestSequence;
+		return _getLargestSequence();
 	}
 
 	public long _getLargestSequence() {
