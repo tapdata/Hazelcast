@@ -2,8 +2,8 @@ package com.hazelcast.persistence.resource.impl;
 
 import com.hazelcast.persistence.config.PersistenceMongoDBConfig;
 import com.hazelcast.persistence.resource.ExternalResource;
-import com.mongodb.client.MongoClient;
 import com.mongodb.MongoClientURI;
+import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import org.apache.commons.lang3.StringUtils;
@@ -41,15 +41,20 @@ public class MongoDBResource extends ExternalResource<PersistenceMongoDBConfig> 
 			throw new IllegalArgumentException("MongoDB collection cannot be blank");
 		}
 
-		this.mongoClient = MongoDBGlobalResource.getInstance().getMongoClient(persistenceMongoDBConfig);
-		this.mongoDatabase = mongoClient.getDatabase(db);
-		this.mongoCollection = mongoClient.getDatabase(db).getCollection(collection);
+		if (null == mongoClient) {
+			this.mongoClient = MongoDBGlobalResource.getInstance().getMongoClient(persistenceMongoDBConfig);
+			this.mongoDatabase = mongoClient.getDatabase(db);
+			this.mongoCollection = mongoClient.getDatabase(db).getCollection(collection);
+		}
 	}
 
 	@Override
 	public void close() throws IOException {
-		MongoDBGlobalResource.getInstance().close(((PersistenceMongoDBConfig) persistenceStorageAbstractConfig));
-		this.mongoClient = null;
+		try {
+			MongoDBGlobalResource.getInstance().close(((PersistenceMongoDBConfig) persistenceStorageAbstractConfig));
+		} finally {
+			this.mongoClient = null;
+		}
 	}
 
 	public MongoClient getMongoClient() {

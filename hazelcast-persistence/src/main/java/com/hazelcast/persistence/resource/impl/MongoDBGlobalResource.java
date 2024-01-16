@@ -43,7 +43,7 @@ public class MongoDBGlobalResource {
 
 	public MongoClient getMongoClient(PersistenceMongoDBConfig persistenceMongoDBConfig) {
 		if (null == persistenceMongoDBConfig) {
-			throw new IllegalArgumentException("Mongo config cannot be null");
+			throw new IllegalArgumentException("MongoDB config cannot be null");
 		}
 		if (StringUtils.isBlank(persistenceMongoDBConfig.getUri())) {
 			throw new IllegalArgumentException("MongoDB uri can not be null");
@@ -102,7 +102,7 @@ public class MongoDBGlobalResource {
 
 		public MongoClient getMongoClientWithPartition(PersistenceMongoDBConfig persistenceMongoDBConfig) {
 			int partitionCode = getPartitionCode(persistenceMongoDBConfig);
-			return mongoClientHolderMap.computeIfAbsent(partitionCode + "", key -> new MongoClientHolder(persistenceMongoDBConfig)).getMongoClient();
+			return mongoClientHolderMap.computeIfAbsent(partitionCode + "", key -> new MongoClientHolder(persistenceMongoDBConfig, this)).getMongoClient();
 		}
 
 		private int getPartitionCode(PersistenceMongoDBConfig persistenceMongoDBConfig) {
@@ -126,9 +126,15 @@ public class MongoDBGlobalResource {
 		private final AtomicInteger usage = new AtomicInteger(0);
 		private final PersistenceMongoDBConfig persistenceMongoDBConfig;
 		private MongoClient mongoClient;
+		private MongoClientPartition mongoClientPartition;
 
 		public MongoClientHolder(PersistenceMongoDBConfig persistenceMongoDBConfig) {
 			this.persistenceMongoDBConfig = persistenceMongoDBConfig;
+		}
+
+		public MongoClientHolder(PersistenceMongoDBConfig persistenceMongoDBConfig, MongoClientPartition mongoClientPartition) {
+			this.persistenceMongoDBConfig = persistenceMongoDBConfig;
+			this.mongoClientPartition = mongoClientPartition;
 		}
 
 		public synchronized MongoClient getMongoClient() {
@@ -199,6 +205,7 @@ public class MongoDBGlobalResource {
 			if (usage.decrementAndGet() <= 0) {
 				if (null != mongoClient) {
 					mongoClient.close();
+					mongoClient = null;
 					return true;
 				}
 			}

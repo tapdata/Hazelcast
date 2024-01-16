@@ -239,8 +239,8 @@ public class PersistenceStorage {
         }
         if (storeImplementationMap.containsKey(configKey)) {
             PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> store = storeImplementationMap.get(configKey);
+            externalResource.doInit(persistenceStorageAbstractConfig);
             if (!store.checkEnable()) {
-                externalResource.doInit(persistenceStorageAbstractConfig);
                 store.doInit(persistenceStorageAbstractConfig, externalResource);
             } else {
                 store.lightInit();
