@@ -20,7 +20,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
 
 public class RocksDBRingBuffer extends PersistenceRingBufferStore<PersistenceRocksDBConfig, RocksDBResource> {
 	private static final String keySplit = "__0x1__";
