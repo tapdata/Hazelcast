@@ -17,7 +17,10 @@ import org.rocksdb.RocksDBException;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class RocksDBRingBuffer extends PersistenceRingBufferStore<PersistenceRocksDBConfig, RocksDBResource> {
 	private static final String keySplit = "__0x1__";
@@ -31,6 +34,7 @@ public class RocksDBRingBuffer extends PersistenceRingBufferStore<PersistenceRoc
 	private RocksDBResource rocksDBResource;
 	private PersistenceRocksDBConfig persistenceRocksDBConfig;
 
+	private static Map<String, Long> sequenceMap = new ConcurrentHashMap<>();
 	static {
 		documentCodec = new DocumentCodec(MongodbUtil.getForJavaCodecRegistry());
 		encoderContext = EncoderContext.builder()
@@ -53,6 +57,11 @@ public class RocksDBRingBuffer extends PersistenceRingBufferStore<PersistenceRoc
 	private void flushSequence() {
 		this.largestSequence = this._getLargestSequence();
 		this.smallestSequence = this._getSmallestSequence();
+		String smallKey = sign + smallestSequenceKey;
+		String largeKey = sign + largestSequenceKey;
+		sequenceMap.put(smallKey,smallestSequence);
+		sequenceMap.put(largeKey,largestSequence);
+
 	}
 
 	@Override
@@ -89,6 +98,7 @@ public class RocksDBRingBuffer extends PersistenceRingBufferStore<PersistenceRoc
 			}
 			largestSequence = sequence;
 			key = sign + largestSequenceKey;
+			sequenceMap.put(key,largestSequence);
 			this.rocksDBResource.getRocksDB().put(key.getBytes(StandardCharsets.UTF_8), ((Long) sequence).toString().getBytes());
 		} catch (Exception e) {
 			throw new RuntimeException(e);
@@ -138,7 +148,7 @@ public class RocksDBRingBuffer extends PersistenceRingBufferStore<PersistenceRoc
 
 	@Override
 	public long getLargestSequence() {
-		return _getLargestSequence();
+		return sequenceMap.get(sign + largestSequenceKey);
 	}
 
 	public long _getLargestSequence() {
