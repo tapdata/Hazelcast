@@ -84,7 +84,7 @@ public class RocksDBRingBuffer extends PersistenceRingBufferStore<PersistenceRoc
 		if (!checkEnable()) {
 			return;
 		}
-		value = document.append("_ts", System.currentTimeMillis() / 1000);
+		document.append("_ts", System.currentTimeMillis() / 1000);
 		String key = sign + sequence;
 		try (
 				BasicOutputBuffer outputBuffer = new BasicOutputBuffer()
