@@ -11,6 +11,7 @@ import io.tapdata.entity.memory.MemoryFetcher;
 import io.tapdata.entity.utils.DataMap;
 import io.tapdata.pdk.core.api.PDKIntegration;
 import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.StringUtils;
 
 import javax.net.ssl.SSLContext;
@@ -56,7 +57,7 @@ public class MongoDBGlobalResource implements MemoryFetcher {
 			throw new IllegalArgumentException("MongoDB uri can not be null");
 		}
 		String mongoClientKey = getMongoClientKey(persistenceMongoDBConfig.getUri());
-		return RESOURCE_MAP.computeIfAbsent(mongoClientKey, key -> new MongoClientPartition()).getMongoClientWithPartition(persistenceMongoDBConfig);
+		return RESOURCE_MAP.computeIfAbsent(mongoClientKey, key -> new MongoClientPartition(mongoClientKey)).getMongoClientWithPartition(persistenceMongoDBConfig);
 	}
 
 	public void close(PersistenceMongoDBConfig persistenceMongoDBConfig) {
@@ -127,8 +128,13 @@ public class MongoDBGlobalResource implements MemoryFetcher {
 
 	private static class MongoClientPartition {
 		public static final int DEFAULT_PARTITION_SIZE = 8;
-		private Map<String, MongoClientHolder> mongoClientHolderMap = new ConcurrentHashMap<>();
+		private final Map<String, MongoClientHolder> mongoClientHolderMap = new ConcurrentHashMap<>();
 		private int partitionSize = DEFAULT_PARTITION_SIZE;
+		private String mongoClientKey;
+
+		public MongoClientPartition(String mongoClientKey) {
+			this.mongoClientKey = mongoClientKey;
+		}
 
 		public MongoClientPartition partitionSize(int partitionSize) {
 			this.partitionSize = partitionSize;
@@ -141,7 +147,7 @@ public class MongoDBGlobalResource implements MemoryFetcher {
 
 		public MongoClient getMongoClientWithPartition(PersistenceMongoDBConfig persistenceMongoDBConfig) {
 			int partitionCode = getPartitionCode(persistenceMongoDBConfig);
-			return mongoClientHolderMap.computeIfAbsent(partitionCode + "", key -> new MongoClientHolder(persistenceMongoDBConfig, this, partitionCode))
+			return mongoClientHolderMap.computeIfAbsent(String.valueOf(partitionCode), key -> new MongoClientHolder(persistenceMongoDBConfig, this, partitionCode))
 					.addConfig(persistenceMongoDBConfig)
 					.getMongoClient();
 		}
@@ -154,12 +160,15 @@ public class MongoDBGlobalResource implements MemoryFetcher {
 
 		public boolean close(PersistenceMongoDBConfig persistenceMongoDBConfig) {
 			int partitionCode = getPartitionCode(persistenceMongoDBConfig);
-			return mongoClientHolderMap.computeIfPresent(partitionCode + "", (k, v) -> {
-				if (v.close()) {
-					return null;
-				}
-				return v;
-			}) == null;
+			synchronized (this.mongoClientHolderMap) {
+				mongoClientHolderMap.computeIfPresent(String.valueOf(partitionCode), (k, v) -> {
+					if (v.close()) {
+						return null;
+					}
+					return v;
+				});
+				return MapUtils.isEmpty(mongoClientHolderMap);
+			}
 		}
 	}
 
