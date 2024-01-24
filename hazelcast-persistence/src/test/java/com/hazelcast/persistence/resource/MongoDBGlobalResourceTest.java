@@ -15,17 +15,17 @@ import java.util.Map;
  * @Description
  * @create 2023-09-19 16:52
  **/
-public class MongoDBGlobalResourceTest {
+class MongoDBGlobalResourceTest {
 
 	@Test
-	public void testGetInstance() {
+	void testGetInstance() {
 		MongoDBGlobalResource instance1 = MongoDBGlobalResource.getInstance();
 		MongoDBGlobalResource instance2 = MongoDBGlobalResource.getInstance();
 		Assertions.assertSame(instance1, instance2);
 	}
 
 	@Test
-	public void testGetOneMongoClient() {
+	void testGetOneMongoClient() {
 		MongoDBGlobalResource instance = MongoDBGlobalResource.getInstance();
 		PersistenceMongoDBConfig mongoDBConfig = PersistenceMongoDBConfig.create(ConstructType.IMAP, "map1")
 				.uri("mongodb://user:pwd@localhost:27017");
@@ -35,7 +35,7 @@ public class MongoDBGlobalResourceTest {
 	}
 
 	@Test
-	public void testGetTwoSameMongoClient() {
+	void testGetTwoSameMongoClient() {
 		MongoDBGlobalResource instance = MongoDBGlobalResource.getInstance();
 		PersistenceMongoDBConfig mongoDBConfig1 = PersistenceMongoDBConfig.create(ConstructType.IMAP, "map1")
 				.uri("mongodb://user:pwd@localhost:27017");
@@ -47,7 +47,7 @@ public class MongoDBGlobalResourceTest {
 	}
 
 	@Test
-	public void testGetTwoDiffNameMongoClient() {
+	void testGetTwoDiffNameMongoClient() {
 		MongoDBGlobalResource instance = MongoDBGlobalResource.getInstance();
 		PersistenceMongoDBConfig mongoDBConfig1 = PersistenceMongoDBConfig.create(ConstructType.IMAP, "map1")
 				.uri("mongodb://user:pwd@localhost:27017");
@@ -61,7 +61,7 @@ public class MongoDBGlobalResourceTest {
 	}
 
 	@Test
-	public void testGetTwoDiffUriMongoClient() {
+	void testGetTwoDiffUriMongoClient() {
 		MongoDBGlobalResource instance = MongoDBGlobalResource.getInstance();
 		PersistenceMongoDBConfig mongoDBConfig1 = PersistenceMongoDBConfig.create(ConstructType.IMAP, "map1")
 				.uri("mongodb://user:pwd@localhost:27017");
@@ -75,13 +75,13 @@ public class MongoDBGlobalResourceTest {
 	}
 
 	@Test
-	public void testNullConfig() {
+	void testNullConfig() {
 		MongoDBGlobalResource instance = MongoDBGlobalResource.getInstance();
 		Assertions.assertThrows(IllegalArgumentException.class, () -> instance.getMongoClient(null));
 	}
 
 	@Test
-	public void testInvalidMongoUri() {
+	void testInvalidMongoUri() {
 		MongoDBGlobalResource instance = MongoDBGlobalResource.getInstance();
 		PersistenceMongoDBConfig mongoDBConfig = PersistenceMongoDBConfig.create(ConstructType.IMAP, "map1")
 				.uri("mongo://user:pwd@localhost:27017");
@@ -89,7 +89,7 @@ public class MongoDBGlobalResourceTest {
 	}
 
 	@Test
-	public void testCreateAndCloseMongoClient() throws Exception {
+	void testCreateAndCloseMongoClient() throws Exception {
 		MongoDBGlobalResource instance = MongoDBGlobalResource.getInstance();
 		PersistenceMongoDBConfig mongoDBConfig = PersistenceMongoDBConfig.create(ConstructType.IMAP, "map1")
 				.uri("mongodb://user:pwd@localhost:27017");
@@ -103,7 +103,7 @@ public class MongoDBGlobalResourceTest {
 	}
 
 	@Test
-	public void testCreateTwiceAndCloseOnceMongoClient() throws Exception {
+	void testCreateTwiceAndCloseOnceMongoClient() throws Exception {
 		MongoDBGlobalResource instance = MongoDBGlobalResource.getInstance();
 		PersistenceMongoDBConfig mongoDBConfig = PersistenceMongoDBConfig.create(ConstructType.IMAP, "map1")
 				.uri("mongodb://user:pwd@localhost:27017");
@@ -119,7 +119,7 @@ public class MongoDBGlobalResourceTest {
 	}
 
 	@Test
-	public void testNullConfigCloseMongoClient() {
+	void testNullConfigCloseMongoClient() {
 		MongoDBGlobalResource instance = MongoDBGlobalResource.getInstance();
 		Assertions.assertDoesNotThrow(() -> instance.close(null));
 	}

@@ -7,6 +7,9 @@ import com.hazelcast.persistence.utils.SSLUtil;
 import com.mongodb.ConnectionString;
 import com.mongodb.MongoClientSettings;
 import com.mongodb.client.MongoClient;
+import io.tapdata.entity.memory.MemoryFetcher;
+import io.tapdata.entity.utils.DataMap;
+import io.tapdata.pdk.core.api.PDKIntegration;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 
@@ -16,18 +19,21 @@ import javax.net.ssl.X509TrustManager;
 import java.security.SecureRandom;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * @author samuel
  * @Description
  * @create 2023-09-19 16:49
  **/
-public class MongoDBGlobalResource {
+public class MongoDBGlobalResource implements MemoryFetcher {
 	private final static Map<String, MongoClientPartition> RESOURCE_MAP = new ConcurrentHashMap<>();
 	public static final String MONGODB_MAX_WAIT_QUEUE_SIZE = "mongodb_maxWaitQueueSize";
 	public static final int DEFAULT_MONGODB_MAX_WAIT_QUEUE_SIZE = 100000;
@@ -35,6 +41,7 @@ public class MongoDBGlobalResource {
 	public static final int DEFAULT_MONGODB_MAX_SIZE = 100;
 
 	private MongoDBGlobalResource() {
+		PDKIntegration.registerMemoryFetcher(this.getClass().getSimpleName(), this);
 	}
 
 	public static MongoDBGlobalResource getInstance() {
@@ -59,7 +66,7 @@ public class MongoDBGlobalResource {
 		String mongoClientKey = getMongoClientKey(persistenceMongoDBConfig.getUri());
 		RESOURCE_MAP.computeIfPresent(mongoClientKey, (key, value) -> {
 			if (value.close(persistenceMongoDBConfig)) {
-				RESOURCE_MAP.remove(mongoClientKey);
+				return null;
 			}
 			return value;
 		});
@@ -71,6 +78,38 @@ public class MongoDBGlobalResource {
 		List<String> hosts = connectionString.getHosts();
 		String hostStr = String.join(",", hosts);
 		return username + "@" + hostStr;
+	}
+
+	@Override
+	public DataMap memory(String keyRegex, String memoryLevel) {
+		DataMap dataMap = DataMap.create();
+		DataMap resourceMap = DataMap.create();
+		dataMap.kv("resources", resourceMap);
+		RESOURCE_MAP.forEach((key, value) -> {
+			DataMap partitionMap = DataMap.create();
+			resourceMap.kv(key, partitionMap);
+			partitionMap.kv("partitionSize", value.getPartitionSize());
+			Map<String, MongoClientHolder> mongoClientHolderMap = value.mongoClientHolderMap;
+			DataMap holderMaps = DataMap.create();
+			mongoClientHolderMap.forEach((code, holder) -> {
+				DataMap holderMap = DataMap.create();
+				DataMap configMaps = DataMap.create();
+				holder.configs.forEach((name, config) -> {
+					DataMap configMap = DataMap.create();
+					configMap.kv("name", config.getName());
+					configMap.kv("uri", config.getUri());
+					configMap.kv("database", config.getDatabase());
+					configMap.kv("collection", config.getCollection());
+					configMaps.kv(config.getName(), configMap);
+				});
+				holderMap.kv("configs", configMaps);
+				holderMap.kv("usage", holder.usage.get());
+				holderMap.kv("code", holder.partitionCode);
+				holderMaps.kv(holder.partitionCode + "", holderMap);
+			});
+			partitionMap.kv("holders", holderMaps);
+		});
+		return dataMap;
 	}
 
 	private enum SingleTon {
@@ -102,7 +141,9 @@ public class MongoDBGlobalResource {
 
 		public MongoClient getMongoClientWithPartition(PersistenceMongoDBConfig persistenceMongoDBConfig) {
 			int partitionCode = getPartitionCode(persistenceMongoDBConfig);
-			return mongoClientHolderMap.computeIfAbsent(partitionCode + "", key -> new MongoClientHolder(persistenceMongoDBConfig, this)).getMongoClient();
+			return mongoClientHolderMap.computeIfAbsent(partitionCode + "", key -> new MongoClientHolder(persistenceMongoDBConfig, this, partitionCode))
+					.addConfig(persistenceMongoDBConfig)
+					.getMongoClient();
 		}
 
 		private int getPartitionCode(PersistenceMongoDBConfig persistenceMongoDBConfig) {
@@ -125,33 +166,40 @@ public class MongoDBGlobalResource {
 	private static class MongoClientHolder {
 		private final AtomicInteger usage = new AtomicInteger(0);
 		private final PersistenceMongoDBConfig persistenceMongoDBConfig;
+		private final Map<String, PersistenceMongoDBConfig> configs;
 		private MongoClient mongoClient;
 		private MongoClientPartition mongoClientPartition;
+		private final Lock lock = new ReentrantLock();
+		private int partitionCode;
 
-		public MongoClientHolder(PersistenceMongoDBConfig persistenceMongoDBConfig) {
-			this.persistenceMongoDBConfig = persistenceMongoDBConfig;
-		}
-
-		public MongoClientHolder(PersistenceMongoDBConfig persistenceMongoDBConfig, MongoClientPartition mongoClientPartition) {
+		public MongoClientHolder(PersistenceMongoDBConfig persistenceMongoDBConfig, MongoClientPartition mongoClientPartition, int partitionCode) {
 			this.persistenceMongoDBConfig = persistenceMongoDBConfig;
 			this.mongoClientPartition = mongoClientPartition;
+			this.partitionCode = partitionCode;
+			this.configs = new HashMap<>();
+			addConfig(persistenceMongoDBConfig);
 		}
 
-		public synchronized MongoClient getMongoClient() {
-			if (null == mongoClient) {
-				String uri = persistenceMongoDBConfig.getUri();
-				MongoClientSettings.Builder mongoClientSettingBuilder = MongoClientSettings.builder();
-				setSSLSettingIfNeed(mongoClientSettingBuilder);
-				mongoClientSettingBuilder.applyToConnectionPoolSettings(connectionPoolSettings -> {
-					int maxWaitQueueSize = CommonUtils.getPropertyInt(MONGODB_MAX_WAIT_QUEUE_SIZE, DEFAULT_MONGODB_MAX_WAIT_QUEUE_SIZE);
-					int maxSize = CommonUtils.getPropertyInt(MONGODB_MAX_SIZE, DEFAULT_MONGODB_MAX_SIZE);
-					connectionPoolSettings.maxWaitQueueSize(maxWaitQueueSize)
-							.maxSize(maxSize);
-				});
-				mongoClient = MongodbUtil.createClient(uri, mongoClientSettingBuilder.build());
+		public MongoClient getMongoClient() {
+			try {
+				lock.lock();
+				if (null == mongoClient) {
+					String uri = persistenceMongoDBConfig.getUri();
+					MongoClientSettings.Builder mongoClientSettingBuilder = MongoClientSettings.builder();
+					setSSLSettingIfNeed(mongoClientSettingBuilder);
+					mongoClientSettingBuilder.applyToConnectionPoolSettings(connectionPoolSettings -> {
+						int maxWaitQueueSize = CommonUtils.getPropertyInt(MONGODB_MAX_WAIT_QUEUE_SIZE, DEFAULT_MONGODB_MAX_WAIT_QUEUE_SIZE);
+						int maxSize = CommonUtils.getPropertyInt(MONGODB_MAX_SIZE, DEFAULT_MONGODB_MAX_SIZE);
+						connectionPoolSettings.maxWaitQueueSize(maxWaitQueueSize)
+								.maxSize(maxSize);
+					});
+					mongoClient = MongodbUtil.createClient(uri, mongoClientSettingBuilder.build());
+				}
+				usage.incrementAndGet();
+				return mongoClient;
+			} finally {
+				lock.unlock();
 			}
-			usage.incrementAndGet();
-			return mongoClient;
 		}
 
 		private void setSSLSettingIfNeed(MongoClientSettings.Builder mongoClientSettingBuilder) {
@@ -201,15 +249,26 @@ public class MongoDBGlobalResource {
 			}
 		}
 
-		public synchronized boolean close() {
-			if (usage.decrementAndGet() <= 0) {
-				if (null != mongoClient) {
+		MongoClientHolder addConfig(PersistenceMongoDBConfig config) {
+			if (null == config) {
+				return this;
+			}
+			this.configs.put(config.getName(), config);
+			return this;
+		}
+
+		public boolean close() {
+			try {
+				lock.lock();
+				if (usage.decrementAndGet() <= 0 && null != mongoClient) {
 					mongoClient.close();
 					mongoClient = null;
 					return true;
 				}
+				return false;
+			} finally {
+				lock.unlock();
 			}
-			return false;
 		}
 	}
 }
