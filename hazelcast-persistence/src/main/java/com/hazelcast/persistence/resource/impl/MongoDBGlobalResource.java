@@ -160,15 +160,13 @@ public class MongoDBGlobalResource implements MemoryFetcher {
 
 		public boolean close(PersistenceMongoDBConfig persistenceMongoDBConfig) {
 			int partitionCode = getPartitionCode(persistenceMongoDBConfig);
-			synchronized (this.mongoClientHolderMap) {
-				mongoClientHolderMap.computeIfPresent(String.valueOf(partitionCode), (k, v) -> {
-					if (v.close()) {
-						return null;
-					}
-					return v;
-				});
-				return MapUtils.isEmpty(mongoClientHolderMap);
-			}
+			mongoClientHolderMap.computeIfPresent(String.valueOf(partitionCode), (k, v) -> {
+				if (v.close()) {
+					return null;
+				}
+				return v;
+			});
+			return MapUtils.isEmpty(mongoClientHolderMap);
 		}
 	}
 
