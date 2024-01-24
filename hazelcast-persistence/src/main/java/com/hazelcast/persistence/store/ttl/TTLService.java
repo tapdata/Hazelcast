@@ -140,7 +140,11 @@ public class TTLService implements MemoryFetcher {
 						return;
 					}
 					TTLProcessorContext ttlProcessorContext = new TTLProcessorContext(persistenceStorageStore, logger);
-					TTL_PROCESSOR_MAP.get(ttlConfig.getPersistenceStorageAbstractConfig().getConstructType().name()).doTTL(ttlProcessorContext, ttlConfig);
+					try {
+						TTL_PROCESSOR_MAP.get(ttlConfig.getPersistenceStorageAbstractConfig().getConstructType().name()).doTTL(ttlProcessorContext, ttlConfig);
+					} finally {
+						persistenceStorageStore.doDestroy();
+					}
 				} catch (Exception e) {
 					if (null != logger) {
 						logger.warn("Do ttl failed, name: " + name, e);
