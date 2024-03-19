@@ -20,10 +20,7 @@ import javax.net.ssl.X509TrustManager;
 import java.security.SecureRandom;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
@@ -89,7 +86,6 @@ public class MongoDBGlobalResource implements MemoryFetcher {
 		RESOURCE_MAP.forEach((key, value) -> {
 			DataMap partitionMap = DataMap.create();
 			resourceMap.kv(key, partitionMap);
-			partitionMap.kv("partitionSize", value.getPartitionSize());
 			Map<String, MongoClientHolder> mongoClientHolderMap = value.mongoClientHolderMap;
 			DataMap holderMaps = DataMap.create();
 			mongoClientHolderMap.forEach((code, holder) -> {
@@ -106,9 +102,13 @@ public class MongoDBGlobalResource implements MemoryFetcher {
 				holderMap.kv("configs", configMaps);
 				holderMap.kv("usage", holder.usage.get());
 				holderMap.kv("code", holder.partitionCode);
+				holderMap.kv("create client count", holder.createClientCounter.get());
+				holderMap.kv("max size", holder.maxSize);
 				holderMaps.kv(holder.partitionCode + "", holderMap);
 			});
+			partitionMap.kv("partitionSize", value.getPartitionSize());
 			partitionMap.kv("holders", holderMaps);
+			partitionMap.kv("create holder count", value.createHolderCounter.get());
 		});
 		return dataMap;
 	}
@@ -131,6 +131,7 @@ public class MongoDBGlobalResource implements MemoryFetcher {
 		private final Map<String, MongoClientHolder> mongoClientHolderMap = new ConcurrentHashMap<>();
 		private int partitionSize = DEFAULT_PARTITION_SIZE;
 		private String mongoClientKey;
+		private AtomicInteger createHolderCounter = new AtomicInteger();
 
 		public MongoClientPartition(String mongoClientKey) {
 			this.mongoClientKey = mongoClientKey;
@@ -147,11 +148,14 @@ public class MongoDBGlobalResource implements MemoryFetcher {
 
 		public MongoClient getMongoClientWithPartition(PersistenceMongoDBConfig persistenceMongoDBConfig) {
 			int partitionCode = getPartitionCode(persistenceMongoDBConfig);
-			return mongoClientHolderMap.computeIfAbsent(String.valueOf(partitionCode), key -> new MongoClientHolder(persistenceMongoDBConfig, this, partitionCode))
+			return mongoClientHolderMap.computeIfAbsent(String.valueOf(partitionCode), key -> {
+						MongoClientHolder mongoClientHolder = new MongoClientHolder(persistenceMongoDBConfig, this, partitionCode);
+						createHolderCounter.incrementAndGet();
+						return mongoClientHolder;
+					})
 					.addConfig(persistenceMongoDBConfig)
 					.getMongoClient();
 		}
-
 		private int getPartitionCode(PersistenceMongoDBConfig persistenceMongoDBConfig) {
 			String name = persistenceMongoDBConfig.getName();
 			int hash = Math.abs(Objects.hash(name));
@@ -174,16 +178,21 @@ public class MongoDBGlobalResource implements MemoryFetcher {
 		private final AtomicInteger usage = new AtomicInteger(0);
 		private final PersistenceMongoDBConfig persistenceMongoDBConfig;
 		private final Map<String, PersistenceMongoDBConfig> configs;
+		private final int maxWaitQueueSize;
+		private final int maxSize;
 		private MongoClient mongoClient;
 		private MongoClientPartition mongoClientPartition;
 		private final Lock lock = new ReentrantLock();
 		private int partitionCode;
+		private AtomicInteger createClientCounter = new AtomicInteger();
 
 		public MongoClientHolder(PersistenceMongoDBConfig persistenceMongoDBConfig, MongoClientPartition mongoClientPartition, int partitionCode) {
 			this.persistenceMongoDBConfig = persistenceMongoDBConfig;
 			this.mongoClientPartition = mongoClientPartition;
 			this.partitionCode = partitionCode;
 			this.configs = new HashMap<>();
+			this.maxWaitQueueSize = CommonUtils.getPropertyInt(MONGODB_MAX_WAIT_QUEUE_SIZE, DEFAULT_MONGODB_MAX_WAIT_QUEUE_SIZE);
+			this.maxSize = CommonUtils.getPropertyInt(MONGODB_MAX_SIZE, DEFAULT_MONGODB_MAX_SIZE);
 			addConfig(persistenceMongoDBConfig);
 		}
 
@@ -195,12 +204,12 @@ public class MongoDBGlobalResource implements MemoryFetcher {
 					MongoClientSettings.Builder mongoClientSettingBuilder = MongoClientSettings.builder();
 					setSSLSettingIfNeed(mongoClientSettingBuilder);
 					mongoClientSettingBuilder.applyToConnectionPoolSettings(connectionPoolSettings -> {
-						int maxWaitQueueSize = CommonUtils.getPropertyInt(MONGODB_MAX_WAIT_QUEUE_SIZE, DEFAULT_MONGODB_MAX_WAIT_QUEUE_SIZE);
-						int maxSize = CommonUtils.getPropertyInt(MONGODB_MAX_SIZE, DEFAULT_MONGODB_MAX_SIZE);
 						connectionPoolSettings.maxWaitQueueSize(maxWaitQueueSize)
+								.minSize(1)
 								.maxSize(maxSize);
 					});
 					mongoClient = MongodbUtil.createClient(uri, mongoClientSettingBuilder.build());
+					createClientCounter.incrementAndGet();
 				}
 				usage.incrementAndGet();
 				return mongoClient;
