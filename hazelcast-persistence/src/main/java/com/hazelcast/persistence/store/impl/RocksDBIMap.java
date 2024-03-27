@@ -142,7 +142,14 @@ public class RocksDBIMap extends PersistenceMapStore<PersistenceRocksDBConfig, R
 	public synchronized Map<String, Object> loadAll(Collection<String> keys) {
 		Map<String, Object> result = new HashMap<>();
 		for (String key : keys) {
-			result.put(key, load(key));
+			if (null == key) {
+				continue;
+			}
+			Document value = load(key);
+			if (null == value) {
+				continue;
+			}
+			result.put(key, value);
 		}
 		return result;
 	}
