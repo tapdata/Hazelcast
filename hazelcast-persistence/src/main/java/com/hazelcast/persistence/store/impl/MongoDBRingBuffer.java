@@ -16,10 +16,7 @@ import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
@@ -30,23 +27,23 @@ import static com.mongodb.client.model.Sorts.descending;
 
 public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMongoDBConfig, MongoDBResource> implements MemoryFetcher {
 	public static final int DEFAULT_FIND_LIMIT = 100;
-	public static final int LRU_MAP_MAX_SIZE = DEFAULT_FIND_LIMIT + 1;
 	public static final long FLUSH_SMALLEST_PERIOD_MS = TimeUnit.SECONDS.toMillis(10L);
 	public static final long FLUSH_LARGEST_PERIOD_MS = TimeUnit.SECONDS.toMillis(1L);
-	public static final long CLEAR_CACHE_MAP_PERIOD_MINUTE = 10L;
 	public static final String TAG = MongoDBRingBuffer.class.getSimpleName();
 	public static final String LOG_PREFIX = "[" + TAG + "]";
 	public static final String SIGN_KEY = "ringBuffer";
 	public static final String VALUE_KEY = "value";
+	public static final String LOAD_CACHE_LIMIT_KEY = "LOAD_CACHE_LIMIT";
 	private final AtomicLong largestSequence = new AtomicLong(-1L);
 	private final AtomicLong smallestSequence = new AtomicLong(0L);
 	private Document sign;
 	private MongoDBResource mongoDBResource;
 	private PersistenceMongoDBConfig persistenceMongoDBConfig;
-	private final Map<String, Document> cacheMap = new LRUMap<>(LRU_MAP_MAX_SIZE);
+	private Map<String, Document> cacheMap;
 	private ScheduledThreadPoolExecutor flushSeqScheduler;
 	private int flushLargestSleepTime = 0;
 	private int flushSmallestSleepTime = 0;
+	private int loadCacheLimit;
 
 	private Document sign() {
 		return new Document(sign);
@@ -60,6 +57,8 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		createIndex();
 		sign = new Document(SIGN_KEY, this.mongoDBResource.getMongoCollection().getNamespace().getCollectionName());
 		flushSequence();
+		loadCacheLimit = CommonUtils.getPropertyInt(LOAD_CACHE_LIMIT_KEY, DEFAULT_FIND_LIMIT);
+		this.cacheMap = new HashMap<>(loadCacheLimit);
 
 		if (persistenceMongoDBConfig.getSequenceMode() == PersistenceStorage.SequenceMode.STORE) {
 			this.flushSeqScheduler = new ScheduledThreadPoolExecutor(2);
@@ -206,16 +205,17 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 
 	@Override
 	public Document load(long sequence) {
-		if (mongoDBResource == null) {
+		if (!checkEnable() || mongoDBResource == null) {
 			return null;
 		}
 		String sequenceStr = String.valueOf(sequence);
 		if (!cacheMap.containsKey(sequenceStr)) {
+			cacheMap.clear();
 			Document query = sign().append("key", new Document("$gte", sequence));
 			try (
 					MongoCursor<Document> iterator = this.mongoDBResource.getMongoCollection().find(query)
-							.sort(Sorts.ascending("_id"))
-							.limit(DEFAULT_FIND_LIMIT).iterator()
+							.sort(Sorts.ascending("key"))
+							.limit(loadCacheLimit).iterator()
 			) {
 				while (iterator.hasNext()) {
 					Document document = iterator.next();
