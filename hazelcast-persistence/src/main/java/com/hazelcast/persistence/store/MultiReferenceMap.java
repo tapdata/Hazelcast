@@ -8,6 +8,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * @author <a href="mailto:harsen_lin@163.com">Harsen</a>
@@ -17,6 +18,7 @@ public abstract class MultiReferenceMap<K, V> {
     public static final String DEFAULT_REFERENCE_ID = "default";
     private final Map<K, Set<String>> referenceMap = new ConcurrentHashMap<>();
     private final Map<K, V> dataMap = new ConcurrentHashMap<>();
+    private final Map<K, ReentrantLock> lockMap = new ConcurrentHashMap<>();
 
     public V init(String referenceId, K key, V value) {
         synchronized (this) {
@@ -66,6 +68,27 @@ public abstract class MultiReferenceMap<K, V> {
             });
             return result.get();
         }
+    }
+
+    public void lock(K key) throws InterruptedException {
+        lockMap.computeIfAbsent(key, k -> new ReentrantLock()).lockInterruptibly();
+    }
+
+    public void unlock(K key) {
+        lockMap.computeIfPresent(key, (k, v) -> {
+			v.unlock();
+			return v;
+        });
+    }
+
+    public void removeLock(K key) {
+        // check referenceMap
+        synchronized (this) {
+            if(null != referenceMap.get(key) && !referenceMap.get(key).isEmpty()) {
+                return;
+            }
+        }
+        lockMap.remove(key);
     }
 
     protected abstract void destroyValue(V value);
