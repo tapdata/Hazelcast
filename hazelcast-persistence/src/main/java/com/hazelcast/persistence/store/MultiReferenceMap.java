@@ -87,8 +87,10 @@ public abstract class MultiReferenceMap<K, V> {
             if(null != referenceMap.get(key) && !referenceMap.get(key).isEmpty()) {
                 return;
             }
+            if(null != lockMap.get(key) && !lockMap.get(key).isLocked()) {
+                lockMap.remove(key);
+            }
         }
-        lockMap.remove(key);
     }
 
     protected abstract void destroyValue(V value);
