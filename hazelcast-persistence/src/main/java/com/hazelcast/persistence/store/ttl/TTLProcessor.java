@@ -7,5 +7,5 @@ package com.hazelcast.persistence.store.ttl;
  **/
 public interface TTLProcessor {
 
-	void doTTL(TTLProcessorContext ttlProcessorContext, TTLConfig ttlConfig);
+	TTLMetrics doTTL(TTLProcessorContext ttlProcessorContext, TTLConfig ttlConfig);
 }

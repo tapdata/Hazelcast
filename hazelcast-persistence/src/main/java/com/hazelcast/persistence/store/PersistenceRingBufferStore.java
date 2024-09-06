@@ -26,4 +26,8 @@ public abstract class PersistenceRingBufferStore<T extends PersistenceStorageAbs
 	abstract public long getSmallestSequence();
 
 	abstract public long findSequenceByTimestamp(long timestamp);
+
+	public long getSmallestSequenceWithoutSign() {
+		return 0;
+	}
 }

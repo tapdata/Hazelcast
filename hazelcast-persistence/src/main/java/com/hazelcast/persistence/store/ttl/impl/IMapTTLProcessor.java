@@ -6,12 +6,17 @@ import com.hazelcast.persistence.store.PersistenceMapStore;
 import com.hazelcast.persistence.store.PersistenceStorageStore;
 import com.hazelcast.persistence.store.ttl.TTLCleanRuleBase;
 import com.hazelcast.persistence.store.ttl.TTLConfig;
+import com.hazelcast.persistence.store.ttl.TTLMetrics;
 import com.hazelcast.persistence.store.ttl.TTLProcessorContext;
 import org.apache.commons.collections4.CollectionUtils;
 
 import java.lang.reflect.Method;
-import java.util.*;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * @author samuel
@@ -23,37 +28,43 @@ public class IMapTTLProcessor extends BaseTTLProcessor {
 	public static final int BATCH_SIZE = 100;
 
 	@Override
-	public void doTTL(TTLProcessorContext ttlProcessorContext, TTLConfig ttlConfig) {
+	public TTLMetrics doTTL(TTLProcessorContext ttlProcessorContext, TTLConfig ttlConfig) {
+		TTLMetrics ttlMetrics = new TTLMetrics(ttlConfig.getPersistenceStorageAbstractConfig().getName());
 		long ttlSeconds = ttlConfig.getTtlSeconds();
 		long ttlMillis = TimeUnit.SECONDS.toMillis(ttlSeconds);
-		List<TTLCleanRuleBase> ttlCleanRuleList = ttlConfig.getTtlCleanRuleList();
-		PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> store = ttlProcessorContext.getStore();
-		if (!(store instanceof PersistenceMapStore)) {
-			return;
-		}
-		PersistenceMapStore<?, ?> mapStore = (PersistenceMapStore<?, ?>) store;
+		long startMs = System.currentTimeMillis();
 		try {
+			List<TTLCleanRuleBase> ttlCleanRuleList = ttlConfig.getTtlCleanRuleList();
+			PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> store = ttlProcessorContext.getStore();
+			if (!(store instanceof PersistenceMapStore)) {
+				return ttlMetrics;
+			}
+			PersistenceMapStore<?, ?> mapStore = (PersistenceMapStore<?, ?>) store;
 			Iterable<?> iterator = mapStore.iterator();
 			if (null == iterator) {
-				return;
+				return ttlMetrics;
 			}
 			Set<String> keys = new HashSet<>();
-			checkTTLCleanRule(ttlCleanRuleList,iterator,keys,mapStore,ttlProcessorContext,ttlConfig);
-			checkTTLByGlobalExpiration(ttlMillis,iterator,keys,mapStore,ttlProcessorContext,ttlConfig);
+			int checkTTLCleanRule = checkTTLCleanRule(ttlCleanRuleList, iterator, keys, mapStore, ttlProcessorContext, ttlConfig);
+			ttlMetrics.setDeleteCount(ttlMetrics.getDeleteCount() + checkTTLCleanRule);
+			int globalExpiration = checkTTLByGlobalExpiration(ttlMillis, iterator, keys, mapStore, ttlProcessorContext, ttlConfig);
+			ttlMetrics.setDeleteCount(ttlMetrics.getDeleteCount() + globalExpiration);
 			if (CollectionUtils.isNotEmpty(keys)) {
 				mapStore.deleteAll(keys);
-				ttlProcessorContext.getLogger().info("TTL delete imap keys: {}, config: {}, persistence: {}", keys, ttlConfig, ttlProcessorContext.getStore().getPersistenceStorageAbstractConfig());
+				ttlMetrics.setDeleteCount(ttlMetrics.getDeleteCount() + keys.size());
 				keys.clear();
 			}
 		} catch (Exception e) {
-			if (null != ttlProcessorContext.getLogger()) {
-				ttlProcessorContext.getLogger().warn("IMap [{}] clear ttl data failed, ttl seconds: {}", ttlConfig.getPersistenceStorageAbstractConfig().getName(), ttlSeconds, e);
-			}
+			ttlMetrics.setError(e);
+		} finally {
+			ttlMetrics.setCostMs(System.currentTimeMillis() - startMs);
 		}
+		return ttlMetrics;
 	}
 
-	protected void checkTTLCleanRule(List<TTLCleanRuleBase> ttlCleanRuleList,Iterable<?> iterator,Set<String> keys,PersistenceMapStore<?, ?> mapStore,TTLProcessorContext ttlProcessorContext,TTLConfig ttlConfig){
-		if(CollectionUtils.isNotEmpty(ttlCleanRuleList)){
+	protected int checkTTLCleanRule(List<TTLCleanRuleBase> ttlCleanRuleList, Iterable<?> iterator, Set<String> keys, PersistenceMapStore<?, ?> mapStore, TTLProcessorContext ttlProcessorContext, TTLConfig ttlConfig) {
+		AtomicInteger deleteCount = new AtomicInteger();
+		if (CollectionUtils.isNotEmpty(ttlCleanRuleList)) {
 			ttlCleanRuleList.forEach(ttlCleanRule -> {
 				iterator.forEach(data -> {
 					if (!(data instanceof Map)) {
@@ -64,47 +75,54 @@ public class IMapTTLProcessor extends BaseTTLProcessor {
 						Class<?> clazz = Class.forName(ttlCleanRule.getType().getClazz());
 						Method method = clazz.getMethod("isClean", Map.class, TTLCleanRuleBase.class);
 						Object instance = clazz.newInstance();
-						boolean isClean = (boolean)method.invoke(instance, map,ttlCleanRule);
+						boolean isClean = (boolean) method.invoke(instance, map, ttlCleanRule);
 						long ttlMillis = TimeUnit.SECONDS.toMillis(ttlCleanRule.getKeyTTLSeconds());
-						if(isClean) cleanExpiredKey(map,ttlMillis,keys,map.get("key").toString(),mapStore,ttlProcessorContext,ttlConfig);
+						if (isClean) {
+							deleteCount.addAndGet(cleanExpiredKey(map, ttlMillis, keys, map.get("key").toString(), mapStore, ttlProcessorContext, ttlConfig));
+						}
 					} catch (Exception e) {
 						throw new RuntimeException(e);
 					}
 				});
 			});
 		}
+		return deleteCount.get();
 	}
 
-	protected void checkTTLByGlobalExpiration(long ttlMillis,Iterable<?> iterator,Set<String> keys,PersistenceMapStore<?, ?> mapStore,TTLProcessorContext ttlProcessorContext,TTLConfig ttlConfig){
-		if(ttlMillis > 0){
+	protected int checkTTLByGlobalExpiration(long ttlMillis, Iterable<?> iterator, Set<String> keys, PersistenceMapStore<?, ?> mapStore, TTLProcessorContext ttlProcessorContext, TTLConfig ttlConfig) {
+		AtomicInteger deleteCount = new AtomicInteger();
+		if (ttlMillis > 0) {
 			iterator.forEach(data -> {
 				if (!(data instanceof Map)) {
 					return;
 				}
 				Map<String, Object> map = (Map<String, Object>) data;
 				Long _ts = getTs(map);
-				if(null == _ts) {
-					return ;
+				if (null == _ts) {
+					return;
 				}
-				cleanExpiredKey(map,ttlMillis,keys,map.get("key").toString(),mapStore,ttlProcessorContext,ttlConfig);
-
+				deleteCount.addAndGet(cleanExpiredKey(map, ttlMillis, keys, map.get("key").toString(), mapStore, ttlProcessorContext, ttlConfig));
 			});
 		}
+		return deleteCount.get();
 	}
 
-	protected void cleanExpiredKey(Map<String, Object> map,long ttlMillis,Set<String> keys,String key,PersistenceMapStore<?, ?> mapStore,TTLProcessorContext ttlProcessorContext,TTLConfig ttlConfig){
+	protected int cleanExpiredKey(Map<String, Object> map, long ttlMillis, Set<String> keys, String key, PersistenceMapStore<?, ?> mapStore, TTLProcessorContext ttlProcessorContext, TTLConfig ttlConfig) {
+		int deleteCount = 0;
 		Long _ts = getTs(map);
-		if(null == _ts || ttlMillis <= 0) {
-			return ;
+		if (null == _ts || ttlMillis <= 0) {
+			return 0;
 		}
-		if(System.currentTimeMillis() - TimeUnit.SECONDS.toMillis(_ts) < ttlMillis){
-			return;
+		if (System.currentTimeMillis() - TimeUnit.SECONDS.toMillis(_ts) < ttlMillis) {
+			return 0;
 		}
 		keys.add(key);
 		if (keys.size() == BATCH_SIZE) {
 			mapStore.deleteAll(keys);
+			deleteCount += keys.size();
 			keys.clear();
 			ttlProcessorContext.getLogger().info("TTL delete imap keys: {}, config: {}, persistence: {}", keys, ttlConfig, ttlProcessorContext.getStore().getPersistenceStorageAbstractConfig());
 		}
+		return deleteCount;
 	}
 }

@@ -1,5 +1,7 @@
 package com.hazelcast.persistence;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.util.function.Consumer;
 
 /**
@@ -77,5 +79,15 @@ public class CommonUtils {
 		if(valueLong == null)
 			valueLong = defaultValue;
 		return valueLong;
+	}
+
+	public static String stackString(Throwable throwable) {
+		StringWriter sw = new StringWriter();
+		try (
+				PrintWriter pw = new PrintWriter(sw)
+		) {
+			throwable.printStackTrace(pw);
+			return sw.toString();
+		}
 	}
 }

@@ -20,6 +20,8 @@ public abstract class BaseTTLProcessor implements TTLProcessor {
 				Object tsObj = map.get("_ts");
 				if (tsObj instanceof Long) {
 					return (Long) tsObj;
+				} else if (tsObj instanceof Integer) {
+					return Long.parseLong(tsObj.toString());
 				}
 			}
 		}

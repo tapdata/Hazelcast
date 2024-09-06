@@ -1,5 +1,6 @@
 package com.hazelcast.persistence.store.ttl;
 
+import com.hazelcast.persistence.CommonUtils;
 import com.hazelcast.persistence.ConstructType;
 import com.hazelcast.persistence.StorageMode;
 import com.hazelcast.persistence.config.PersistenceStorageAbstractConfig;
@@ -8,6 +9,7 @@ import com.hazelcast.persistence.store.PersistenceStorageStore;
 import io.tapdata.entity.memory.MemoryFetcher;
 import io.tapdata.entity.utils.DataMap;
 import io.tapdata.pdk.core.api.PDKIntegration;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.ListUtils;
 import org.apache.logging.log4j.Logger;
 
@@ -52,27 +54,34 @@ public class TTLService implements MemoryFetcher {
 		PDKIntegration.registerMemoryFetcher(TTLService.class.getSimpleName(), this);
 	}
 
-	public TTLConfig registerTTL(PersistenceStorageAbstractConfig persistenceStorageAbstractConfig,long ttlSeconds,TTLCleanRuleBase ttlCleanRuleBase) {
-		configs.computeIfAbsent(persistenceStorageAbstractConfig.getName(), k ->{
-			if(ttlCleanRuleBase == null)return new TTLConfig(persistenceStorageAbstractConfig, ttlSeconds);
-			return new TTLConfig(persistenceStorageAbstractConfig,ttlSeconds,ttlCleanRuleBase);
+	public void registerTTL(PersistenceStorageAbstractConfig persistenceStorageAbstractConfig, long ttlSeconds, TTLCleanRuleBase ttlCleanRuleBase) {
+		configs.computeIfAbsent(persistenceStorageAbstractConfig.getName(), k -> {
+			if (ttlCleanRuleBase == null) return new TTLConfig(persistenceStorageAbstractConfig, ttlSeconds);
+			return new TTLConfig(persistenceStorageAbstractConfig, ttlSeconds, ttlCleanRuleBase);
 		});
 		configs.computeIfPresent(persistenceStorageAbstractConfig.getName(), (k, v) -> {
-			if(ttlCleanRuleBase != null) v.addTTLCleanRule(ttlCleanRuleBase);
-			if(ttlSeconds > 0) v.setTtlSeconds(ttlSeconds);
+			if (ttlCleanRuleBase != null) v.addTTLCleanRule(ttlCleanRuleBase);
+			if (ttlSeconds > 0) v.setTtlSeconds(ttlSeconds);
 			return v;
 		});
-		return configs.get(persistenceStorageAbstractConfig.getName());
 	}
 
-	public TTLConfig removeTTL(PersistenceStorageAbstractConfig persistenceStorageAbstractConfig) {
-		return configs.remove(persistenceStorageAbstractConfig.getName());
+	public void removeTTL(PersistenceStorageAbstractConfig persistenceStorageAbstractConfig) {
+		configs.remove(persistenceStorageAbstractConfig.getName());
 	}
 
 	public void start() {
 		if (isRunning.compareAndSet(false, true)) {
-			ScheduledExecutorService scheduledExecutorService = new ScheduledThreadPoolExecutor(1);
-			scheduledExecutorService.scheduleWithFixedDelay(this::doTTL, TTL_INTERVAL_MS, TTL_INTERVAL_MS, TimeUnit.MILLISECONDS);
+			ScheduledExecutorService scheduledExecutorService = new ScheduledThreadPoolExecutor(1, new ThreadFactory() {
+				@Override
+				public Thread newThread(Runnable r) {
+					Thread thread = new Thread(r);
+					thread.setName(String.join("-", getClass().getName(), "ttl", "scheduler", String.valueOf(System.currentTimeMillis())));
+					return thread;
+				}
+			});
+			scheduledExecutorService.scheduleWithFixedDelay(this::doTTL, 0L, TTL_INTERVAL_MS, TimeUnit.MILLISECONDS);
+			logger.info("External persistent storage TTL timing service started successfully. Interval: {} ms", TTL_INTERVAL_MS);
 		}
 	}
 
@@ -125,6 +134,10 @@ public class TTLService implements MemoryFetcher {
 		}
 
 		void doTTL() {
+			if (CollectionUtils.isEmpty(names)) {
+				return;
+			}
+			logger.info("Start to do ttl, object size: {}, object names: {}", names.size(), names);
 			for (String name : names) {
 				try {
 					TTLConfig ttlConfig = configs.get(name);
@@ -141,15 +154,27 @@ public class TTLService implements MemoryFetcher {
 					}
 					TTLProcessorContext ttlProcessorContext = new TTLProcessorContext(persistenceStorageStore, logger);
 					try {
-						TTL_PROCESSOR_MAP.get(ttlConfig.getPersistenceStorageAbstractConfig().getConstructType().name()).doTTL(ttlProcessorContext, ttlConfig);
+						TTLMetrics ttlMetrics = TTL_PROCESSOR_MAP.get(ttlConfig.getPersistenceStorageAbstractConfig().getConstructType().name()).doTTL(ttlProcessorContext, ttlConfig);
+						// print metrics in logger
+						if (null != ttlMetrics) {
+							if (null != ttlMetrics.getError()) {
+								logWarn(ttlMetrics.getName(), ttlMetrics.getError());
+							} else {
+								logger.info("Do ttl success, name: {}, delete count: {}, cost: {} ms", ttlMetrics.getName(), ttlMetrics.getDeleteCount(), ttlMetrics.getCostMs());
+							}
+						}
 					} finally {
 						persistenceStorageStore.doDestroy();
 					}
 				} catch (Exception e) {
-					if (null != logger) {
-						logger.warn("Do ttl failed, name: " + name, e);
-					}
+					logWarn(name, e);
 				}
+			}
+		}
+
+		private void logWarn(String name, Exception e) {
+			if (null != logger) {
+				logger.warn("Do ttl failed, name: {}, error: {}\n{}", name, e.getMessage(), CommonUtils.stackString(e));
 			}
 		}
 	}

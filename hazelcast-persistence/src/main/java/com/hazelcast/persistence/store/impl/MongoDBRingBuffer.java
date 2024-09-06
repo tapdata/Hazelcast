@@ -75,9 +75,11 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 				flushSeqSleep(lastSeq, 2);
 			}, 0, FLUSH_SMALLEST_PERIOD_MS, TimeUnit.MILLISECONDS);
 		}
-		persistenceMongoDBConfig.getLogger().info(LOG_PREFIX + " Init finished, ringbuffer name: '{}', name space: '{}', head seq: {}, tail seq: {}",
-				persistenceMongoDBConfig.getName(), mongoDBResource.getMongoCollection().getNamespace().getFullName(),
-				this.smallestSequence.get(), this.largestSequence.get());
+		if (null != persistenceMongoDBConfig.getLogger() && persistenceMongoDBConfig.getLogger().isDebugEnabled()) {
+			persistenceMongoDBConfig.getLogger().info(LOG_PREFIX + " Init finished, ringbuffer name: '{}', name space: '{}', head seq: {}, tail seq: {}",
+					persistenceMongoDBConfig.getName(), mongoDBResource.getMongoCollection().getNamespace().getFullName(),
+					this.smallestSequence.get(), this.largestSequence.get());
+		}
 		CommonUtils.ignoreAnyError(() -> PDKIntegration.registerMemoryFetcher(genMemoryKey(), this));
 	}
 
@@ -313,5 +315,15 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 			dataMap.kv("error", e.getMessage() + "; Stack: " + ExceptionUtils.getStackTrace(e));
 		}
 		return dataMap;
+	}
+
+	@Override
+	public long getSmallestSequenceWithoutSign() {
+		Document query = sign().append("value.type", new Document("$ne", "SIGN"));
+		Document doc = this.mongoDBResource.getMongoCollection().find(query).sort(ascending("_id")).first();
+		if (doc == null) {
+			return 0;
+		}
+		return doc.getLong("key");
 	}
 }
