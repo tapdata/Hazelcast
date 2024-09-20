@@ -2,7 +2,6 @@ package com.hazelcast.persistence.resource.impl;
 
 import com.hazelcast.persistence.CommonUtils;
 import com.hazelcast.persistence.MongodbUtil;
-import com.hazelcast.persistence.PersistenceStorage;
 import com.hazelcast.persistence.config.PersistenceMongoDBConfig;
 import com.hazelcast.persistence.utils.SSLUtil;
 import com.mongodb.ConnectionString;
@@ -14,8 +13,6 @@ import io.tapdata.pdk.core.api.PDKIntegration;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
@@ -183,15 +180,15 @@ public class MongoDBGlobalResource implements MemoryFetcher {
 			return mongoClientHolder.addConfig(persistenceMongoDBConfig).getMongoClient();
 		}
 
-		private boolean sslChange(PersistenceMongoDBConfig persistenceMongoDBConfig, PersistenceMongoDBConfig existMongoHolderConfig) {
-			if (Boolean.TRUE.equals(existMongoHolderConfig.isSsl()) && Boolean.FALSE.equals(persistenceMongoDBConfig.isSsl())
-					|| Boolean.FALSE.equals(existMongoHolderConfig.isSsl()) && Boolean.TRUE.equals(persistenceMongoDBConfig.isSsl())) {
+		private boolean sslChange(PersistenceMongoDBConfig newPersistenceMongoDBConfig, PersistenceMongoDBConfig existMongoHolderConfig) {
+			if (Boolean.TRUE.equals(existMongoHolderConfig.isSsl()) && Boolean.FALSE.equals(newPersistenceMongoDBConfig.isSsl())
+					|| Boolean.FALSE.equals(existMongoHolderConfig.isSsl()) && Boolean.TRUE.equals(newPersistenceMongoDBConfig.isSsl())) {
 				return true;
-			} else if (Boolean.TRUE.equals(existMongoHolderConfig.isSsl()) && Boolean.TRUE.equals(persistenceMongoDBConfig.isSsl())) {
-				return existMongoHolderConfig.isSslValidate() != persistenceMongoDBConfig.isSslValidate()
-						|| Objects.equals(existMongoHolderConfig.getSslCA(), persistenceMongoDBConfig.getSslCA())
-						|| Objects.equals(existMongoHolderConfig.getSslKey(), persistenceMongoDBConfig.getSslKey())
-						|| Objects.equals(existMongoHolderConfig.getSslPass(), persistenceMongoDBConfig.getSslPass());
+			} else if (Boolean.TRUE.equals(existMongoHolderConfig.isSsl()) && Boolean.TRUE.equals(newPersistenceMongoDBConfig.isSsl())) {
+				return existMongoHolderConfig.isSslValidate() != newPersistenceMongoDBConfig.isSslValidate()
+						|| !Objects.equals(existMongoHolderConfig.getSslCA(), newPersistenceMongoDBConfig.getSslCA())
+						|| !Objects.equals(existMongoHolderConfig.getSslKey(), newPersistenceMongoDBConfig.getSslKey())
+						|| !Objects.equals(existMongoHolderConfig.getSslPass(), newPersistenceMongoDBConfig.getSslPass());
 			} else {
 				return false;
 			}
