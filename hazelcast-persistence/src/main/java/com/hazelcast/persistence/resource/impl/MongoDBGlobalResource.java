@@ -15,6 +15,7 @@ import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
@@ -38,6 +39,7 @@ public class MongoDBGlobalResource implements MemoryFetcher {
 	public static final int DEFAULT_MONGODB_MAX_WAIT_QUEUE_SIZE = 100000;
 	public static final String MONGODB_MAX_SIZE = "mongodb_maxSize";
 	public static final int DEFAULT_MONGODB_MAX_SIZE = 100;
+
 
 	private MongoDBGlobalResource() {
 		PDKIntegration.registerMemoryFetcher(this.getClass().getSimpleName(), this);
@@ -163,7 +165,7 @@ public class MongoDBGlobalResource implements MemoryFetcher {
 				ConnectionString newConnectionString = new ConnectionString(persistenceMongoDBConfig.getUri());
 				if (!existConnectionString.equals(newConnectionString) || sslChange(persistenceMongoDBConfig, existPersistenceConfig)) {
 					try {
-						v.close();
+						v.closeIgnoreUsage();
 					} catch (Exception e) {
 						logger.warn("Close MongoClientHolder failed exception:{}", e.getMessage());
 					}
@@ -324,6 +326,19 @@ public class MongoDBGlobalResource implements MemoryFetcher {
 			} finally {
 				lock.unlock();
 			}
+		}
+		public boolean closeIgnoreUsage() {
+			try {
+				lock.lock();
+				if (null != mongoClient) {
+					mongoClient.close();
+					mongoClient = null;
+					return true;
+				}
+			} finally {
+				lock.unlock();
+			}
+			return false;
 		}
 	}
 }
