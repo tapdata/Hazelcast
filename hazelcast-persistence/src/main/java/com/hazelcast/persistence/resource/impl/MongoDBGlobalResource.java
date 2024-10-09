@@ -13,6 +13,8 @@ import io.tapdata.pdk.core.api.PDKIntegration;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
@@ -37,6 +39,7 @@ public class MongoDBGlobalResource implements MemoryFetcher {
 	public static final int DEFAULT_MONGODB_MAX_WAIT_QUEUE_SIZE = 100000;
 	public static final String MONGODB_MAX_SIZE = "mongodb_maxSize";
 	public static final int DEFAULT_MONGODB_MAX_SIZE = 100;
+
 
 	private MongoDBGlobalResource() {
 		PDKIntegration.registerMemoryFetcher(this.getClass().getSimpleName(), this);
@@ -130,6 +133,7 @@ public class MongoDBGlobalResource implements MemoryFetcher {
 		public static final int DEFAULT_PARTITION_SIZE = 8;
 		private final Map<String, MongoClientHolder> mongoClientHolderMap = new ConcurrentHashMap<>();
 		private int partitionSize = DEFAULT_PARTITION_SIZE;
+		private final Logger logger = LogManager.getLogger(MongoClientPartition.class);
 		private String mongoClientKey;
 		private AtomicInteger createHolderCounter = new AtomicInteger();
 
@@ -148,18 +152,44 @@ public class MongoDBGlobalResource implements MemoryFetcher {
 
 		public MongoClient getMongoClientWithPartition(PersistenceMongoDBConfig persistenceMongoDBConfig) {
 			int partitionCode = getPartitionCode(persistenceMongoDBConfig);
-			return mongoClientHolderMap.computeIfAbsent(String.valueOf(partitionCode), key -> {
-						MongoClientHolder mongoClientHolder = new MongoClientHolder(persistenceMongoDBConfig, this, partitionCode);
-						createHolderCounter.incrementAndGet();
-						return mongoClientHolder;
-					})
+			String partitionCodeString = String.valueOf(partitionCode);
+			mongoClientHolderMap.computeIfAbsent(partitionCodeString, key -> {
+				MongoClientHolder mongoClientHolder = new MongoClientHolder(persistenceMongoDBConfig, this, partitionCode);
+				createHolderCounter.incrementAndGet();
+				return mongoClientHolder;
+			});
+			mongoClientHolderMap.computeIfPresent(partitionCodeString, (k, v) -> {
+				PersistenceMongoDBConfig existPersistenceConfig = v.getPersistenceMongoDBConfig();
+				ConnectionString existConnectionString = new ConnectionString(v.getPersistenceMongoDBConfig().getUri());
+				ConnectionString newConnectionString = new ConnectionString(persistenceMongoDBConfig.getUri());
+				if (!existConnectionString.equals(newConnectionString) || sslChange(persistenceMongoDBConfig, existPersistenceConfig)) {
+					try {
+						v.closeIgnoreUsage();
+					} catch (Exception e) {
+						logger.warn("Close MongoClientHolder failed exception:{}", e.getMessage());
+					}
+					Map<String, PersistenceMongoDBConfig> configs = v.getConfigs();
+					return new MongoClientHolder(persistenceMongoDBConfig, this, partitionCode, configs);
+				}
+				return v;
+			});
+			return mongoClientHolderMap.get(partitionCodeString)
 					.addConfig(persistenceMongoDBConfig)
 					.getMongoClient();
 		}
+
 		private int getPartitionCode(PersistenceMongoDBConfig persistenceMongoDBConfig) {
 			String name = persistenceMongoDBConfig.getName();
 			int hash = Math.abs(Objects.hash(name));
 			return hash % partitionSize;
+		}
+
+		private boolean sslChange(PersistenceMongoDBConfig newPersistenceMongoDBConfig, PersistenceMongoDBConfig existMongoHolderConfig) {
+			return existMongoHolderConfig.isSsl() != newPersistenceMongoDBConfig.isSsl()
+					|| existMongoHolderConfig.isSslValidate() != newPersistenceMongoDBConfig.isSslValidate()
+					|| !Objects.equals(existMongoHolderConfig.getSslCA(), newPersistenceMongoDBConfig.getSslCA())
+					|| !Objects.equals(existMongoHolderConfig.getSslKey(), newPersistenceMongoDBConfig.getSslKey())
+					|| !Objects.equals(existMongoHolderConfig.getSslPass(), newPersistenceMongoDBConfig.getSslPass());
 		}
 
 		public boolean close(PersistenceMongoDBConfig persistenceMongoDBConfig) {
@@ -187,13 +217,16 @@ public class MongoDBGlobalResource implements MemoryFetcher {
 		private AtomicInteger createClientCounter = new AtomicInteger();
 
 		public MongoClientHolder(PersistenceMongoDBConfig persistenceMongoDBConfig, MongoClientPartition mongoClientPartition, int partitionCode) {
+			this(persistenceMongoDBConfig, mongoClientPartition, partitionCode, new HashMap<>());
+		}
+
+		public MongoClientHolder(PersistenceMongoDBConfig persistenceMongoDBConfig, MongoClientPartition mongoClientPartition, int partitionCode, Map<String, PersistenceMongoDBConfig> configs) {
 			this.persistenceMongoDBConfig = persistenceMongoDBConfig;
 			this.mongoClientPartition = mongoClientPartition;
 			this.partitionCode = partitionCode;
-			this.configs = new HashMap<>();
+			this.configs = configs;
 			this.maxWaitQueueSize = CommonUtils.getPropertyInt(MONGODB_MAX_WAIT_QUEUE_SIZE, DEFAULT_MONGODB_MAX_WAIT_QUEUE_SIZE);
 			this.maxSize = CommonUtils.getPropertyInt(MONGODB_MAX_SIZE, DEFAULT_MONGODB_MAX_SIZE);
-			addConfig(persistenceMongoDBConfig);
 		}
 
 		public MongoClient getMongoClient() {
@@ -265,6 +298,14 @@ public class MongoDBGlobalResource implements MemoryFetcher {
 			}
 		}
 
+		public Map<String, PersistenceMongoDBConfig> getConfigs() {
+			return configs;
+		}
+
+		public PersistenceMongoDBConfig getPersistenceMongoDBConfig() {
+			return persistenceMongoDBConfig;
+		}
+
 		MongoClientHolder addConfig(PersistenceMongoDBConfig config) {
 			if (null == config) {
 				return this;
@@ -285,6 +326,19 @@ public class MongoDBGlobalResource implements MemoryFetcher {
 			} finally {
 				lock.unlock();
 			}
+		}
+		public boolean closeIgnoreUsage() {
+			try {
+				lock.lock();
+				if (null != mongoClient) {
+					mongoClient.close();
+					mongoClient = null;
+					return true;
+				}
+			} finally {
+				lock.unlock();
+			}
+			return false;
 		}
 	}
 }
