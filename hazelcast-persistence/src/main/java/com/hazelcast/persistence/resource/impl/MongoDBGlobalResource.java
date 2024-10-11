@@ -160,6 +160,7 @@ public class MongoDBGlobalResource implements MemoryFetcher {
 			});
 			mongoClientHolderMap.computeIfPresent(partitionCodeString, (k, v) -> {
 				PersistenceMongoDBConfig existPersistenceConfig = v.getPersistenceMongoDBConfig();
+				Map<String, PersistenceMongoDBConfig> configs = v.getConfigs();
 				ConnectionString existConnectionString = new ConnectionString(v.getPersistenceMongoDBConfig().getUri());
 				ConnectionString newConnectionString = new ConnectionString(persistenceMongoDBConfig.getUri());
 				if (!existConnectionString.equals(newConnectionString) || sslChange(persistenceMongoDBConfig, existPersistenceConfig)) {
@@ -168,7 +169,6 @@ public class MongoDBGlobalResource implements MemoryFetcher {
 					} catch (Exception e) {
 						logger.warn("Close MongoClientHolder failed exception:{}", e.getMessage());
 					}
-					Map<String, PersistenceMongoDBConfig> configs = v.getConfigs();
 					return new MongoClientHolder(persistenceMongoDBConfig, this, partitionCode, configs);
 				}
 				return v;
