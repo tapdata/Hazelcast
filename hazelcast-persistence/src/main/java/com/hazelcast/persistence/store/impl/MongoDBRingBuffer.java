@@ -11,7 +11,7 @@ import com.mongodb.client.model.*;
 import io.tapdata.entity.memory.MemoryFetcher;
 import io.tapdata.entity.utils.DataMap;
 import io.tapdata.pdk.core.api.PDKIntegration;
-import org.apache.commons.collections4.map.LRUMap;
+import io.tapdata.pdk.core.constants.ShareCDCConstant;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.bson.Document;
 import org.bson.conversions.Bson;
@@ -59,6 +59,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		flushSequence();
 		loadCacheLimit = CommonUtils.getPropertyInt(LOAD_CACHE_LIMIT_KEY, DEFAULT_FIND_LIMIT);
 		this.cacheMap = new HashMap<>(loadCacheLimit);
+		int shareCDCDelayMode = io.tapdata.pdk.core.utils.CommonUtils.shareCDCDelayMode();
 
 		if (persistenceMongoDBConfig.getSequenceMode() == PersistenceStorage.SequenceMode.STORE) {
 			this.flushSeqScheduler = new ScheduledThreadPoolExecutor(2);
@@ -66,8 +67,10 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 				Thread.currentThread().setName("Flush-MongoDB-Ringbuffer-Largest-Sequence-Scheduler-" + ringBufferName);
 				long lastSeq = this.largestSequence.get();
 				CommonUtils.ignoreAnyError(() -> this.largestSequence.set(_getLargestSequence()));
-				flushSeqSleep(lastSeq, 1);
-			}, 0, FLUSH_LARGEST_PERIOD_MS, TimeUnit.MILLISECONDS);
+				if (shareCDCDelayMode == ShareCDCConstant.DELAY_MODE_DEFAULT) {
+					flushSeqSleep(lastSeq, 1);
+				}
+			}, 0, shareCDCDelayMode == ShareCDCConstant.DELAY_MODE_LOW ? 100L : FLUSH_LARGEST_PERIOD_MS, TimeUnit.MILLISECONDS);
 			this.flushSeqScheduler.scheduleWithFixedDelay(() -> {
 				Thread.currentThread().setName("Flush-MongoDB-Ringbuffer-Smallest-Sequence-Scheduler-" + ringBufferName);
 				long lastSeq = this.smallestSequence.get();
