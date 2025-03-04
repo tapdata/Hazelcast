@@ -1,7 +1,6 @@
 package com.hazelcast.persistence;
 
 import com.mongodb.ConnectionString;
-import com.mongodb.MongoClientOptions;
 import com.mongodb.MongoClientSettings;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
@@ -26,7 +25,7 @@ import static java.lang.String.format;
 public class MongodbUtil {
 
 	public static MongoClient createClient(String uri, MongoClientSettings settings) {
-		if (null == uri || "".equals(uri)) {
+		if (null == uri || uri.isEmpty()) {
 			throw new IllegalArgumentException("MongoDB uri cannot be blank");
 		}
 		MongoClientSettings.Builder settingBuilder;

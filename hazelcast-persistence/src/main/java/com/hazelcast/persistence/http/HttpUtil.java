@@ -3,15 +3,15 @@ package com.hazelcast.persistence.http;
 import com.tapdata.tm.sdk.available.CloudRestTemplate;
 import com.tapdata.tm.sdk.interceptor.VersionHeaderInterceptor;
 import com.tapdata.tm.sdk.util.CloudSignUtil;
-import org.apache.http.client.config.CookieSpecs;
-import org.apache.http.client.config.RequestConfig;
-import org.apache.http.conn.ssl.NoopHostnameVerifier;
-import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClientBuilder;
-import org.apache.http.impl.client.HttpClients;
-import org.apache.http.ssl.SSLContexts;
-import org.apache.http.ssl.TrustStrategy;
+import org.apache.hc.client5.http.config.RequestConfig;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.impl.classic.HttpClients;
+import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManager;
+import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
+import org.apache.hc.client5.http.ssl.DefaultClientTlsStrategy;
+import org.apache.hc.client5.http.ssl.NoopHostnameVerifier;
+import org.apache.hc.core5.ssl.SSLContextBuilder;
+import org.apache.hc.core5.ssl.TrustStrategy;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.ClientHttpRequestFactory;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
@@ -45,15 +45,18 @@ public class HttpUtil {
 		HttpComponentsClientHttpRequestFactory factory;
 		try {
 			TrustStrategy acceptingTrustStrategy = (x509Certificates, authType) -> true;
-			SSLContext sslContext = SSLContexts.custom().loadTrustMaterial(null, acceptingTrustStrategy).build();
-			SSLConnectionSocketFactory connectionSocketFactory =
-					new SSLConnectionSocketFactory(sslContext, new NoopHostnameVerifier());
-
-			HttpClientBuilder httpClientBuilder = HttpClients.custom()
-							.setDefaultRequestConfig(RequestConfig.custom().setCookieSpec(CookieSpecs.STANDARD).build())
-							.disableAutomaticRetries();
-			httpClientBuilder.setSSLSocketFactory(connectionSocketFactory);
-			CloseableHttpClient httpClient = httpClientBuilder.build();
+			SSLContext sslContext = SSLContextBuilder.create().loadTrustMaterial(null, acceptingTrustStrategy).build();
+			PoolingHttpClientConnectionManager poolingHttpClientConnectionManager = PoolingHttpClientConnectionManagerBuilder.create()
+					.setTlsSocketStrategy(new DefaultClientTlsStrategy(sslContext, new NoopHostnameVerifier()))
+					.build();
+			RequestConfig requestConfig = RequestConfig.custom()
+					.setCookieSpec("default")
+					.build();
+			CloseableHttpClient httpClient = HttpClients.custom()
+					.setDefaultRequestConfig(requestConfig)
+					.disableAutomaticRetries()
+					.setConnectionManager(poolingHttpClientConnectionManager)
+					.build();
 			factory = new HttpComponentsClientHttpRequestFactory();
 			factory.setHttpClient(httpClient);
 

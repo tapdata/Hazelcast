@@ -1,58 +1,60 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <name>hazelcast-persistence</name>
-    <version>5.2.3-SNAPSHOT</version>
+    <version>5.5.0-SNAPSHOT</version>
     <groupId>com.hazelcast</groupId>
     <artifactId>hazelcast-persistence</artifactId>
     <packaging>jar</packaging>
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.compiler.target>1.8</maven.compiler.target>
-        <maven.compiler.source>1.8</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <maven.compiler.source>17</maven.compiler.source>
         <junit-platform-launcher.version>1.9.2</junit-platform-launcher.version>
         <junit-jupiter.version>5.9.2</junit-jupiter.version>
         <rocksdbjni.version>7.9.2</rocksdbjni.version>
-        <hazelcast.version>5.2.1</hazelcast.version>
+        <hazelcast.version>5.5.0</hazelcast.version>
         <mongo-java-driver.version>3.12.10</mongo-java-driver.version>
         <org.bouncycastle.version>1.60</org.bouncycastle.version>
         <bson.version>4.4.1</bson.version>
         <httpclient.version>4.5.5</httpclient.version>
-        <spring-web.version>5.2.8.RELEASE</spring-web.version>
+        <spring-web.version>6.2.2</spring-web.version>
         <jackson.version>2.13.3</jackson.version>
         <commons-lang3.version>3.12.0</commons-lang3.version>
         <commons-collections4.version>4.4</commons-collections4.version>
+        <mongodb-driver-sync.version>5.2.1</mongodb-driver-sync.version>
+        <httpclient5.version>5.4.2</httpclient5.version>
     </properties>
 
     <build>
-      <plugins>
-          <plugin>
-              <groupId>org.apache.maven.plugins</groupId>
-              <artifactId>maven-source-plugin</artifactId>
-              <version>3.2.1</version>
-              <executions>
-                  <execution>
-                      <id>attach-sources</id>
-                      <goals>
-                          <goal>jar</goal>
-                      </goals>
-                  </execution>
-              </executions>
-          </plugin>
-        <plugin>
-          <groupId>org.apache.maven.plugins</groupId>
-          <artifactId>maven-jar-plugin</artifactId>
-          <version>3.2.0</version>
-          <configuration>
-            <archive>
-              <manifest>
-                <mainClass>com.hazelcast.persistence.Application</mainClass>
-              </manifest>
-            </archive>
-          </configuration>
-        </plugin>
-      </plugins>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-source-plugin</artifactId>
+                <version>3.2.1</version>
+                <executions>
+                    <execution>
+                        <id>attach-sources</id>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.2.0</version>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <mainClass>com.hazelcast.persistence.Application</mainClass>
+                        </manifest>
+                    </archive>
+                </configuration>
+            </plugin>
+        </plugins>
     </build>
 
     <repositories>
@@ -77,13 +79,13 @@
         </repository>
     </distributionManagement>
 
-<!--    <distributionManagement>
-        <repository>
-            <id>github</id>
-            <name>GitHub tapdata Apache Maven Packages</name>
-            <url>https://maven.pkg.github.com/tapdata/tapdata</url>
-        </repository>
-    </distributionManagement>-->
+    <!--    <distributionManagement>
+            <repository>
+                <id>github</id>
+                <name>GitHub tapdata Apache Maven Packages</name>
+                <url>https://maven.pkg.github.com/tapdata/tapdata</url>
+            </repository>
+        </distributionManagement>-->
 
     <dependencies>
         <dependency>
@@ -93,14 +95,14 @@
         </dependency>
         <dependency>
             <groupId>org.mongodb</groupId>
-            <artifactId>mongo-java-driver</artifactId>
-            <version>${mongo-java-driver.version}</version>
+            <artifactId>mongodb-driver-sync</artifactId>
+            <version>${mongodb-driver-sync.version}</version>
         </dependency>
-			<dependency>
-				<groupId>org.bouncycastle</groupId>
-				<artifactId>bcprov-jdk15on</artifactId>
-				<version>${org.bouncycastle.version}</version>
-			</dependency>
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcprov-jdk15on</artifactId>
+            <version>${org.bouncycastle.version}</version>
+        </dependency>
         <dependency>
             <groupId>org.rocksdb</groupId>
             <artifactId>rocksdbjni</artifactId>
@@ -116,11 +118,10 @@
             <artifactId>spring-web</artifactId>
             <version>${spring-web.version}</version>
         </dependency>
-
         <dependency>
-            <groupId>org.apache.httpcomponents</groupId>
-            <artifactId>httpclient</artifactId>
-            <version>${httpclient.version}</version>
+            <groupId>org.apache.httpcomponents.client5</groupId>
+            <artifactId>httpclient5</artifactId>
+            <version>${httpclient5.version}</version>
         </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
@@ -173,6 +174,12 @@
             <artifactId>junit-jupiter</artifactId>
             <version>${junit-jupiter.version}</version>
             <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.httpcomponents</groupId>
+            <artifactId>httpcore</artifactId>
+            <version>4.4.16</version>
+            <scope>compile</scope>
         </dependency>
     </dependencies>
 </project>

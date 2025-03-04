@@ -2,7 +2,7 @@ package com.hazelcast.persistence.config;
 
 import com.hazelcast.persistence.ConstructType;
 import com.hazelcast.persistence.StorageMode;
-import com.mongodb.MongoClientURI;
+import com.mongodb.ConnectionString;
 import org.apache.commons.lang3.StringUtils;
 
 import java.util.StringJoiner;
@@ -144,15 +144,15 @@ public class PersistenceMongoDBConfig extends PersistenceStorageAbstractConfig {
 		if (StringUtils.isBlank(uri)) {
 			return "";
 		}
-		MongoClientURI mongoClientURI = new MongoClientURI(uri);
-		char[] passwordCharArray = mongoClientURI.getPassword();
+		ConnectionString connectionString = new ConnectionString(uri);
+		char[] passwordCharArray = connectionString.getPassword();
 		StringBuilder password = new StringBuilder();
 		if (null != passwordCharArray) {
 			for (char c : passwordCharArray) {
 				password.append(c);
 			}
 		}
-		String username = mongoClientURI.getUsername();
+		String username = connectionString.getUsername();
 		if (StringUtils.isNotBlank(username) && StringUtils.isNotBlank(password.toString())) {
 			return uri.replace(username + ":" + password, username + ":******");
 		}

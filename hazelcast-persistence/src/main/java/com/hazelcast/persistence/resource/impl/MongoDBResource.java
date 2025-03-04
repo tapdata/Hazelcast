@@ -2,7 +2,7 @@ package com.hazelcast.persistence.resource.impl;
 
 import com.hazelcast.persistence.config.PersistenceMongoDBConfig;
 import com.hazelcast.persistence.resource.ExternalResource;
-import com.mongodb.MongoClientURI;
+import com.mongodb.ConnectionString;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
@@ -31,7 +31,7 @@ public class MongoDBResource extends ExternalResource<PersistenceMongoDBConfig> 
 		}
 		String db = persistenceMongoDBConfig.getDatabase();
 		if (StringUtils.isBlank(db)) {
-			db = new MongoClientURI(mongoUri).getDatabase();
+			db = new ConnectionString(mongoUri).getDatabase();
 		}
 		if (StringUtils.isBlank(db)) {
 			throw new IllegalArgumentException("MongoDB database cannot be blank");

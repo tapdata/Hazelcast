@@ -178,7 +178,6 @@ public class MongoDBGlobalResource implements MemoryFetcher {
 		private final AtomicInteger usage = new AtomicInteger(0);
 		private final PersistenceMongoDBConfig persistenceMongoDBConfig;
 		private final Map<String, PersistenceMongoDBConfig> configs;
-		private final int maxWaitQueueSize;
 		private final int maxSize;
 		private MongoClient mongoClient;
 		private MongoClientPartition mongoClientPartition;
@@ -191,7 +190,6 @@ public class MongoDBGlobalResource implements MemoryFetcher {
 			this.mongoClientPartition = mongoClientPartition;
 			this.partitionCode = partitionCode;
 			this.configs = new HashMap<>();
-			this.maxWaitQueueSize = CommonUtils.getPropertyInt(MONGODB_MAX_WAIT_QUEUE_SIZE, DEFAULT_MONGODB_MAX_WAIT_QUEUE_SIZE);
 			this.maxSize = CommonUtils.getPropertyInt(MONGODB_MAX_SIZE, DEFAULT_MONGODB_MAX_SIZE);
 			addConfig(persistenceMongoDBConfig);
 		}
@@ -203,11 +201,7 @@ public class MongoDBGlobalResource implements MemoryFetcher {
 					String uri = persistenceMongoDBConfig.getUri();
 					MongoClientSettings.Builder mongoClientSettingBuilder = MongoClientSettings.builder();
 					setSSLSettingIfNeed(mongoClientSettingBuilder);
-					mongoClientSettingBuilder.applyToConnectionPoolSettings(connectionPoolSettings -> {
-						connectionPoolSettings.maxWaitQueueSize(maxWaitQueueSize)
-								.minSize(1)
-								.maxSize(maxSize);
-					});
+					mongoClientSettingBuilder.applyToConnectionPoolSettings(connectionPoolSettings -> connectionPoolSettings.minSize(1).maxSize(maxSize));
 					mongoClient = MongodbUtil.createClient(uri, mongoClientSettingBuilder.build());
 					createClientCounter.incrementAndGet();
 				}
