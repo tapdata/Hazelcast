@@ -65,7 +65,7 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 
 	@Override
 	public void destroy() {
-		if (this.persistenceMongoDBConfig.isExclusiveCollection()) {
+		if (this.persistenceMongoDBConfig.isExclusiveCollection() && null != mongoDBResource) {
 			mongoDBResource.getMongoCollection().drop();
 		} else {
 			this.deleteAll(null);
