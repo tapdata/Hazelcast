@@ -25,6 +25,7 @@
         <commons-collections4.version>4.4</commons-collections4.version>
         <mongodb-driver-sync.version>5.2.1</mongodb-driver-sync.version>
         <httpclient5.version>5.4.2</httpclient5.version>
+        <tapdata-pdk-runner.version>2.0-SNAPSHOT</tapdata-pdk-runner.version>
     </properties>
 
     <build>
@@ -152,7 +153,7 @@
         <dependency>
             <groupId>io.tapdata</groupId>
             <artifactId>tapdata-pdk-runner</artifactId>
-            <version>1.11-SNAPSHOT</version>
+            <version>${tapdata-pdk-runner.version}</version>
             <scope>provided</scope>
         </dependency>
 
