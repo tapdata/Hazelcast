@@ -25,6 +25,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * @author samuel
@@ -214,8 +216,16 @@ public class MongoDBGlobalResource implements MemoryFetcher {
 
 		private void setSSLSettingIfNeed(MongoClientSettings.Builder mongoClientSettingBuilder) {
 			try {
-				if (persistenceMongoDBConfig.isSsl()) {
-					String uri = persistenceMongoDBConfig.getUri();
+				String uri = persistenceMongoDBConfig.getUri();
+				boolean isSSL = persistenceMongoDBConfig.isSsl();
+				if (!isSSL) {
+					Pattern pattern = Pattern.compile("(ssl|tls)=true", Pattern.CASE_INSENSITIVE);
+					Matcher matcher = pattern.matcher(uri);
+					if (matcher.find()) {
+						isSSL = true;
+					}
+				}
+				if (isSSL) {
 					if (uri.indexOf("tlsAllowInvalidCertificates=true") > 0 ||
 							uri.indexOf("sslAllowInvalidCertificates=true") > 0) {
 						mongoClientSettingBuilder.applyToSslSettings(ssl -> {
