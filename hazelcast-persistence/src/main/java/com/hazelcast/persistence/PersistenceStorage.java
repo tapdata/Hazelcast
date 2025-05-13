@@ -270,6 +270,7 @@ public class PersistenceStorage {
 					externalResource.doInit(persistenceStorageAbstractConfig);
 					store.doInit(persistenceStorageAbstractConfig, externalResource);
 				} else {
+					store.reInitResource(persistenceStorageAbstractConfig);
 					store.lightInit();
 				}
 				store.enable();

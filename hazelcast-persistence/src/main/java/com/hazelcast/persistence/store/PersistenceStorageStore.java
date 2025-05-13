@@ -27,6 +27,10 @@ public abstract class PersistenceStorageStore<T extends PersistenceStorageAbstra
 		// do nothing
 	}
 
+	public void reInitResource(PersistenceStorageAbstractConfig persistenceStorageAbstractConfig) {
+		// do nothing
+	}
+
 	/**
 	 * Do some release operation, do not clear data
 	 */

@@ -18,7 +18,6 @@ package com.hazelcast.ringbuffer.impl;
 
 import com.hazelcast.config.InMemoryFormat;
 import com.hazelcast.config.RingbufferConfig;
-import com.hazelcast.config.RingbufferStoreConfig;
 import com.hazelcast.core.HazelcastException;
 import com.hazelcast.internal.nio.IOUtil;
 import com.hazelcast.nio.ObjectDataInput;
@@ -182,12 +181,10 @@ public class RingbufferContainer<T, E> implements IdentifiedDataSerializable, No
     }
 
     public long tailSequence() {
-        RingbufferStoreConfig ringbufferStoreConfig = config.getRingbufferStoreConfig();
-        String sequenceMode = ringbufferStoreConfig.getProperty("sequence-mode");
-        if (store.isEnabled() && "STORE".equals(sequenceMode)) {
+        if (store.isEnabled()) {
             try {
                 final long tailSequence = store.getLargestSequence();
-                if (ringbuffer.tailSequence() < tailSequence) {
+                if (ringbuffer.tailSequence() != tailSequence) {
                     ringbuffer.setTailSequence(tailSequence);
                 }
             } catch (Exception e) {

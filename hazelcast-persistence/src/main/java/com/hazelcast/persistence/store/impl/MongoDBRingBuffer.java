@@ -3,6 +3,7 @@ package com.hazelcast.persistence.store.impl;
 import com.hazelcast.persistence.CommonUtils;
 import com.hazelcast.persistence.PersistenceStorage;
 import com.hazelcast.persistence.config.PersistenceMongoDBConfig;
+import com.hazelcast.persistence.config.PersistenceStorageAbstractConfig;
 import com.hazelcast.persistence.resource.impl.MongoDBResource;
 import com.hazelcast.persistence.store.PersistenceRingBufferStore;
 import com.mongodb.client.MongoCollection;
@@ -95,6 +96,15 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 				this.smallestSequence.get(), this.largestSequence.get());
 	}
 
+	@Override
+	public void reInitResource(PersistenceStorageAbstractConfig persistenceStorageAbstractConfig) {
+		if (persistenceStorageAbstractConfig instanceof PersistenceMongoDBConfig newConfig) {
+			mongoDBResource.reInitDbAndCollection(newConfig);
+			this.persistenceMongoDBConfig = newConfig;
+			this.sign = new Document(SIGN_KEY, this.mongoDBResource.getMongoCollection().getNamespace().getCollectionName());
+		}
+	}
+
 	private void flushSeqSleep(long lastSeq, int type) {
 		long currentSeq;
 		if (type == 1) {
@@ -176,10 +186,9 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 
 	@Override
 	public void store(long sequence, Object value) {
-		if (!(value instanceof Document)) {
+		if (!(value instanceof Document document)) {
 			return;
 		}
-		Document document = (Document) value;
 		if (!checkEnable() || mongoDBResource == null) {
 			return;
 		}
@@ -194,10 +203,9 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		}
 		List<WriteModel<Document>> models = new ArrayList<>();
 		for (Object value : values) {
-			if (!(value instanceof Document)) {
+			if (!(value instanceof Document document)) {
 				continue;
 			}
-			Document document = (Document) value;
 			Document insertDocument = getInsertDocument(largestSequence.incrementAndGet(), document);
 			models.add(new InsertOneModel<>(insertDocument));
 		}

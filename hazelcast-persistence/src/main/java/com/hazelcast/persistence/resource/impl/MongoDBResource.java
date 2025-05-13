@@ -68,4 +68,34 @@ public class MongoDBResource extends ExternalResource<PersistenceMongoDBConfig> 
 	public MongoCollection<Document> getMongoCollection() {
 		return mongoCollection;
 	}
+
+	private boolean reInitDB(PersistenceMongoDBConfig persistenceMongoDBConfig) {
+		String oldDB = mongoDatabase.getName();
+		ConnectionString uri = new ConnectionString(persistenceMongoDBConfig.getUri());
+		String newDB = uri.getDatabase();
+		if (null != newDB && !oldDB.equals(newDB)) {
+			persistenceMongoDBConfig.getLogger().info("Discover database name change, {} -> {}", oldDB, newDB);
+			mongoDatabase = mongoClient.getDatabase(newDB);
+			mongoCollection = mongoDatabase.getCollection(persistenceMongoDBConfig.getCollection());
+			return true;
+		}
+		return false;
+	}
+
+	private void reInitCollection(PersistenceMongoDBConfig persistenceMongoDBConfig) {
+		String oldCollectionName = mongoCollection.getNamespace().getCollectionName();
+		String newCollectionName = persistenceMongoDBConfig.getCollection();
+		if (null != newCollectionName && !oldCollectionName.equals(newCollectionName)) {
+			persistenceMongoDBConfig.getLogger().info("Discover collection name change, {} -> {}", oldCollectionName, newCollectionName);
+			mongoCollection = mongoDatabase.getCollection(newCollectionName);
+		}
+	}
+
+	public void reInitDbAndCollection(PersistenceMongoDBConfig persistenceMongoDBConfig) {
+		boolean reInitDB = reInitDB(persistenceMongoDBConfig);
+		if (!reInitDB) {
+			reInitCollection(persistenceMongoDBConfig);
+		}
+		this.persistenceStorageAbstractConfig = persistenceMongoDBConfig;
+	}
 }
