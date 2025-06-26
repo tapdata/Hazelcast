@@ -14,6 +14,7 @@ import org.bson.codecs.DocumentCodec;
 import org.bson.codecs.EncoderContext;
 import org.bson.io.BasicOutputBuffer;
 import org.rocksdb.RocksDBException;
+import org.rocksdb.RocksIterator;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -156,5 +157,35 @@ public class RocksDBIMap extends PersistenceMapStore<PersistenceRocksDBConfig, R
 
 	public Iterable<String> loadAllKeys() {
 		return null;
+	}
+
+	@Override
+	public boolean isEmpty() {
+		if (!checkEnable() || rocksDBResource == null) {
+			return true;
+		}
+
+		try (RocksIterator iterator = rocksDBResource.getRocksDB().newIterator()) {
+			// Seek to the first key with our sign prefix
+			byte[] signBytes = sign.getBytes(StandardCharsets.UTF_8);
+			iterator.seek(signBytes);
+
+			// Check if we found any key that starts with our sign
+			if (iterator.isValid()) {
+				byte[] key = iterator.key();
+				if (key != null && key.length >= signBytes.length) {
+					// Check if the key starts with our sign prefix
+					for (int i = 0; i < signBytes.length; i++) {
+						if (key[i] != signBytes[i]) {
+							return true; // No keys with our prefix found
+						}
+					}
+					return false; // Found at least one key with our prefix
+				}
+			}
+			return true; // No valid keys found
+		} catch (Exception e) {
+			throw new RuntimeException("Failed to check if RocksDB IMap[" + imapName + "] is empty", e);
+		}
 	}
 }
