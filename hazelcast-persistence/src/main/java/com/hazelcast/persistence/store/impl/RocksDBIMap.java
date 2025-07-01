@@ -157,4 +157,9 @@ public class RocksDBIMap extends PersistenceMapStore<PersistenceRocksDBConfig, R
 	public Iterable<String> loadAllKeys() {
 		return null;
 	}
+
+	@Override
+	public boolean isEmpty() {
+		return false;
+	}
 }
