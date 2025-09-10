@@ -4,13 +4,13 @@ import com.hazelcast.persistence.CommonUtils;
 import com.hazelcast.persistence.config.PersistenceMongoDBConfig;
 import com.hazelcast.persistence.resource.impl.MongoDBResource;
 import com.hazelcast.persistence.store.PersistenceMapStore;
+import com.mongodb.CreateIndexCommitQuorum;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
 import com.mongodb.client.model.*;
 import org.apache.commons.collections4.CollectionUtils;
 import org.bson.Document;
-import org.bson.conversions.Bson;
 
 import java.util.*;
 import java.util.function.Consumer;
@@ -42,11 +42,14 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 
 	private void createIndex() {
 		IndexOptions indexOptions = new IndexOptions().background(true);
+		CreateIndexOptions createIndexOptions = new CreateIndexOptions()
+				.commitQuorum(CreateIndexCommitQuorum.MAJORITY);
 		MongoCollection<Document> mongoCollection = mongoDBResource.getMongoCollection();
-		Bson keyIndex = Indexes.ascending("key", "imap");
-		mongoCollection.createIndex(keyIndex, indexOptions);
-		Bson tsIndex = Indexes.ascending("key", "ts");
-		mongoCollection.createIndex(tsIndex, indexOptions);
+		List<IndexModel> indexModels = Arrays.asList(
+				new IndexModel(Indexes.ascending("key", "imap"), indexOptions),
+				new IndexModel(Indexes.ascending("key", "ts"), indexOptions)
+		);
+		mongoCollection.createIndexes(indexModels, createIndexOptions);
 	}
 
 	@Override

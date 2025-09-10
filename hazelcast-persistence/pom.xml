@@ -15,9 +15,7 @@
         <junit-jupiter.version>5.9.2</junit-jupiter.version>
         <rocksdbjni.version>7.9.2</rocksdbjni.version>
         <hazelcast.version>5.5.0</hazelcast.version>
-        <mongo-java-driver.version>3.12.10</mongo-java-driver.version>
         <org.bouncycastle.version>1.60</org.bouncycastle.version>
-        <bson.version>4.4.1</bson.version>
         <httpclient.version>4.5.5</httpclient.version>
         <spring-web.version>6.2.2</spring-web.version>
         <jackson.version>2.13.3</jackson.version>
@@ -98,11 +96,6 @@
         </distributionManagement>-->
 
     <dependencies>
-        <dependency>
-            <groupId>org.mongodb</groupId>
-            <artifactId>bson</artifactId>
-            <version>${bson.version}</version>
-        </dependency>
         <dependency>
             <groupId>org.mongodb</groupId>
             <artifactId>mongodb-driver-sync</artifactId>

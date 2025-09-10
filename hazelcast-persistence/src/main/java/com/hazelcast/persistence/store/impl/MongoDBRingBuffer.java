@@ -6,6 +6,7 @@ import com.hazelcast.persistence.config.PersistenceMongoDBConfig;
 import com.hazelcast.persistence.config.PersistenceStorageAbstractConfig;
 import com.hazelcast.persistence.resource.impl.MongoDBResource;
 import com.hazelcast.persistence.store.PersistenceRingBufferStore;
+import com.mongodb.CreateIndexCommitQuorum;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
 import com.mongodb.client.model.*;
@@ -15,7 +16,6 @@ import io.tapdata.pdk.core.api.PDKIntegration;
 import io.tapdata.pdk.core.constants.ShareCDCConstant;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.bson.Document;
-import org.bson.conversions.Bson;
 
 import java.util.*;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
@@ -155,13 +155,15 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 			return;
 		}
 		IndexOptions indexOptions = new IndexOptions().background(true);
+		CreateIndexOptions createIndexOptions = new CreateIndexOptions()
+				.commitQuorum(CreateIndexCommitQuorum.MAJORITY);
 		MongoCollection<Document> mongoCollection = mongoDBResource.getMongoCollection();
-		Bson keyIndex = Indexes.ascending(SIGN_KEY, "key", "_id"); // For load,loadAll
-		mongoCollection.createIndex(keyIndex, indexOptions);
-		keyIndex = Indexes.ascending(SIGN_KEY, "value.timestamp", "_id"); // For findSequenceByTimestamp
-		mongoCollection.createIndex(keyIndex, indexOptions);
-		keyIndex = Indexes.ascending(SIGN_KEY, "_id"); // For _getLargestSequence,_getSmallestSequence
-		mongoCollection.createIndex(keyIndex, indexOptions);
+		List<IndexModel> indexModels = Arrays.asList(
+				new IndexModel(Indexes.ascending(SIGN_KEY, "key", "_id"), indexOptions),
+				new IndexModel(Indexes.ascending(SIGN_KEY, "value.timestamp", "_id"), indexOptions),
+				new IndexModel(Indexes.ascending(SIGN_KEY, "_id"), indexOptions)
+		);
+		mongoCollection.createIndexes(indexModels, createIndexOptions);
 	}
 
 	private void flushSequence() {
