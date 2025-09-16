@@ -1,6 +1,7 @@
 package com.hazelcast.persistence.store.impl;
 
 import com.hazelcast.persistence.CommonUtils;
+import com.hazelcast.persistence.MongodbUtil;
 import com.hazelcast.persistence.PersistenceStorage;
 import com.hazelcast.persistence.config.PersistenceMongoDBConfig;
 import com.hazelcast.persistence.config.PersistenceStorageAbstractConfig;
@@ -155,8 +156,10 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 			return;
 		}
 		IndexOptions indexOptions = new IndexOptions().background(true);
-		CreateIndexOptions createIndexOptions = new CreateIndexOptions()
-				.commitQuorum(CreateIndexCommitQuorum.MAJORITY);
+		CreateIndexOptions createIndexOptions = new CreateIndexOptions();
+		if (MongodbUtil.isIndexCommitQuorumSupported(mongoDBResource.getMongoDatabase())) {
+			createIndexOptions.commitQuorum(CreateIndexCommitQuorum.MAJORITY);
+		}
 		MongoCollection<Document> mongoCollection = mongoDBResource.getMongoCollection();
 		List<IndexModel> indexModels = Arrays.asList(
 				new IndexModel(Indexes.ascending(SIGN_KEY, "key", "_id"), indexOptions),
@@ -165,6 +168,8 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		);
 		mongoCollection.createIndexes(indexModels, createIndexOptions);
 	}
+
+
 
 	private void flushSequence() {
 		this.smallestSequence.set(this._getSmallestSequence());

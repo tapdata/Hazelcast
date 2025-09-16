@@ -4,6 +4,7 @@ import com.mongodb.ConnectionString;
 import com.mongodb.MongoClientSettings;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
+import com.mongodb.client.MongoDatabase;
 import io.tapdata.entity.schema.value.DateTime;
 import org.bson.*;
 import org.bson.codecs.*;
@@ -37,6 +38,36 @@ public class MongodbUtil {
 		settingBuilder.applyConnectionString(new ConnectionString(uri))
 				.codecRegistry(getForJavaCodecRegistry());
 		return MongoClients.create(settingBuilder.build());
+	}
+
+	public static boolean isIndexCommitQuorumSupported(MongoDatabase mongoDatabase) {
+		try {
+			Document buildInfo = mongoDatabase.runCommand(new Document("buildInfo", 1));
+			String version = buildInfo.getString("version");
+			int[] mm = parseMajorMinor(version);
+			int major = mm[0];
+			int minor = mm[1];
+			return (major > 4) || (major == 4 && minor >= 4);
+		} catch (Throwable t) {
+			return false;
+		}
+	}
+
+	private static int[] parseMajorMinor(String version) {
+		int major = 0, minor = 0;
+		if (version == null) return new int[]{0, 0};
+		int len = version.length();
+		int i = 0;
+		while (i < len && Character.isDigit(version.charAt(i))) {
+			major = major * 10 + (version.charAt(i) - '0');
+			i++;
+		}
+		while (i < len && !Character.isDigit(version.charAt(i))) i++;
+		while (i < len && Character.isDigit(version.charAt(i))) {
+			minor = minor * 10 + (version.charAt(i) - '0');
+			i++;
+		}
+		return new int[]{major, minor};
 	}
 
 	private static CodecRegistry customCodecRegistry(List<Codec<?>> codecs, Map<BsonType, Class<?>> replacementsForDefaults) {
