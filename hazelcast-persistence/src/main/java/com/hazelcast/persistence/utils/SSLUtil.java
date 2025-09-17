@@ -4,7 +4,6 @@ import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 
 import javax.net.ssl.*;
-import javax.xml.bind.DatatypeConverter;
 import java.io.*;
 import java.security.KeyFactory;
 import java.security.KeyStore;
@@ -17,6 +16,7 @@ import java.security.interfaces.RSAPrivateKey;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 
 public class SSLUtil {
@@ -200,7 +200,7 @@ public class SSLUtil {
 
 	private static PrivateKey createPrivateKey(String privateKey) throws Exception {
 
-		final byte[] bytes = DatatypeConverter.parseBase64Binary(privateKey);
+		final byte[] bytes = Base64.getDecoder().decode(privateKey);
 		return generatePrivateKeyFromDER(bytes);
 	}
 
@@ -209,7 +209,7 @@ public class SSLUtil {
 			final List<X509Certificate> result = new ArrayList<>();
 
 			for (String certificate : certificates) {
-				final byte[] bytes = DatatypeConverter.parseBase64Binary(certificate);
+				final byte[] bytes = Base64.getDecoder().decode(certificate);
 				X509Certificate cert = generateCertificateFromDER(bytes);
 				result.add(cert);
 			}
