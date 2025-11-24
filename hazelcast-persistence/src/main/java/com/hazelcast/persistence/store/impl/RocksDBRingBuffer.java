@@ -13,6 +13,7 @@ import org.bson.codecs.DecoderContext;
 import org.bson.codecs.DocumentCodec;
 import org.bson.codecs.EncoderContext;
 import org.bson.io.BasicOutputBuffer;
+import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.RocksDBException;
 
 import java.nio.ByteBuffer;
@@ -91,14 +92,15 @@ public class RocksDBRingBuffer extends PersistenceRingBufferStore<PersistenceRoc
 		) {
 			BsonBinaryWriter writer = new BsonBinaryWriter(outputBuffer);
 			documentCodec.encode(writer, document, encoderContext);
-			this.rocksDBResource.getRocksDB().put(key.getBytes(StandardCharsets.UTF_8), outputBuffer.toByteArray());
+			ColumnFamilyHandle cfHandle = this.rocksDBResource.getColumnFamilyHandle();
+			this.rocksDBResource.getRocksDB().put(cfHandle, key.getBytes(StandardCharsets.UTF_8), outputBuffer.toByteArray());
 			if (sequence <= largestSequence) {
 				return;
 			}
 			largestSequence = sequence;
 			key = sign + largestSequenceKey;
-			sequenceMap.put(key,largestSequence);
-			this.rocksDBResource.getRocksDB().put(key.getBytes(StandardCharsets.UTF_8), ((Long) sequence).toString().getBytes());
+			sequenceMap.put(key, largestSequence);
+			this.rocksDBResource.getRocksDB().put(cfHandle, key.getBytes(StandardCharsets.UTF_8), ((Long) sequence).toString().getBytes());
 		} catch (Exception e) {
 			throw new RuntimeException(e);
 		}
@@ -120,7 +122,8 @@ public class RocksDBRingBuffer extends PersistenceRingBufferStore<PersistenceRoc
 		String key = sign + sequence;
 		Document doc;
 		try {
-			byte[] s = this.rocksDBResource.getRocksDB().get(key.getBytes(StandardCharsets.UTF_8));
+			ColumnFamilyHandle cfHandle = this.rocksDBResource.getColumnFamilyHandle();
+			byte[] s = this.rocksDBResource.getRocksDB().get(cfHandle, key.getBytes(StandardCharsets.UTF_8));
 			if (s == null) {
 				return null;
 			}
@@ -138,8 +141,9 @@ public class RocksDBRingBuffer extends PersistenceRingBufferStore<PersistenceRoc
 			return;
 		}
 		try {
-			this.rocksDBResource.getRocksDB().delete((sign + s).getBytes(StandardCharsets.UTF_8));
-			this.rocksDBResource.getRocksDB().put((sign + "smallestSequence").getBytes(StandardCharsets.UTF_8), ((Long) (s + 1)).toString().getBytes());
+			ColumnFamilyHandle cfHandle = this.rocksDBResource.getColumnFamilyHandle();
+			this.rocksDBResource.getRocksDB().delete(cfHandle,(sign + s).getBytes(StandardCharsets.UTF_8));
+			this.rocksDBResource.getRocksDB().put(cfHandle,(sign + "smallestSequence").getBytes(StandardCharsets.UTF_8), ((Long) (s + 1)).toString().getBytes());
 		} catch (RocksDBException e) {
 			throw new RuntimeException("Delete from rocksdb failed, key: " + sign + s, e);
 		}
@@ -153,7 +157,8 @@ public class RocksDBRingBuffer extends PersistenceRingBufferStore<PersistenceRoc
 	public long _getLargestSequence() {
 		String key = sign + largestSequenceKey;
 		try {
-			byte[] s = this.rocksDBResource.getRocksDB().get(key.getBytes(StandardCharsets.UTF_8));
+			ColumnFamilyHandle cfHandle = this.rocksDBResource.getColumnFamilyHandle();
+			byte[] s = this.rocksDBResource.getRocksDB().get(cfHandle, key.getBytes(StandardCharsets.UTF_8));
 			if (s == null) {
 				return -1L;
 			}
@@ -194,7 +199,8 @@ public class RocksDBRingBuffer extends PersistenceRingBufferStore<PersistenceRoc
 	public long _getSmallestSequence() {
 		String key = sign + smallestSequenceKey;
 		try {
-			byte[] s = this.rocksDBResource.getRocksDB().get(key.getBytes(StandardCharsets.UTF_8));
+			ColumnFamilyHandle cfHandle = this.rocksDBResource.getColumnFamilyHandle();
+			byte[] s = this.rocksDBResource.getRocksDB().get(cfHandle, key.getBytes(StandardCharsets.UTF_8));
 			if (s == null) {
 				return 0;
 			}
