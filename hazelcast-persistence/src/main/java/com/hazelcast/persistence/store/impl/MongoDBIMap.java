@@ -270,4 +270,18 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 			return !mongoCursor.hasNext();
 		}
 	}
+
+	@Override
+	public synchronized Map<String, Object> getStatistics() {
+		if (!checkEnable() || null == mongoDBResource) {
+			return null;
+		}
+		Document result = this.mongoDBResource.getMongoDatabase().runCommand(new Document("collStats", persistenceMongoDBConfig.getCollection()));
+		Map<String, Object> statistics = new HashMap<>();
+		statistics.put("count", result.getInteger("count"));
+		statistics.put("size", result.getInteger("storageSize"));
+		statistics.put("uri",persistenceMongoDBConfig.uriInfo());
+		statistics.put("mode",persistenceMongoDBConfig.getStorageMode().name());
+		return statistics;
+	}
 }

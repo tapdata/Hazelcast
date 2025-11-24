@@ -3,6 +3,7 @@ package com.hazelcast.persistence.store;
 import com.hazelcast.persistence.config.PersistenceStorageAbstractConfig;
 import com.hazelcast.persistence.resource.ExternalResource;
 
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -65,6 +66,10 @@ public abstract class PersistenceStorageStore<T extends PersistenceStorageAbstra
 	}
 
 	public boolean isEmpty() {
+		throw new UnsupportedOperationException();
+	}
+
+	public Map<String,Object> getStatistics() {
 		throw new UnsupportedOperationException();
 	}
 }

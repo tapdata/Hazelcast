@@ -203,4 +203,8 @@ public class PersistenceMongoDBConfig extends PersistenceStorageAbstractConfig {
 		}
 		return v1.equals(v2);
 	}
+
+	public String uriInfo(){
+		return maskUri() + "/" + database + "/" + collection;
+	}
 }

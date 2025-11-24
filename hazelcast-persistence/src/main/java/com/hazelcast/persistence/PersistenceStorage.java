@@ -20,6 +20,7 @@ import org.apache.logging.log4j.Logger;
 import org.bson.Document;
 
 import java.lang.reflect.Constructor;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -450,6 +451,14 @@ public class PersistenceStorage {
 			return true;
 		}
 		return store.isEmpty();
+	}
+
+	public Map<String,Object> getStatistics(ConstructType constructType, String name){
+		PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> store = storeImplementationMap.get(getConfigKey(constructType, name));
+		if (null == store) {
+			return null;
+		}
+		return store.getStatistics();
 	}
 
 	public enum SequenceMode {

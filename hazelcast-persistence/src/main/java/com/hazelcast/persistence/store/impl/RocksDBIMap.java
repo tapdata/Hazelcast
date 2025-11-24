@@ -13,14 +13,13 @@ import org.bson.codecs.DecoderContext;
 import org.bson.codecs.DocumentCodec;
 import org.bson.codecs.EncoderContext;
 import org.bson.io.BasicOutputBuffer;
+import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.RocksDBException;
 
+import java.io.File;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 
 public class RocksDBIMap extends PersistenceMapStore<PersistenceRocksDBConfig, RocksDBResource> {
 	private static final String keySplit = "__0x0__";
@@ -61,6 +60,17 @@ public class RocksDBIMap extends PersistenceMapStore<PersistenceRocksDBConfig, R
 		releaseResource();
 	}
 
+	@Override
+	public void doClear() {
+		ColumnFamilyHandle cfHandle = this.rocksDBResource.getColumnFamilyHandle();
+		try {
+			this.rocksDBResource.getRocksDB().dropColumnFamilies(Collections.singletonList(cfHandle));
+			this.rocksDBResource.removeColumnFamily();
+		}catch (RocksDBException e) {
+			throw new RuntimeException(e);
+		}
+	}
+
 	private void releaseResource() {
 		Optional.ofNullable(this.rocksDBResource).ifPresent(rr -> CommonUtils.handleWithError(
 				() -> {
@@ -77,8 +87,8 @@ public class RocksDBIMap extends PersistenceMapStore<PersistenceRocksDBConfig, R
 			return;
 		}
 		try {
-			String sKey = sign + key;
-			this.rocksDBResource.getRocksDB().delete(sKey.getBytes(StandardCharsets.UTF_8));
+			ColumnFamilyHandle cfHandle = this.rocksDBResource.getColumnFamilyHandle();
+			this.rocksDBResource.getRocksDB().delete(cfHandle, key.getBytes(StandardCharsets.UTF_8));
 		} catch (RocksDBException e) {
 			throw new RuntimeException(e.getMessage());
 		}
@@ -94,11 +104,11 @@ public class RocksDBIMap extends PersistenceMapStore<PersistenceRocksDBConfig, R
 		try (
 				BasicOutputBuffer outputBuffer = new BasicOutputBuffer()
 		) {
-			String sKey = sign + key;
 			Document val = ((Document) value).append("_ts", System.currentTimeMillis() / 1000);
 			BsonBinaryWriter writer = new BsonBinaryWriter(outputBuffer);
 			documentCodec.encode(writer, val, encoderContext);
-			this.rocksDBResource.getRocksDB().put(sKey.getBytes(StandardCharsets.UTF_8), outputBuffer.toByteArray());
+			ColumnFamilyHandle cfHandle = this.rocksDBResource.getColumnFamilyHandle();
+			this.rocksDBResource.getRocksDB().put(cfHandle, key.getBytes(StandardCharsets.UTF_8), outputBuffer.toByteArray());
 		} catch (RocksDBException e) {
 			throw new RuntimeException(e.getMessage());
 		}
@@ -124,9 +134,9 @@ public class RocksDBIMap extends PersistenceMapStore<PersistenceRocksDBConfig, R
 
 	public synchronized Document load(String key) {
 		Document doc;
-		String sKey = sign + key;
 		try {
-			byte[] s = this.rocksDBResource.getRocksDB().get(sKey.getBytes(StandardCharsets.UTF_8));
+			ColumnFamilyHandle cfHandle = this.rocksDBResource.getColumnFamilyHandle();
+			byte[] s = this.rocksDBResource.getRocksDB().get(cfHandle, key.getBytes(StandardCharsets.UTF_8));
 			if (s == null) {
 				return null;
 			}
@@ -162,4 +172,24 @@ public class RocksDBIMap extends PersistenceMapStore<PersistenceRocksDBConfig, R
 	public boolean isEmpty() {
 		return false;
 	}
+
+	@Override
+	public synchronized Map<String,Object> getStatistics() {
+		if (!checkEnable()) {
+			return null;
+		}
+		try {
+			long count = this.rocksDBResource.getRocksDB().getLongProperty(this.rocksDBResource.getColumnFamilyHandle(), "rocksdb.estimate-num-keys");
+			long size = this.rocksDBResource.getRocksDB().getLongProperty(this.rocksDBResource.getColumnFamilyHandle(), "rocksdb.estimate-live-data-size");
+			Map<String, Object> statistics = new HashMap<>();
+			statistics.put("count", count);
+			statistics.put("uri", this.rocksDBResource.getDbPath() + File.separator + this.rocksDBResource.getColumnFamilyName());
+			statistics.put("mode", persistenceRocksDBConfig.getStorageMode().name());
+			statistics.put("size", size);
+			return statistics;
+		} catch (Exception e) {
+			throw new RuntimeException(e);
+        }
+	}
+
 }
