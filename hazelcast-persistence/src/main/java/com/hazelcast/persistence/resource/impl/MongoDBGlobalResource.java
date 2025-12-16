@@ -214,6 +214,28 @@ public class MongoDBGlobalResource implements MemoryFetcher {
 			}
 		}
 
+		/**
+		 * 获取 SSL 密码，按优先级：配置密码 > 系统属性 > 默认密码
+		 *
+		 * @param configPassword 配置中的密码
+		 * @return SSL 密码
+		 */
+		private String getSSLPassword(String configPassword) {
+			// 1. 优先使用配置的密码
+			if (StringUtils.isNotBlank(configPassword)) {
+				return configPassword;
+			}
+
+			// 2. 尝试从系统属性获取密码
+			String systemPassword = System.getProperty("javax.net.ssl.trustStorePassword");
+			if (StringUtils.isNotBlank(systemPassword)) {
+				return systemPassword;
+			}
+
+			// 3. 返回空字符串
+			return "";
+		}
+
 		private void setSSLSettingIfNeed(MongoClientSettings.Builder mongoClientSettingBuilder) {
 			try {
 				String uri = persistenceMongoDBConfig.getUri();
@@ -227,7 +249,8 @@ public class MongoDBGlobalResource implements MemoryFetcher {
 				}
 				if (isSSL) {
 					if (uri.indexOf("tlsAllowInvalidCertificates=true") > 0 ||
-							uri.indexOf("sslAllowInvalidCertificates=true") > 0) {
+							uri.indexOf("sslAllowInvalidCertificates=true") > 0 ||
+							uri.indexOf("tlsInsecure=true") > 0) {
 						mongoClientSettingBuilder.applyToSslSettings(ssl -> {
 							SSLContext sslContext;
 							try {
@@ -258,10 +281,19 @@ public class MongoDBGlobalResource implements MemoryFetcher {
 						}
 						List<String> clientCertificates = SSLUtil.retriveCertificates(persistenceMongoDBConfig.getSslKey());
 						String clientPrivateKey = SSLUtil.retrivePrivateKey(persistenceMongoDBConfig.getSslKey());
+
+						// 获取密码：优先使用配置的密码，其次使用系统属性，最后使用默认密码
+						String password = getSSLPassword(persistenceMongoDBConfig.getSslPass());
+
+						SSLContext sslContext;
 						if (StringUtils.isNotBlank(clientPrivateKey) && CollectionUtils.isNotEmpty(clientCertificates)) {
-							SSLContext sslContext = SSLUtil.createSSLContext(clientPrivateKey, clientCertificates, trustCertificates, persistenceMongoDBConfig.getSslPass());
-							mongoClientSettingBuilder.applyToSslSettings(ssl -> ssl.enabled(true).context(sslContext).invalidHostNameAllowed(!persistenceMongoDBConfig.isCheckServerIdentity()));
+							// 有客户端证书和私钥，创建完整的 SSLContext
+							sslContext = SSLUtil.createSSLContext(clientPrivateKey, clientCertificates, trustCertificates, password);
+						} else {
+							// 没有客户端证书，使用 Java 默认的 truststore 或指定的 trustCertificates
+							sslContext = SSLUtil.createSSLContextWithTrustOnly(trustCertificates, password);
 						}
+						mongoClientSettingBuilder.applyToSslSettings(ssl -> ssl.enabled(true).context(sslContext).invalidHostNameAllowed(!persistenceMongoDBConfig.isCheckServerIdentity()));
 					}
 				}
 			} catch (Exception e) {

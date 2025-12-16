@@ -36,6 +36,28 @@ public class SSLUtil {
 		return sslContext;
 	}
 
+	/**
+	 * 创建仅包含 TrustManager 的 SSLContext，用于没有客户端证书的场景
+	 * 如果没有提供 trustCertificates，则使用 Java 默认的 truststore
+	 *
+	 * @param trustCertificates 信任的证书列表，可以为 null
+	 * @param password 密码
+	 * @return SSLContext
+	 * @throws Exception 创建失败时抛出异常
+	 */
+	public static SSLContext createSSLContextWithTrustOnly(List<String> trustCertificates, String password) throws Exception {
+		SSLContext sslContext = SSLContext.getInstance("SSL");
+		if (password == null) {
+			password = "";
+		}
+
+		TrustManager[] trustManagers = createTrustManagersWithDefault(trustCertificates, password);
+		// 不提供 KeyManager，让 Java 使用默认的或者 null
+		sslContext.init(null, trustManagers, null);
+
+		return sslContext;
+	}
+
 	public static TrustManager[] createTrustManagers(List<String> certificates, String password) throws Exception {
 		X509Certificate[] x509Certificates = createCertificates(certificates);
 		TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
@@ -52,6 +74,37 @@ public class SSLUtil {
 		}
 
 		return createTrustAllHost();
+	}
+
+	/**
+	 * 创建 TrustManager，如果没有提供证书则使用 Java 默认的 truststore
+	 *
+	 * @param certificates 证书列表，可以为 null
+	 * @param password 密码
+	 * @return TrustManager 数组
+	 * @throws Exception 创建失败时抛出异常
+	 */
+	public static TrustManager[] createTrustManagersWithDefault(List<String> certificates, String password) throws Exception {
+		X509Certificate[] x509Certificates = createCertificates(certificates);
+		TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+
+		if (x509Certificates != null && x509Certificates.length > 0) {
+			// 使用提供的证书
+			KeyStore trustStoreContainingTheCertificate = KeyStore.getInstance("JKS");
+			trustStoreContainingTheCertificate.load(null, password.toCharArray());
+
+			trustStoreContainingTheCertificate.setCertificateEntry("", x509Certificates[0]);
+
+			trustManagerFactory.init(trustStoreContainingTheCertificate);
+
+			return trustManagerFactory.getTrustManagers();
+		}
+
+		// 没有提供证书，使用 Java 默认的 truststore
+		// 通过传入 null 给 init 方法，TrustManagerFactory 会使用系统默认的 truststore
+		// 通常是 $JAVA_HOME/lib/security/cacerts
+		trustManagerFactory.init((KeyStore) null);
+		return trustManagerFactory.getTrustManagers();
 	}
 
 	public static KeyManager[] createKeyManagers(String privateKey, List<String> certificates, String password) throws Exception {
