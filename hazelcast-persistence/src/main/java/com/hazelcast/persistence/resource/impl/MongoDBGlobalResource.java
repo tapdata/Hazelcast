@@ -255,7 +255,8 @@ public class MongoDBGlobalResource implements MemoryFetcher {
 				}
 				if (isSSL) {
 					if (uri.indexOf("tlsAllowInvalidCertificates=true") > 0 ||
-							uri.indexOf("sslAllowInvalidCertificates=true") > 0) {
+							uri.indexOf("sslAllowInvalidCertificates=true") > 0 ||
+							uri.indexOf("tlsInsecure=true") > 0) {
 						mongoClientSettingBuilder.applyToSslSettings(ssl -> {
 							SSLContext sslContext;
 							try {
