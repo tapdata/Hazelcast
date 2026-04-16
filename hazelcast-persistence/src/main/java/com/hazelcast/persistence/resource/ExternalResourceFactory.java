@@ -4,6 +4,7 @@ import com.hazelcast.persistence.StorageMode;
 import com.hazelcast.persistence.config.PersistenceStorageAbstractConfig;
 import com.hazelcast.persistence.http.HttpResource;
 import com.hazelcast.persistence.resource.impl.InMemoryResource;
+import com.hazelcast.persistence.resource.impl.DuckDBResource;
 import com.hazelcast.persistence.resource.impl.MongoDBResource;
 import com.hazelcast.persistence.resource.impl.RocksDBResource;
 
@@ -21,6 +22,9 @@ public class ExternalResourceFactory {
 				break;
 			case RocksDB:
 				externalResource = (ExternalResource<E>) new RocksDBResource();
+				break;
+			case DuckDB:
+				externalResource = (ExternalResource<E>) new DuckDBResource();
 				break;
 			case HTTP_TM:
 				externalResource = (ExternalResource<E>) new HttpResource();

@@ -7,6 +7,8 @@ import com.hazelcast.persistence.resource.ExternalResource;
 import com.hazelcast.persistence.http.HttpTMIMap;
 import com.hazelcast.persistence.store.impl.MongoDBIMap;
 import com.hazelcast.persistence.store.impl.MongoDBRingBuffer;
+import com.hazelcast.persistence.store.impl.DuckDBIMap;
+import com.hazelcast.persistence.store.impl.DuckDBRingBuffer;
 import com.hazelcast.persistence.store.impl.RocksDBIMap;
 import com.hazelcast.persistence.store.impl.RocksDBRingBuffer;
 
@@ -27,6 +29,9 @@ public class PersistenceStoreFactory {
 					case RocksDB:
 						persistenceStorageStore = (PersistenceStorageStore<E, R>) new RocksDBIMap();
 						break;
+					case DuckDB:
+						persistenceStorageStore = (PersistenceStorageStore<E, R>) new DuckDBIMap();
+						break;
 					case HTTP_TM:
 						persistenceStorageStore = (PersistenceStorageStore<E, R>) new HttpTMIMap();
 						break;
@@ -39,6 +44,9 @@ public class PersistenceStoreFactory {
 						break;
 					case RocksDB:
 						persistenceStorageStore = (PersistenceStorageStore<E, R>) new RocksDBRingBuffer();
+						break;
+					case DuckDB:
+						persistenceStorageStore = (PersistenceStorageStore<E, R>) new DuckDBRingBuffer();
 						break;
 				}
 				break;
