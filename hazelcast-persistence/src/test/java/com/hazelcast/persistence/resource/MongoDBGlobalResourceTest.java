@@ -5,6 +5,7 @@ import com.hazelcast.persistence.config.PersistenceMongoDBConfig;
 import com.hazelcast.persistence.resource.impl.MongoDBGlobalResource;
 import com.mongodb.client.MongoClient;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
@@ -16,6 +17,14 @@ import java.util.Map;
  * @create 2023-09-19 16:52
  **/
 class MongoDBGlobalResourceTest {
+
+	@BeforeEach
+	void resetResourceMap() throws Exception {
+		MongoDBGlobalResource instance = MongoDBGlobalResource.getInstance();
+		Field resourceMapField = instance.getClass().getDeclaredField("RESOURCE_MAP");
+		resourceMapField.setAccessible(true);
+		((Map<?, ?>) resourceMapField.get(instance)).clear();
+	}
 
 	@Test
 	void testGetInstance() {
