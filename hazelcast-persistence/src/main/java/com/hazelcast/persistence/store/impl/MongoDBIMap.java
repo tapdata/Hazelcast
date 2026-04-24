@@ -278,8 +278,10 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 		}
 		Document result = this.mongoDBResource.getMongoDatabase().runCommand(new Document("collStats", persistenceMongoDBConfig.getCollection()));
 		Map<String, Object> statistics = new HashMap<>();
-		statistics.put("count", result.getInteger("count"));
-		statistics.put("size", result.getInteger("storageSize"));
+		Number count = (Number) result.get("count");
+		Number size = (Number) result.get("storageSize");
+		statistics.put("count", count == null ? 0L : count.longValue());
+		statistics.put("size", size == null ? 0L : size.longValue());
 		statistics.put("uri",persistenceMongoDBConfig.uriInfo());
 		statistics.put("mode",persistenceMongoDBConfig.getStorageMode().name());
 		return statistics;
