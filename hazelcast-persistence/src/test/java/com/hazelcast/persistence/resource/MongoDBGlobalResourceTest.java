@@ -132,4 +132,41 @@ class MongoDBGlobalResourceTest {
 		MongoDBGlobalResource instance = MongoDBGlobalResource.getInstance();
 		Assertions.assertDoesNotThrow(() -> instance.close(null));
 	}
+
+	@Test
+	void appendDefaultHaTimeoutOptions_noQueryString() {
+		String result = MongoDBGlobalResource.appendDefaultHaTimeoutOptions("mongodb://host:27017/db");
+		Assertions.assertEquals(
+				"mongodb://host:27017/db?serverSelectionTimeoutMS=15000&socketTimeoutMS=15000&maxIdleTimeMS=30000",
+				result);
+	}
+
+	@Test
+	void appendDefaultHaTimeoutOptions_existingQueryString() {
+		String result = MongoDBGlobalResource.appendDefaultHaTimeoutOptions("mongodb://u:p@host/db?authSource=admin");
+		Assertions.assertEquals(
+				"mongodb://u:p@host/db?authSource=admin&serverSelectionTimeoutMS=15000&socketTimeoutMS=15000&maxIdleTimeMS=30000",
+				result);
+	}
+
+	@Test
+	void appendDefaultHaTimeoutOptions_userValuePreserved() {
+		String result = MongoDBGlobalResource.appendDefaultHaTimeoutOptions("mongodb://host/db?socketTimeoutMS=5000");
+		Assertions.assertTrue(result.contains("socketTimeoutMS=5000"));
+		Assertions.assertFalse(result.contains("socketTimeoutMS=15000"));
+		Assertions.assertTrue(result.contains("serverSelectionTimeoutMS=15000"));
+		Assertions.assertTrue(result.contains("maxIdleTimeMS=30000"));
+	}
+
+	@Test
+	void appendDefaultHaTimeoutOptions_caseInsensitive() {
+		String result = MongoDBGlobalResource.appendDefaultHaTimeoutOptions("mongodb://host/db?SocketTimeoutMS=5000");
+		Assertions.assertFalse(result.contains("socketTimeoutMS=15000"));
+	}
+
+	@Test
+	void appendDefaultHaTimeoutOptions_blankReturnedAsIs() {
+		Assertions.assertNull(MongoDBGlobalResource.appendDefaultHaTimeoutOptions(null));
+		Assertions.assertEquals("", MongoDBGlobalResource.appendDefaultHaTimeoutOptions(""));
+	}
 }

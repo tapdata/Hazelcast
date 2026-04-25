@@ -80,6 +80,28 @@ public class MongoDBGlobalResource implements MemoryFetcher {
 		return username + "@" + hostStr;
 	}
 
+	private static final String[][] DEFAULT_HA_TIMEOUT_OPTIONS = {
+			{"serverSelectionTimeoutMS", "15000"},
+			{"socketTimeoutMS", "15000"},
+			{"maxIdleTimeMS", "30000"}
+	};
+
+	public static String appendDefaultHaTimeoutOptions(String mongodbUri) {
+		if (StringUtils.isBlank(mongodbUri)) {
+			return mongodbUri;
+		}
+		StringBuilder result = new StringBuilder(mongodbUri);
+		for (String[] kv : DEFAULT_HA_TIMEOUT_OPTIONS) {
+			String key = kv[0];
+			String value = kv[1];
+			Pattern keyPattern = Pattern.compile("[?&]" + Pattern.quote(key) + "=", Pattern.CASE_INSENSITIVE);
+			if (!keyPattern.matcher(result).find()) {
+				result.append(result.indexOf("?") >= 0 ? '&' : '?').append(key).append('=').append(value);
+			}
+		}
+		return result.toString();
+	}
+
 	@Override
 	public DataMap memory(String keyRegex, String memoryLevel) {
 		DataMap dataMap = DataMap.create();
@@ -200,7 +222,7 @@ public class MongoDBGlobalResource implements MemoryFetcher {
 			try {
 				lock.lock();
 				if (null == mongoClient) {
-					String uri = persistenceMongoDBConfig.getUri();
+					String uri = appendDefaultHaTimeoutOptions(persistenceMongoDBConfig.getUri());
 					MongoClientSettings.Builder mongoClientSettingBuilder = MongoClientSettings.builder();
 					setSSLSettingIfNeed(mongoClientSettingBuilder);
 					mongoClientSettingBuilder.applyToConnectionPoolSettings(connectionPoolSettings -> connectionPoolSettings.minSize(1).maxSize(maxSize));
