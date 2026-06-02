@@ -384,7 +384,7 @@ public class PersistenceStorage {
 		return null;
 	}
 
-	private PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> createStore(
+	public PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> createStore(
 			PersistenceStorageAbstractConfig persistenceStorageAbstractConfig
 	) {
 		if (null == persistenceStorageAbstractConfig) {
