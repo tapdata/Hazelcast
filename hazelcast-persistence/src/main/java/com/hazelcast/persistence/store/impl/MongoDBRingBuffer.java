@@ -348,7 +348,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 			return Collections.emptyList();
 		}
 		List<Map<String, Object>> documents = new ArrayList<>();
-		for (Document document : this.mongoDBResource.getMongoCollection().find(buildMongoFilter(query)).limit(limit)) {
+		for (Document document : this.mongoDBResource.getMongoCollection().find(buildMongoFilter(query)).sort(Sorts.ascending("key")).limit(limit)) {
 			documents.add(toPlainMap(document));
 		}
 		return documents;
