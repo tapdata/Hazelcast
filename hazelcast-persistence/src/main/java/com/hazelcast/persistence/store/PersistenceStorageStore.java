@@ -3,6 +3,7 @@ package com.hazelcast.persistence.store;
 import com.hazelcast.persistence.config.PersistenceStorageAbstractConfig;
 import com.hazelcast.persistence.resource.ExternalResource;
 
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -70,6 +71,10 @@ public abstract class PersistenceStorageStore<T extends PersistenceStorageAbstra
 	}
 
 	public Map<String,Object> getStatistics() {
+		throw new UnsupportedOperationException();
+	}
+
+	public List<Map<String, Object>> find(RingBufferFindParam query, int limit) {
 		throw new UnsupportedOperationException();
 	}
 }

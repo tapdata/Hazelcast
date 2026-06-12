@@ -7,6 +7,7 @@ import com.hazelcast.persistence.config.PersistenceMongoDBConfig;
 import com.hazelcast.persistence.config.PersistenceStorageAbstractConfig;
 import com.hazelcast.persistence.resource.impl.MongoDBResource;
 import com.hazelcast.persistence.store.PersistenceRingBufferStore;
+import com.hazelcast.persistence.store.RingBufferFindParam;
 import com.mongodb.CreateIndexCommitQuorum;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
@@ -15,8 +16,11 @@ import io.tapdata.entity.memory.MemoryFetcher;
 import io.tapdata.entity.utils.DataMap;
 import io.tapdata.pdk.core.api.PDKIntegration;
 import io.tapdata.pdk.core.constants.ShareCDCConstant;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.bson.Document;
+import org.bson.conversions.Bson;
+import org.bson.types.Binary;
 
 import java.util.*;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
@@ -36,6 +40,9 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 	public static final String SIGN_KEY = "ringBuffer";
 	public static final String VALUE_KEY = "value";
 	public static final String LOAD_CACHE_LIMIT_KEY = "LOAD_CACHE_LIMIT";
+	private static final String VALUE_PREFIX = "value.";
+	private static final String BEFORE_PREFIX = "value.before.";
+	private static final String AFTER_PREFIX = "value.after.";
 	private final AtomicLong largestSequence = new AtomicLong(-1L);
 	private final AtomicLong smallestSequence = new AtomicLong(0L);
 	private Document sign;
@@ -333,6 +340,93 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 			dataMap.kv("error", e.getMessage() + "; Stack: " + ExceptionUtils.getStackTrace(e));
 		}
 		return dataMap;
+	}
+
+	@Override
+	public List<Map<String, Object>> find(RingBufferFindParam query, int limit) {
+		if (!checkEnable() || mongoDBResource == null) {
+			return Collections.emptyList();
+		}
+		List<Map<String, Object>> documents = new ArrayList<>();
+		for (Document document : this.mongoDBResource.getMongoCollection().find(buildMongoFilter(query)).sort(Sorts.ascending("key")).limit(limit)) {
+			documents.add(toPlainMap(document));
+		}
+		return documents;
+	}
+
+	private Bson buildMongoFilter(RingBufferFindParam query) {
+		List<Bson> filters = new ArrayList<>();
+		filters.add(Filters.eq(SIGN_KEY, query.getRingBuffer()));
+		filters.add(Filters.eq("value.connectionId", query.getConnectionId()));
+		filters.add(Filters.eq("value.fromTable", query.getTableName()));
+		if (query.getKey() != null) {
+			filters.add(Filters.gt("key", query.getKey()));
+		}
+		if (query.getStartTime() > 0) {
+			filters.add(Filters.gte("value.timestamp", query.getStartTime()));
+		}
+		if (query.getEndTime() > 0) {
+			filters.add(Filters.lte("value.timestamp", query.getEndTime()));
+		}
+		List<Map<String, Object>> filterGroups = query.getFilters();
+		if (filterGroups != null) {
+			List<Bson> groups = new ArrayList<>();
+			for (Map<String, Object> filterMap : filterGroups) {
+				if (filterMap == null || filterMap.isEmpty()) {
+					continue;
+				}
+				List<Bson> groupFilters = new ArrayList<>();
+				for (Map.Entry<String, Object> entry : filterMap.entrySet()) {
+					groupFilters.add(buildRecordFieldFilter(entry.getKey(), entry.getValue()));
+				}
+				groups.add(groupFilters.size() == 1 ? groupFilters.get(0) : Filters.and(groupFilters));
+			}
+			if (!groups.isEmpty()) {
+				filters.add(groups.size() == 1 ? groups.get(0) : Filters.or(groups));
+			}
+		}
+		return Filters.and(filters);
+	}
+
+	private Bson buildRecordFieldFilter(String path, Object value) {
+		if (StringUtils.isBlank(path)) {
+			throw new IllegalArgumentException("Filter path cannot be blank");
+		}
+		String normalizedPath = path.trim();
+		if (StringUtils.startsWith(normalizedPath, VALUE_PREFIX)
+				|| "key".equals(normalizedPath)
+				|| SIGN_KEY.equals(normalizedPath)) {
+			return Filters.eq(normalizedPath, value);
+		}
+		return Filters.or(
+				Filters.eq(AFTER_PREFIX + normalizedPath, value),
+				Filters.eq(BEFORE_PREFIX + normalizedPath, value)
+		);
+	}
+
+	private Map<String, Object> toPlainMap(Map<?, ?> source) {
+		Map<String, Object> result = new LinkedHashMap<>(source.size());
+		for (Map.Entry<?, ?> entry : source.entrySet()) {
+			result.put(String.valueOf(entry.getKey()), toPlainValue(entry.getValue()));
+		}
+		return result;
+	}
+
+	private Object toPlainValue(Object value) {
+		if (value instanceof Map<?, ?> map) {
+			return toPlainMap(map);
+		}
+		if (value instanceof Collection<?> collection) {
+			List<Object> values = new ArrayList<>(collection.size());
+			for (Object item : collection) {
+				values.add(toPlainValue(item));
+			}
+			return values;
+		}
+		if (value instanceof Binary binary) {
+			return binary;
+		}
+		return value;
 	}
 
 	@Override
