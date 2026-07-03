@@ -171,6 +171,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		List<IndexModel> indexModels = Arrays.asList(
 				new IndexModel(Indexes.ascending(SIGN_KEY, "key", "_id"), indexOptions),
 				new IndexModel(Indexes.ascending(SIGN_KEY, "value.timestamp", "_id"), indexOptions),
+				new IndexModel(Indexes.ascending(SIGN_KEY, "_id", "value.timestamp"), indexOptions),
 				new IndexModel(Indexes.ascending(SIGN_KEY, "_id"), indexOptions)
 		);
 		mongoCollection.createIndexes(indexModels, createIndexOptions);
@@ -311,7 +312,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 			return 0L;
 		}
 		Document query = new Document(sign()).append("value.timestamp", new Document("$gte", timestamp));
-		Document document = mongoDBResource.getMongoCollection().find(query).sort(ascending("value.timestamp","_id")).first();
+		Document document = mongoDBResource.getMongoCollection().find(query).sort(ascending("_id")).first();
 		if (document == null) {
 			return largestSequence.get() + 1L;
 		}
