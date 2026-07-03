@@ -171,6 +171,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		List<IndexModel> indexModels = Arrays.asList(
 				new IndexModel(Indexes.ascending(SIGN_KEY, "key", "_id"), indexOptions),
 				new IndexModel(Indexes.ascending(SIGN_KEY, "value.timestamp", "_id"), indexOptions),
+				new IndexModel(Indexes.ascending(SIGN_KEY, "_id", "value.timestamp"), indexOptions),
 				new IndexModel(Indexes.ascending(SIGN_KEY, "_id"), indexOptions)
 		);
 		mongoCollection.createIndexes(indexModels, createIndexOptions);
