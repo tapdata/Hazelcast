@@ -276,7 +276,7 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 		if (!checkEnable() || null == mongoDBResource) {
 			return null;
 		}
-		Document result = this.mongoDBResource.getMongoDatabase().runCommand(new Document("collStats", persistenceMongoDBConfig.getCollection()));
+		Document result = collectionStats();
 		Map<String, Object> statistics = new HashMap<>();
 		Number count = (Number) result.get("count");
 		Number size = (Number) result.get("storageSize");
@@ -285,5 +285,30 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 		statistics.put("uri",persistenceMongoDBConfig.uriInfo());
 		statistics.put("mode",persistenceMongoDBConfig.getStorageMode().name());
 		return statistics;
+	}
+
+	private Document collectionStats() {
+		String version = mongoDBResource.getMongoDatabase().runCommand(new Document("buildInfo", 1)).getString("version");
+		int major = Integer.parseInt(version.substring(0, version.indexOf('.')));
+		if (major < 6) {
+			return mongoDBResource.getMongoDatabase().runCommand(
+					new Document("collStats", persistenceMongoDBConfig.getCollection()));
+		}
+		return aggregateCollectionStats(mongoDBResource.getMongoCollection().aggregate(Collections.singletonList(
+				new Document("$collStats", new Document("storageStats", new Document())))));
+	}
+
+	static Document aggregateCollectionStats(Iterable<Document> statsDocuments) {
+		Document result = new Document();
+		for (Document item : statsDocuments) {
+			Document stats = item.get("storageStats", Document.class);
+			if (stats == null) continue;
+			for (String key : Arrays.asList("count", "storageSize")) {
+				Number value = (Number) stats.get(key);
+				Number current = (Number) result.get(key);
+				if (value != null) result.put(key, (current == null ? 0L : current.longValue()) + value.longValue());
+			}
+		}
+		return result;
 	}
 }
