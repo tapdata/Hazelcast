@@ -52,14 +52,14 @@ public class PersistenceStorageTests {
 	public void addConfigTest() {
 		PersistenceStorage persistenceStorage = PersistenceStorage.getInstance();
 		PersistenceMongoDBConfig imapMongoDBConfig = PersistenceMongoDBConfig.create(ConstructType.IMAP, "imap")
-				.uri("mongodb://root:pwd@139.198.127.204:32550/qa?authSource=admin")
+				.uri(System.getProperty("hazelcast.test.mongodb.uri", "mongodb://root:pwd@139.198.127.204:32550/qa?authSource=admin"))
 				.database("hazelcast")
 				.collection("imap_default_config");
 		persistenceStorage.addConfig(imapMongoDBConfig);
 		PersistenceStorageAbstractConfig persistenceStorageAbstractConfig = persistenceStorage.getPersistenceStorageConfig(imapMongoDBConfig.getConstructType(), imapMongoDBConfig.getName());
 		Assertions.assertEquals(PersistenceMongoDBConfig.class.getName(), persistenceStorageAbstractConfig.getClass().getName());
 		PersistenceMongoDBConfig persistenceMongoDBConfig = (PersistenceMongoDBConfig) persistenceStorageAbstractConfig;
-		Assertions.assertEquals("mongodb://root:pwd@139.198.127.204:32550/qa?authSource=admin", persistenceMongoDBConfig.getUri());
+		Assertions.assertEquals(System.getProperty("hazelcast.test.mongodb.uri", "mongodb://root:pwd@139.198.127.204:32550/qa?authSource=admin"), persistenceMongoDBConfig.getUri());
 		Assertions.assertEquals("hazelcast", persistenceMongoDBConfig.getDatabase());
 		Assertions.assertEquals("imap_default_config", persistenceMongoDBConfig.getCollection());
 
@@ -85,7 +85,7 @@ public class PersistenceStorageTests {
 			persistenceStorage.addConfig(imapRocksDBConfig);
 		} catch (Exception e) {
 			Assertions.assertEquals("Change persistence storage mode is not allowed until restart instance\n" +
-					" old: PersistenceMongoDBConfig[constructType=IMAP, name='imap', storageMode=MongoDB, inMemSize=100, uri='mongodb://root:******@139.198.127.204:32550/qa?authSource=admin', database='hazelcast', collection='imap_default_config', exclusiveCollection=false, ssl=false, sslCA='null', sslKey='null', sslPass='null', sslValidate=false, checkServerIdentity=false]\n" +
+					" old: PersistenceMongoDBConfig[constructType=IMAP, name='imap', storageMode=MongoDB, inMemSize=100, uri='" + System.getProperty("hazelcast.test.mongodb.uri", "mongodb://root:******@139.198.127.204:32550/qa?authSource=admin") + "', database='hazelcast', collection='imap_default_config', exclusiveCollection=false, ssl=false, sslCA='null', sslKey='null', sslPass='null', sslValidate=false, checkServerIdentity=false]\n" +
 					" new: PersistenceRocksDBConfig[constructType=IMAP, name='imap', storageMode=RocksDB, inMemSize=100, path='./tap_default_rocksdb_cache']", e.getMessage());
 		}
 	}
@@ -102,7 +102,7 @@ public class PersistenceStorageTests {
 	@Test
 	public void setImapTTLTest() throws Exception {
 		PersistenceMongoDBConfig imapMongoDBConfig = PersistenceMongoDBConfig.create(ConstructType.IMAP, "imap")
-				.uri("mongodb://root:pwd@139.198.127.204:32550/qa?authSource=admin")
+				.uri(System.getProperty("hazelcast.test.mongodb.uri", "mongodb://root:pwd@139.198.127.204:32550/qa?authSource=admin"))
 				.database("hazelcast")
 				.collection("imap_default_config");
 		persistenceStorage.addConfig(imapMongoDBConfig);
@@ -113,7 +113,7 @@ public class PersistenceStorageTests {
 	@Test
 	public void setImapTTLTest_ttlIsZero() throws Exception {
 		PersistenceMongoDBConfig imapMongoDBConfig = PersistenceMongoDBConfig.create(ConstructType.IMAP, "imap")
-				.uri("mongodb://root:pwd@139.198.127.204:32550/qa?authSource=admin")
+				.uri(System.getProperty("hazelcast.test.mongodb.uri", "mongodb://root:pwd@139.198.127.204:32550/qa?authSource=admin"))
 				.database("hazelcast")
 				.collection("imap_default_config");
 		persistenceStorage.addConfig(imapMongoDBConfig);
@@ -124,7 +124,7 @@ public class PersistenceStorageTests {
 	@Test
 	public void setImapTTLTest_ttlIsNegativeNumber() throws Exception {
 		PersistenceMongoDBConfig imapMongoDBConfig = PersistenceMongoDBConfig.create(ConstructType.IMAP, "imap")
-				.uri("mongodb://root:pwd@139.198.127.204:32550/qa?authSource=admin")
+				.uri(System.getProperty("hazelcast.test.mongodb.uri", "mongodb://root:pwd@139.198.127.204:32550/qa?authSource=admin"))
 				.database("hazelcast")
 				.collection("imap_default_config");
 		persistenceStorage.addConfig(imapMongoDBConfig);
