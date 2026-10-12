@@ -1,7 +1,6 @@
 package com.hazelcast.persistence.store.impl;
 
 import com.hazelcast.persistence.CommonUtils;
-import com.hazelcast.persistence.MongodbUtil;
 import com.hazelcast.persistence.MongoCollectionStatistics;
 import com.hazelcast.persistence.config.PersistenceMongoDBConfig;
 import com.hazelcast.persistence.resource.impl.MongoDBResource;
@@ -46,7 +45,7 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 	private void createIndex() {
 		IndexOptions indexOptions = new IndexOptions().background(true);
 		CreateIndexOptions createIndexOptions = new CreateIndexOptions();
-		if (MongodbUtil.isIndexCommitQuorumSupported(mongoDBResource.getMongoDatabase())) {
+		if (collectionStatistics.supportsIndexCommitQuorum(mongoDBResource.getMongoDatabase(), mongoDBResource.getMongoClient())) {
 			createIndexOptions.commitQuorum(CreateIndexCommitQuorum.MAJORITY);
 		}
 		MongoCollection<Document> mongoCollection = mongoDBResource.getMongoCollection();
@@ -88,6 +87,7 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 				() -> {
 					mr.close();
 					this.mongoDBResource = null;
+					collectionStatistics.reset();
 				}, throwable -> {
 					throw new RuntimeException("Close IMap[" + imapName + "]'s MongoDB resource failed, config: " + persistenceMongoDBConfig, throwable);
 				})
@@ -278,7 +278,7 @@ public class MongoDBIMap extends PersistenceMapStore<PersistenceMongoDBConfig, M
 		if (!checkEnable() || null == mongoDBResource) {
 			return null;
 		}
-		Document result = collectionStatistics.read(this.mongoDBResource.getMongoDatabase(), persistenceMongoDBConfig.getCollection());
+		Document result = collectionStatistics.read(this.mongoDBResource.getMongoDatabase(), persistenceMongoDBConfig.getCollection(), this.mongoDBResource.getMongoClient());
 		Map<String, Object> statistics = new HashMap<>();
 		Number count = (Number) result.get("count");
 		Number size = (Number) result.get("storageSize");

@@ -1,6 +1,8 @@
 package com.hazelcast.persistence;
 
 import com.mongodb.MongoCommandException;
+import com.mongodb.MongoTimeoutException;
+import com.mongodb.ReadPreference;
 import com.mongodb.ServerAddress;
 import com.mongodb.client.AggregateIterable;
 import com.mongodb.client.MongoCollection;
@@ -42,7 +44,8 @@ class MongoCollectionStatisticsTest {
                     .append("max", 100L).append("maxSize", 1048576L);
             f.rows.add(new Document("storageStats", stats));
             MongoCollectionStatistics reader = new MongoCollectionStatistics();
-            assertEquals(stats, reader.read(f.database, "test"));
+            assertEquals(stats(2, 42, 4096), reader.read(f.database, "test"));
+            assertTrue(f.primaryRead);
             assertTrue(f.closed);
             assertEquals(Arrays.asList("buildInfo", "aggregate"), f.commands);
             // A successful version decision is reused for this reader.
@@ -68,7 +71,7 @@ class MongoCollectionStatisticsTest {
     @DisplayName("版本查询失败：继续原统计查询")
     void versionFailureDoesNotAddPermissionPrerequisite() {
         Fixture f = new Fixture("8.0.32");
-        f.versionFailure = new IllegalStateException("version unavailable");
+        f.versionFailure = error(13);
         assertSame(f.legacy, new MongoCollectionStatistics().read(f.database, "test"));
     }
 
@@ -158,6 +161,56 @@ class MongoCollectionStatisticsTest {
                 assertThrows(MongoCommandException.class, store::getStatistics));
     }
 
+    @Test
+    void transportFailureDoesNotRetryStatistics() {
+        Fixture f = new Fixture("8.0.32");
+        f.versionFailure = new MongoTimeoutException("unreachable");
+        assertSame(f.versionFailure, assertThrows(MongoTimeoutException.class,
+                () -> new MongoCollectionStatistics().read(f.database, "test")));
+        assertEquals(Arrays.asList("buildInfo"), f.commands);
+    }
+
+    @Test
+    void missingCollectionDuringIteratorInitializationKeepsLegacyContract() {
+        Fixture f = new Fixture("8.0.32");
+        f.iteratorFailure = error(26);
+        assertSame(f.legacy, new MongoCollectionStatistics().read(f.database, "test"));
+        assertFalse(f.closed);
+        assertEquals(Arrays.asList("buildInfo", "aggregate", "collStats"), f.commands);
+    }
+
+    @Test
+    void permissionFailureDuringIteratorInitializationPropagates() {
+        Fixture f = new Fixture("8.0.32");
+        f.iteratorFailure = error(13);
+        assertSame(f.iteratorFailure, assertThrows(MongoCommandException.class,
+                () -> new MongoCollectionStatistics().read(f.database, "test")));
+        assertFalse(f.closed);
+        assertFalse(f.commands.contains("collStats"));
+    }
+
+    @Test
+    void indexDiscoveryIsReusedByStatisticsAndResetOnRelease() {
+        Fixture f = new Fixture("8.0.32");
+        f.rows.add(new Document("storageStats", stats(2, 42, 4096)));
+        Object client = new Object();
+        MongoCollectionStatistics reader = new MongoCollectionStatistics();
+        assertTrue(reader.supportsIndexCommitQuorum(f.database, client));
+        reader.read(f.database, "test", client);
+        assertEquals(Arrays.asList("buildInfo", "aggregate"), f.commands);
+        reader.reset();
+        reader.read(f.database, "test", client);
+        assertEquals(Arrays.asList("buildInfo", "aggregate", "buildInfo", "aggregate"), f.commands);
+    }
+
+    @Test
+    void invalidVersionKeepsLegacyPath() {
+        for (String version : Arrays.asList(null, "", "not-a-version")) {
+            Fixture f = new Fixture(version);
+            assertSame(f.legacy, new MongoCollectionStatistics().read(f.database, "test"));
+        }
+    }
+
     private static com.hazelcast.persistence.store.impl.MongoDBIMap store(Fixture fixture) throws Exception {
         com.hazelcast.persistence.resource.impl.MongoDBResource resource =
                 new com.hazelcast.persistence.resource.impl.MongoDBResource();
@@ -199,6 +252,8 @@ class MongoCollectionStatisticsTest {
         final MongoDatabase database;
         RuntimeException versionFailure;
         RuntimeException queryFailure;
+        RuntimeException iteratorFailure;
+        boolean primaryRead;
         boolean closed;
 
         Fixture(String version) {
@@ -215,12 +270,19 @@ class MongoCollectionStatisticsTest {
                 }
                 if ("getCollection".equals(m.getName())) {
                     return proxy(MongoCollection.class, (cp, cm, ca) -> {
+                        if ("withReadPreference".equals(cm.getName())) {
+                            assertEquals(ReadPreference.primary(), ca[0]); primaryRead = true; return cp;
+                        }
                         assertEquals("aggregate", cm.getName());
                         assertEquals(Arrays.asList(new Document("$collStats",
-                                new Document("storageStats", new Document()))), ca[0]);
+                                new Document("storageStats", new Document())),
+                                new Document("$project", new Document("storageStats.count", 1)
+                                        .append("storageStats.size", 1).append("storageStats.storageSize", 1)
+                                        .append("storageStats.avgObjSize", 1).append("_id", 0))), ca[0]);
                         commands.add("aggregate");
                         return proxy(AggregateIterable.class, (ap, am, aa) -> {
                             assertEquals("iterator", am.getName());
+                            if (iteratorFailure != null) throw iteratorFailure;
                             Iterator<Document> iterator = rows.iterator();
                             return proxy(MongoCursor.class, (ip, im, ia) -> {
                                 if ("close".equals(im.getName())) { closed = true; return null; }

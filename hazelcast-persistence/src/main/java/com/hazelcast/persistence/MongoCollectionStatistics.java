@@ -1,18 +1,21 @@
 package com.hazelcast.persistence;
 
 import com.mongodb.MongoCommandException;
+import com.mongodb.ReadPreference;
 import com.mongodb.client.MongoCursor;
 import com.mongodb.client.MongoDatabase;
 import org.bson.Document;
 
-import java.util.Collections;
+import java.util.Arrays;
 
 /**
  * Statistics for callers that do not consume sharding metadata.
+ * Aggregation results expose only count, size, storageSize and avgObjSize;
+ * other legacy diagnostic fields are intentionally not synthesized across shards.
  * Schema discovery and sharding detection must keep their existing command path.
  */
 public final class MongoCollectionStatistics {
-    private Boolean useAggregation;
+    private int[] version;
     private Object versionScope;
 
     public Document read(MongoDatabase database, String collection) {
@@ -28,9 +31,12 @@ public final class MongoCollectionStatistics {
         long size = 0;
         long storageSize = 0;
         int rows = 0;
-        try (MongoCursor<Document> cursor = database.getCollection(collection)
-                .aggregate(Collections.singletonList(
-                        new Document("$collStats", new Document("storageStats", new Document()))))
+        try (MongoCursor<Document> cursor = database.getCollection(collection).withReadPreference(ReadPreference.primary())
+                .aggregate(Arrays.asList(
+                        new Document("$collStats", new Document("storageStats", new Document())),
+                        new Document("$project", new Document("storageStats.count", 1)
+                                .append("storageStats.size", 1).append("storageStats.storageSize", 1)
+                                .append("storageStats.avgObjSize", 1).append("_id", 0))))
                 .iterator()) {
             while (cursor.hasNext()) {
                 Document stats = cursor.next().get("storageStats", Document.class);
@@ -38,7 +44,10 @@ public final class MongoCollectionStatistics {
                     throw new IllegalStateException("MongoDB collection statistics are missing");
                 }
                 if (result == null) {
-                    result = new Document(stats);
+                    result = new Document("count", stats.get("count"))
+                            .append("size", stats.get("size"))
+                            .append("storageSize", stats.get("storageSize"))
+                            .append("avgObjSize", stats.get("avgObjSize"));
                 }
                 count += number(stats, "count");
                 size += number(stats, "size");
@@ -65,21 +74,42 @@ public final class MongoCollectionStatistics {
         return result;
     }
 
+    /** Clear connection-bound state when its owning storage resource is released. */
+    public synchronized void reset() {
+        version = null;
+        versionScope = null;
+    }
+
+    /** Reuse the same discovery for index initialization and subsequent statistics. */
+    public synchronized boolean supportsIndexCommitQuorum(MongoDatabase database, Object connectionScope) {
+        int[] parsed = serverVersion(database, connectionScope);
+        return parsed != null && (parsed[0] > 4 || (parsed[0] == 4 && parsed[1] >= 4));
+    }
+
     private synchronized boolean supportsAggregation(MongoDatabase database, Object connectionScope) {
-        Boolean supported = useAggregation;
-        if (supported != null && versionScope == connectionScope) {
-            return supported;
+        int[] parsed = serverVersion(database, connectionScope);
+        return parsed != null && parsed[0] >= 6;
+    }
+
+    private int[] serverVersion(MongoDatabase database, Object connectionScope) {
+        if (version != null && versionScope == connectionScope) {
+            return version;
         }
+        String value;
         try {
-            String version = database.runCommand(new Document("buildInfo", 1)).getString("version");
-            supported = Integer.parseInt(version.split("\\.")[0]) >= 6;
-            useAggregation = supported;
-            versionScope = connectionScope;
-            return supported;
-        } catch (RuntimeException ignored) {
-            // Version discovery must not become a new permission prerequisite.
-            return false;
+            Object raw = database.runCommand(new Document("buildInfo", 1)).get("version");
+            value = raw instanceof String ? (String) raw : null;
+        } catch (MongoCommandException rejected) {
+            // A server refusal must not introduce a new permission prerequisite.
+            // Transport failures propagate instead of causing a second timed-out query.
+            return null;
         }
+        if (value == null || value.isEmpty() || !Character.isDigit(value.charAt(0))) {
+            return null;
+        }
+        version = MongodbUtil.parseMajorMinor(value);
+        versionScope = connectionScope;
+        return version;
     }
 
     private static long number(Document stats, String field) {

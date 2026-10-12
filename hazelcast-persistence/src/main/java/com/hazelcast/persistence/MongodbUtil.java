@@ -53,7 +53,7 @@ public class MongodbUtil {
 		}
 	}
 
-	private static int[] parseMajorMinor(String version) {
+	static int[] parseMajorMinor(String version) {
 		int major = 0, minor = 0;
 		if (version == null) return new int[]{0, 0};
 		int len = version.length();
