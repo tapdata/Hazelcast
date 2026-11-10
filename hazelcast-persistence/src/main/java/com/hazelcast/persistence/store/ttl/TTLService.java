@@ -14,11 +14,13 @@ import org.apache.commons.collections4.ListUtils;
 import org.apache.logging.log4j.Logger;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -32,13 +34,44 @@ public class TTLService implements MemoryFetcher {
 	public static final int DEFAULT_TTL_PROCESS_THREAD_NUMBER = 4;
 	private final static Map<String, TTLProcessor> TTL_PROCESSOR_MAP = new HashMap<>();
 	public static final long TTL_INTERVAL_MS = TimeUnit.MINUTES.toMillis(60L);
+	public static final String TTL_BACKLOG_INTERVAL_MS_KEY = "TTL_BACKLOG_INTERVAL_MS";
+	public static final long DEFAULT_TTL_BACKLOG_INTERVAL_MS = TimeUnit.MINUTES.toMillis(1L);
+	static final int BACKLOG_WARN_ROUNDS = 3;
 	private final AtomicBoolean isRunning = new AtomicBoolean();
 	private final Function<PersistenceStorageAbstractConfig, PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>>> createStoreFunc;
 	private final Logger logger;
+	private final Function<ConstructType, TTLProcessor> processorLookup;
+	private final long intervalMs;
+	private final long backlogIntervalMs;
+	private final int threadNumber;
+	/**
+	 * Consecutive rounds in which an object still had backlog after the round
+	 */
+	private final Map<String, AtomicInteger> backlogRounds = new ConcurrentHashMap<>();
+	private volatile Callable<RoundResult> roundTask = this::doTTL;
+	private volatile ScheduledExecutorService scheduler;
 
 	public TTLService(
 			Function<PersistenceStorageAbstractConfig, PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>>> createStoreFunc,
 			Logger logger
+	) {
+		this(createStoreFunc, logger, null, TTL_INTERVAL_MS,
+				CommonUtils.getPropertyLong(TTL_BACKLOG_INTERVAL_MS_KEY, DEFAULT_TTL_BACKLOG_INTERVAL_MS), 0, true);
+	}
+
+	/**
+	 * Package level constructor for tests: processor lookup, intervals, thread number and memory fetcher registration can be replaced.
+	 *
+	 * @param threadNumber max ttl threads per round, {@code <= 0} means {@code min(CPU, DEFAULT_TTL_PROCESS_THREAD_NUMBER)}
+	 */
+	TTLService(
+			Function<PersistenceStorageAbstractConfig, PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>>> createStoreFunc,
+			Logger logger,
+			Function<ConstructType, TTLProcessor> processorLookup,
+			long intervalMs,
+			long backlogIntervalMs,
+			int threadNumber,
+			boolean registerMemoryFetcher
 	) {
 		if (null == createStoreFunc) {
 			throw new IllegalArgumentException("Create store function cannot be null");
@@ -51,7 +84,13 @@ public class TTLService implements MemoryFetcher {
 				TTL_PROCESSOR_MAP.put(value.name(), ttlProcessor.get());
 			}
 		}
-		PDKIntegration.registerMemoryFetcher(TTLService.class.getSimpleName(), this);
+		this.processorLookup = null != processorLookup ? processorLookup : type -> null == type ? null : TTL_PROCESSOR_MAP.get(type.name());
+		this.intervalMs = intervalMs > 0 ? intervalMs : TTL_INTERVAL_MS;
+		this.backlogIntervalMs = backlogIntervalMs > 0 ? backlogIntervalMs : DEFAULT_TTL_BACKLOG_INTERVAL_MS;
+		this.threadNumber = threadNumber > 0 ? threadNumber : Math.min(Runtime.getRuntime().availableProcessors(), DEFAULT_TTL_PROCESS_THREAD_NUMBER);
+		if (registerMemoryFetcher) {
+			PDKIntegration.registerMemoryFetcher(TTLService.class.getSimpleName(), this);
+		}
 	}
 
 	public void registerTTL(PersistenceStorageAbstractConfig persistenceStorageAbstractConfig, long ttlSeconds, TTLCleanRuleBase ttlCleanRuleBase) {
@@ -67,39 +106,75 @@ public class TTLService implements MemoryFetcher {
 	}
 
 	public void removeTTL(PersistenceStorageAbstractConfig persistenceStorageAbstractConfig) {
+		if (null == persistenceStorageAbstractConfig || null == persistenceStorageAbstractConfig.getName()) {
+			return;
+		}
 		configs.remove(persistenceStorageAbstractConfig.getName());
+		backlogRounds.remove(persistenceStorageAbstractConfig.getName());
 	}
 
 	public void start() {
 		if (isRunning.compareAndSet(false, true)) {
-			ScheduledExecutorService scheduledExecutorService = new ScheduledThreadPoolExecutor(1, new ThreadFactory() {
-				@Override
-				public Thread newThread(Runnable r) {
-					Thread thread = new Thread(r);
-					thread.setName(String.join("-", getClass().getName(), "ttl", "scheduler", String.valueOf(System.currentTimeMillis())));
-					return thread;
-				}
+			scheduler = new ScheduledThreadPoolExecutor(1, r -> {
+				Thread thread = new Thread(r);
+				thread.setName(String.join("-", TTLService.class.getName(), "ttl", "scheduler", String.valueOf(System.currentTimeMillis())));
+				return thread;
 			});
-			scheduledExecutorService.scheduleWithFixedDelay(this::doTTL, 0L, TTL_INTERVAL_MS, TimeUnit.MILLISECONDS);
-			logger.info("External persistent storage TTL timing service started successfully. Interval: {} ms", TTL_INTERVAL_MS);
+			scheduler.schedule(this::tick, 0L, TimeUnit.MILLISECONDS);
+			info("External persistent storage TTL timing service started successfully. Interval: {} ms, backlog interval: {} ms", intervalMs, backlogIntervalMs);
 		}
 	}
 
-	private void doTTL() {
-		int ttlThreadNum = Math.min(Runtime.getRuntime().availableProcessors(), DEFAULT_TTL_PROCESS_THREAD_NUMBER);
-		int size = Math.max(1, configs.size() / ttlThreadNum);
-		List<List<String>> partition = ListUtils.partition(new ArrayList<>(configs.keySet()), size);
-		ttlThreadNum = partition.size();
-		ExecutorService ttlExecutorService = new ThreadPoolExecutor(ttlThreadNum, ttlThreadNum, 0L, TimeUnit.MILLISECONDS, new SynchronousQueue<>(),
+	/**
+	 * One scheduling tick: run a round, then always schedule the next one, so the schedule never stops silently.
+	 */
+	void tick() {
+		long nextDelay = intervalMs;
+		try {
+			RoundResult roundResult = roundTask.call();
+			if (null != roundResult) {
+				if (roundResult.hasMore) {
+					nextDelay = backlogIntervalMs;
+				}
+				if (roundResult.objects > 0) {
+					info("Do ttl round finished, objects: {}, deleted: {}, cost: {} ms, next in: {} ms",
+							roundResult.objects, roundResult.deleted, roundResult.costMs, nextDelay);
+				}
+			}
+		} catch (Throwable t) {
+			warn("Do ttl round failed, will retry next round, next in: " + nextDelay + " ms", t);
+		} finally {
+			ScheduledExecutorService current = scheduler;
+			if (null != current) {
+				try {
+					current.schedule(this::tick, nextDelay, TimeUnit.MILLISECONDS);
+				} catch (RejectedExecutionException e) {
+					warn("Schedule next ttl round failed", e);
+				}
+			}
+		}
+	}
+
+	RoundResult doTTL() {
+		long startMs = System.currentTimeMillis();
+		List<String> names = new ArrayList<>(configs.keySet());
+		if (names.isEmpty()) {
+			return new RoundResult(0, 0L, false, 0L);
+		}
+		List<List<String>> partition = partition(names, threadNumber);
+		int threadNum = partition.size();
+		ExecutorService ttlExecutorService = new ThreadPoolExecutor(threadNum, threadNum, 0L, TimeUnit.MILLISECONDS, new SynchronousQueue<>(),
 				r -> {
 					Thread thread = new Thread(r);
 					thread.setName("Hazelcast-Persistence-Clear-TTL-Data-Thread-" + System.currentTimeMillis());
 					return thread;
 				});
+		List<TTLRunner> runners = new ArrayList<>();
 		try {
 			List<CompletableFuture<?>> completableFutures = new ArrayList<>();
-			for (List<String> names : partition) {
-				TTLRunner ttlRunner = new TTLRunner(names);
+			for (List<String> partNames : partition) {
+				TTLRunner ttlRunner = new TTLRunner(partNames);
+				runners.add(ttlRunner);
 				completableFutures.add(CompletableFuture.runAsync(ttlRunner::doTTL, ttlExecutorService));
 			}
 			CompletableFuture.allOf(completableFutures.toArray(new CompletableFuture[0])).join();
@@ -111,8 +186,30 @@ public class TTLService implements MemoryFetcher {
 				}
 			} catch (InterruptedException e) {
 				ttlExecutorService.shutdownNow();
+				Thread.currentThread().interrupt();
 			}
 		}
+		int objects = 0;
+		long deleted = 0L;
+		boolean hasMore = false;
+		for (TTLRunner runner : runners) {
+			objects += runner.objects;
+			deleted += runner.deleted;
+			hasMore |= runner.hasMore;
+		}
+		return new RoundResult(objects, deleted, hasMore, System.currentTimeMillis() - startMs);
+	}
+
+	/**
+	 * Split names into at most {@code threadNum} partitions (ceil division)
+	 */
+	static List<List<String>> partition(List<String> names, int threadNum) {
+		if (CollectionUtils.isEmpty(names)) {
+			return Collections.emptyList();
+		}
+		int threads = Math.max(1, threadNum);
+		int size = (names.size() + threads - 1) / threads;
+		return ListUtils.partition(names, size);
 	}
 
 	@Override
@@ -121,13 +218,73 @@ public class TTLService implements MemoryFetcher {
 		for (Map.Entry<String, TTLConfig> entry : configs.entrySet()) {
 			String key = entry.getKey();
 			TTLConfig value = entry.getValue();
-			dataMap.kv(key, "ttl seconds: " + value.getTtlSeconds());
+			AtomicInteger rounds = backlogRounds.get(key);
+			dataMap.kv(key, "ttl seconds: " + value.getTtlSeconds() + (null == rounds ? "" : ", backlog rounds: " + rounds.get()));
 		}
 		return dataMap;
 	}
 
+	// ---- package level helpers for tests ----
+
+	void setRoundTask(Callable<RoundResult> roundTask) {
+		this.roundTask = null == roundTask ? this::doTTL : roundTask;
+	}
+
+	int backlogRounds(String name) {
+		AtomicInteger rounds = backlogRounds.get(name);
+		return null == rounds ? 0 : rounds.get();
+	}
+
+	void stop() {
+		ScheduledExecutorService current = scheduler;
+		scheduler = null;
+		if (null != current) {
+			current.shutdownNow();
+		}
+		isRunning.set(false);
+	}
+
+	static void clearConfigs() {
+		configs.clear();
+	}
+
+	private void info(String message, Object... params) {
+		if (null != logger) {
+			logger.info(message, params);
+		}
+	}
+
+	private void warn(String message, Object... params) {
+		if (null != logger) {
+			logger.warn(message, params);
+		}
+	}
+
+	private void warn(String message, Throwable t) {
+		if (null != logger) {
+			logger.warn("{}, error: {}\n{}", message, t.getMessage(), CommonUtils.stackString(t));
+		}
+	}
+
+	static final class RoundResult {
+		final int objects;
+		final long deleted;
+		final boolean hasMore;
+		final long costMs;
+
+		RoundResult(int objects, long deleted, boolean hasMore, long costMs) {
+			this.objects = objects;
+			this.deleted = deleted;
+			this.hasMore = hasMore;
+			this.costMs = costMs;
+		}
+	}
+
 	private class TTLRunner {
 		private final List<String> names;
+		private int objects;
+		private long deleted;
+		private boolean hasMore;
 
 		public TTLRunner(List<String> names) {
 			this.names = names;
@@ -137,42 +294,66 @@ public class TTLService implements MemoryFetcher {
 			if (CollectionUtils.isEmpty(names)) {
 				return;
 			}
-			logger.info("Start to do ttl, object size: {}, object names: {}", names.size(), names);
+			info("Start to do ttl, object size: {}, object names: {}", names.size(), names);
 			for (String name : names) {
 				try {
 					TTLConfig ttlConfig = configs.get(name);
-					if (null == ttlConfig) {
+					if (null == ttlConfig || null == ttlConfig.getPersistenceStorageAbstractConfig()) {
 						continue;
 					}
-					PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> persistenceStorageStore = createStoreFunc.apply(ttlConfig.getPersistenceStorageAbstractConfig());
-					if (null == persistenceStorageStore) {
-						return;
-					}
-					StorageMode storageMode = ttlConfig.getPersistenceStorageAbstractConfig().getStorageMode();
+					PersistenceStorageAbstractConfig storageConfig = ttlConfig.getPersistenceStorageAbstractConfig();
+					StorageMode storageMode = storageConfig.getStorageMode();
+					// Check before creating the store, otherwise the store would never be destroyed
 					if (storageMode == StorageMode.Mem || storageMode == StorageMode.HTTP_TM) {
-						return;
+						continue;
 					}
-					TTLProcessorContext ttlProcessorContext = new TTLProcessorContext(persistenceStorageStore, logger);
+					PersistenceStorageStore<PersistenceStorageAbstractConfig, ExternalResource<PersistenceStorageAbstractConfig>> persistenceStorageStore = createStoreFunc.apply(storageConfig);
+					if (null == persistenceStorageStore) {
+						continue;
+					}
 					try {
-						TTLMetrics ttlMetrics = TTL_PROCESSOR_MAP.get(ttlConfig.getPersistenceStorageAbstractConfig().getConstructType().name()).doTTL(ttlProcessorContext, ttlConfig);
-						// print metrics in logger
-						if (null != ttlMetrics) {
-							if (null != ttlMetrics.getError()) {
-								logWarn(ttlMetrics.getName(), ttlMetrics.getError());
-							} else {
-								logger.info("Do ttl success, name: {}, delete count: {}, cost: {} ms", ttlMetrics.getName(), ttlMetrics.getDeleteCount(), ttlMetrics.getCostMs());
-							}
+						TTLProcessor ttlProcessor = processorLookup.apply(storageConfig.getConstructType());
+						if (null == ttlProcessor) {
+							continue;
 						}
+						TTLMetrics ttlMetrics = ttlProcessor.doTTL(new TTLProcessorContext(persistenceStorageStore, logger), ttlConfig);
+						handleMetrics(name, ttlMetrics);
 					} finally {
 						persistenceStorageStore.doDestroy();
 					}
-				} catch (Exception e) {
+				} catch (Throwable e) {
 					logWarn(name, e);
 				}
 			}
 		}
 
-		private void logWarn(String name, Exception e) {
+		private void handleMetrics(String name, TTLMetrics ttlMetrics) {
+			if (null == ttlMetrics) {
+				return;
+			}
+			objects++;
+			long deleteCount = null == ttlMetrics.getDeleteCount() ? 0L : ttlMetrics.getDeleteCount();
+			deleted += deleteCount;
+			if (null != ttlMetrics.getError()) {
+				logWarn(ttlMetrics.getName(), ttlMetrics.getError());
+			} else {
+				info("Do ttl success, name: {}, delete count: {}, cost: {} ms, has more: {}",
+						ttlMetrics.getName(), deleteCount, ttlMetrics.getCostMs(), ttlMetrics.isHasMore());
+			}
+			if (ttlMetrics.isHasMore()) {
+				hasMore = true;
+				int rounds = backlogRounds.computeIfAbsent(name, k -> new AtomicInteger()).incrementAndGet();
+				if (rounds >= BACKLOG_WARN_ROUNDS) {
+					warn("TTL backlog is not draining, name: {}, consecutive backlog rounds: {}, deleted this round: {}. " +
+									"Deletion cannot keep up with writes, consider increasing {} or {}",
+							name, rounds, deleteCount, "TTL_DELETE_BATCH_SIZE", "TTL_MAX_DURATION_PER_OBJECT_MS");
+				}
+			} else {
+				backlogRounds.remove(name);
+			}
+		}
+
+		private void logWarn(String name, Throwable e) {
 			if (null != logger) {
 				logger.warn("Do ttl failed, name: {}, error: {}\n{}", name, e.getMessage(), CommonUtils.stackString(e));
 			}
