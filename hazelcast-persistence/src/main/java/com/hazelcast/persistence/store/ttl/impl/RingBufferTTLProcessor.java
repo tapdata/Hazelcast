@@ -15,6 +15,8 @@ import java.util.concurrent.TimeUnit;
 /**
  * Ring buffer TTL: delete expired data in batches from the smallest non-SIGN sequence, keep the largest sequence.
  * Each object has a per-round duration limit, data left over is reported by {@link TTLMetrics#isHasMore()}.
+ * A failed batch (e.g. socket timeout on a slow MongoDB) is retried from the same sequence with half the batch size,
+ * down to {@link #MIN_BATCH_SIZE}; the delete filter only matches expired data, so a retry is always safe.
  *
  * @author samuel
  * @Description
@@ -23,6 +25,8 @@ import java.util.concurrent.TimeUnit;
 public class RingBufferTTLProcessor extends BaseTTLProcessor {
 	public static final String BATCH_SIZE_KEY = "TTL_DELETE_BATCH_SIZE";
 	public static final int DEFAULT_BATCH_SIZE = 5000;
+	public static final int MAX_BATCH_SIZE = 10000;
+	public static final int MIN_BATCH_SIZE = 100;
 	public static final String BATCH_INTERVAL_MS_KEY = "TTL_DELETE_BATCH_INTERVAL_MS";
 	public static final long DEFAULT_BATCH_INTERVAL_MS = 0L;
 	public static final String MAX_DURATION_PER_OBJECT_MS_KEY = "TTL_MAX_DURATION_PER_OBJECT_MS";
@@ -34,7 +38,7 @@ public class RingBufferTTLProcessor extends BaseTTLProcessor {
 		long batchIntervalMs = CommonUtils.getPropertyLong(BATCH_INTERVAL_MS_KEY, DEFAULT_BATCH_INTERVAL_MS);
 		long maxDurationMs = CommonUtils.getPropertyLong(MAX_DURATION_PER_OBJECT_MS_KEY, DEFAULT_MAX_DURATION_PER_OBJECT_MS);
 		return doTTL(ttlProcessorContext, ttlConfig,
-				batchSize > 0 ? batchSize : DEFAULT_BATCH_SIZE,
+				batchSize > 0 ? Math.min(batchSize, MAX_BATCH_SIZE) : DEFAULT_BATCH_SIZE,
 				Math.max(0L, batchIntervalMs),
 				maxDurationMs >= 0 ? maxDurationMs : DEFAULT_MAX_DURATION_PER_OBJECT_MS);
 	}
@@ -48,6 +52,7 @@ public class RingBufferTTLProcessor extends BaseTTLProcessor {
 			return ttlMetrics;
 		}
 		PersistenceRingBufferStore<?, ?> ringBufferStore = (PersistenceRingBufferStore<?, ?>) store;
+		ttlMetrics.setBatchSize(batchSize);
 		try {
 			// The largest sequence itself is never deleted, otherwise sequences restart from 0 after the task restarts
 			long maxSequenceExclusive = ringBufferStore.getLargestSequence();
@@ -62,7 +67,19 @@ public class RingBufferTTLProcessor extends BaseTTLProcessor {
 					ttlMetrics.setHasMore(true);
 					break;
 				}
-				RingBufferExpireResult result = ringBufferStore.deleteExpired(from, maxSequenceExclusive, expireBeforeSec, batchSize);
+				RingBufferExpireResult result;
+				try {
+					result = ringBufferStore.deleteExpired(from, maxSequenceExclusive, expireBeforeSec, batchSize);
+				} catch (RuntimeException e) {
+					if (batchSize <= MIN_BATCH_SIZE || System.currentTimeMillis() - startMs >= maxDurationMs) {
+						throw e;
+					}
+					batchSize = Math.max(MIN_BATCH_SIZE, batchSize / 2);
+					ttlMetrics.setBatchRetries(ttlMetrics.getBatchRetries() + 1);
+					ttlMetrics.setBatchSize(batchSize);
+					ttlMetrics.setLastBatchError(e.getMessage());
+					continue;
+				}
 				ttlMetrics.setDeleteCount(ttlMetrics.getDeleteCount() + result.getDeletedCount());
 				if (result.isFinished()) {
 					break;

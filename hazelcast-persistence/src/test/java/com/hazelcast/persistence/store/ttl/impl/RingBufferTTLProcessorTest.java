@@ -200,4 +200,90 @@ class RingBufferTTLProcessorTest {
 	void invalidBatchSize_rejected() {
 		assertThrows(IllegalArgumentException.class, () -> store.deleteExpired(0, 10, 0, 0));
 	}
+
+	/**
+	 * Store whose deleteExpired fails (like a MongoDB socket timeout) while batchSize > failAbove
+	 */
+	private static FakeRingBufferStore failingAbove(int failAbove, List<long[]> calls) {
+		return new FakeRingBufferStore() {
+			@Override
+			public RingBufferExpireResult deleteExpired(long fromSequence, long maxSequenceExclusive, long expireBeforeSec, int batchSize) {
+				calls.add(new long[]{fromSequence, batchSize});
+				if (batchSize > failAbove) {
+					throw new RuntimeException("Delete expired data from mongodb failed: Timeout while receiving message");
+				}
+				return super.deleteExpired(fromSequence, maxSequenceExclusive, expireBeforeSec, batchSize);
+			}
+		};
+	}
+
+	@Test
+	void batchFailure_halvedAndRetriedFromSameSequence() {
+		List<long[]> calls = new java.util.ArrayList<>();
+		store = failingAbove(1000, calls);
+		for (long i = 0; i < 3000; i++) {
+			store.put(i, value(expiredTs));
+		}
+		store.put(3000, value(freshTs));
+
+		TTLMetrics metrics = run(5000, TimeUnit.MINUTES.toMillis(10));
+
+		assertNull(metrics.getError());
+		assertEquals(3000L, metrics.getDeleteCount());
+		assertEquals(3, metrics.getBatchRetries());
+		assertEquals(625, metrics.getBatchSize());
+		assertTrue(metrics.getLastBatchError().contains("Timeout"));
+		// 5000, 2500, 1250 failed at sequence 0, then 625 succeeds from the same sequence
+		assertArrayEquals(new long[]{0, 5000}, calls.get(0));
+		assertArrayEquals(new long[]{0, 2500}, calls.get(1));
+		assertArrayEquals(new long[]{0, 1250}, calls.get(2));
+		assertArrayEquals(new long[]{0, 625}, calls.get(3));
+		assertTrue(calls.subList(3, calls.size()).stream().allMatch(c -> c[1] == 625));
+		assertEquals(List.of(3000L), List.copyOf(store.remaining().keySet()));
+	}
+
+	@Test
+	void batchFailure_atMinBatchSize_reportedAsError() {
+		List<long[]> calls = new java.util.ArrayList<>();
+		store = failingAbove(0, calls);
+		store.put(0, value(expiredTs)).put(1, value(expiredTs));
+
+		TTLMetrics metrics = run(400, TimeUnit.MINUTES.toMillis(10));
+
+		assertNotNull(metrics.getError());
+		assertEquals(2, metrics.getBatchRetries());
+		assertEquals(List.of(400L, 200L, 100L), calls.stream().map(c -> c[1]).toList());
+		assertEquals(2, store.remaining().size());
+	}
+
+	@Test
+	void batchFailure_noRetryAfterDurationLimit() {
+		List<long[]> calls = new java.util.ArrayList<>();
+		store = failingAbove(0, calls);
+		store.put(0, value(expiredTs)).put(1, value(expiredTs));
+
+		TTLMetrics metrics = run(5000, 0L);
+
+		assertNotNull(metrics.getError());
+		assertEquals(0, metrics.getBatchRetries());
+		assertEquals(1, calls.size());
+	}
+
+	@Test
+	@SuppressWarnings({"unchecked", "rawtypes"})
+	void configuredBatchSize_cappedAtMax() {
+		String old = System.getProperty(RingBufferTTLProcessor.BATCH_SIZE_KEY);
+		System.setProperty(RingBufferTTLProcessor.BATCH_SIZE_KEY, "20000");
+		try {
+			store.put(0, value(expiredTs)).put(1, value(freshTs));
+			TTLProcessorContext ctx = new TTLProcessorContext((PersistenceStorageStore) store, null);
+			TTLMetrics metrics = processor.doTTL(ctx, new TTLConfig(PersistenceMongoDBConfig.create(ConstructType.RINGBUFFER, "cap"), TTL_SECONDS));
+			assertNull(metrics.getError());
+			assertEquals(RingBufferTTLProcessor.MAX_BATCH_SIZE, metrics.getBatchSize());
+			assertEquals(1L, metrics.getDeleteCount());
+		} finally {
+			if (null == old) System.clearProperty(RingBufferTTLProcessor.BATCH_SIZE_KEY);
+			else System.setProperty(RingBufferTTLProcessor.BATCH_SIZE_KEY, old);
+		}
+	}
 }

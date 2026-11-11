@@ -15,6 +15,15 @@ public class TTLMetrics {
 	 * the remaining data is left to the next round.
 	 */
 	private boolean hasMore;
+	/**
+	 * Batches that failed and were retried with a smaller batch size in this round
+	 */
+	private int batchRetries;
+	/**
+	 * Effective batch size at the end of this round
+	 */
+	private int batchSize;
+	private String lastBatchError;
 
 	public TTLMetrics(String name) {
 		this.name = name;
@@ -54,5 +63,29 @@ public class TTLMetrics {
 
 	public void setHasMore(boolean hasMore) {
 		this.hasMore = hasMore;
+	}
+
+	public int getBatchRetries() {
+		return batchRetries;
+	}
+
+	public void setBatchRetries(int batchRetries) {
+		this.batchRetries = batchRetries;
+	}
+
+	public int getBatchSize() {
+		return batchSize;
+	}
+
+	public void setBatchSize(int batchSize) {
+		this.batchSize = batchSize;
+	}
+
+	public String getLastBatchError() {
+		return lastBatchError;
+	}
+
+	public void setLastBatchError(String lastBatchError) {
+		this.lastBatchError = lastBatchError;
 	}
 }

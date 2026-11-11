@@ -286,4 +286,21 @@ class TTLServiceTest {
 		assertEquals(7, service.doTTL().objects);
 		assertTrue(processorThreads.size() <= 4, processorThreads.toString());
 	}
+
+	@Test
+	void batchRetries_warnsWithBatchSize() {
+		service = newService(recordingProcessor(n -> {
+			TTLMetrics m = metrics(n, false);
+			m.setBatchRetries(2);
+			m.setBatchSize(1250);
+			m.setLastBatchError("Timeout while receiving message");
+			return m;
+		}), LONG_INTERVAL, LONG_INTERVAL, 0);
+		service.registerTTL(mongo("slow"), 60, null);
+
+		service.doTTL();
+
+		assertTrue(warnings.stream().anyMatch(w -> w.contains("retried with a smaller batch") && w.contains("slow")
+				&& w.contains("1250") && w.contains("Timeout")), warnings.toString());
+	}
 }

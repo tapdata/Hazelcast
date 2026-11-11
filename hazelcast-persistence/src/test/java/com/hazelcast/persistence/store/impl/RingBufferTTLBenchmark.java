@@ -31,7 +31,7 @@ import java.util.concurrent.TimeUnit;
  * <pre>
  * TTL_IT_MONGO_URI=... mvn test -Dtest=RingBufferTTLBenchmark -Dttl.benchmark=true \
  *   -Dttl.benchmark.mode=batch|legacy -Dttl.benchmark.records=5000000 -Dttl.benchmark.batchSize=5000 \
- *   -Dttl.benchmark.legacyMaxSeconds=300 -Dttl.benchmark.keep=false
+ *   -Dttl.benchmark.legacyMaxSeconds=300 -Dttl.benchmark.keep=false -Dttl.benchmark.socketTimeoutMS=2000
  * </pre>
  * Data: head 1 SIGN, then expired records (_ts 10 days ago, ~1KB), tail 10000 fresh records; TTL = 3 days.
  * Prints one "BENCHMARK|..." line per measurement.
@@ -56,6 +56,9 @@ class RingBufferTTLBenchmark {
 		boolean keep = Boolean.getBoolean("ttl.benchmark.keep");
 		String database = System.getProperty("ttl.benchmark.database", "tap13213_ttl_bench");
 		String collectionName = "ExternalStorage_SHARE_CDC_bench_" + mode + "_" + batchSize;
+		String socketTimeoutMS = System.getProperty("ttl.benchmark.socketTimeoutMS");
+		// Optional lower socket timeout for the store client, to verify batch halving on real timeouts
+		String storeUri = null == socketTimeoutMS ? uri : uri + (uri.contains("?") ? "&" : "?") + "socketTimeoutMS=" + socketTimeoutMS;
 
 		try (MongoClient client = MongoClients.create(uri)) {
 			MongoCollection<Document> collection = client.getDatabase(database).getCollection(collectionName);
@@ -68,7 +71,7 @@ class RingBufferTTLBenchmark {
 
 			org.bson.BsonTimestamp oplogStart = new org.bson.BsonTimestamp((int) (System.currentTimeMillis() / 1000), 0);
 			PersistenceMongoDBConfig config = PersistenceMongoDBConfig.create(ConstructType.RINGBUFFER, "bench-" + collectionName)
-					.uri(uri).database(database).collection(collectionName);
+					.uri(storeUri).database(database).collection(collectionName);
 			config.sequenceMode(PersistenceStorage.SequenceMode.HAZELCAST);
 			MongoDBResource resource = new MongoDBResource();
 			resource.doInit(config);
@@ -147,6 +150,9 @@ class RingBufferTTLBenchmark {
 	private static long batch(MongoDBRingBuffer store, PersistenceMongoDBConfig config, String mode, int batchSize, long records) {
 		TTLProcessorContext ctx = new TTLProcessorContext((PersistenceStorageStore) store, null);
 		TTLMetrics metrics = new RingBufferTTLProcessor().doTTL(ctx, new TTLConfig(config, TTL_SECONDS));
+		print("metrics", mode, batchSize, records, "batchRetries=" + metrics.getBatchRetries(),
+				"finalBatchSize=" + metrics.getBatchSize(), "lastBatchError=" + metrics.getLastBatchError(),
+				"hasMore=" + metrics.isHasMore(), "error=" + metrics.getError());
 		if (null != metrics.getError()) {
 			throw new IllegalStateException(metrics.getError());
 		}

@@ -340,6 +340,11 @@ public class TTLService implements MemoryFetcher {
 				info("Do ttl success, name: {}, delete count: {}, cost: {} ms, has more: {}",
 						ttlMetrics.getName(), deleteCount, ttlMetrics.getCostMs(), ttlMetrics.isHasMore());
 			}
+			if (ttlMetrics.getBatchRetries() > 0) {
+				warn("TTL delete batch failed and was retried with a smaller batch, name: {}, retries: {}, batch size now: {}, last error: {}. " +
+								"MongoDB may be slow, consider decreasing {}",
+						name, ttlMetrics.getBatchRetries(), ttlMetrics.getBatchSize(), ttlMetrics.getLastBatchError(), "TTL_DELETE_BATCH_SIZE");
+			}
 			if (ttlMetrics.isHasMore()) {
 				hasMore = true;
 				int rounds = backlogRounds.computeIfAbsent(name, k -> new AtomicInteger()).incrementAndGet();
