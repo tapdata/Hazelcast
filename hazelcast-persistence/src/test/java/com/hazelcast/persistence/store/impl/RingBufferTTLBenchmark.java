@@ -12,8 +12,7 @@ import com.hazelcast.persistence.store.ttl.impl.RingBufferTTLProcessor;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
-import com.mongodb.client.model.IndexModel;
-import com.mongodb.client.model.Indexes;
+import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.InsertManyOptions;
 import org.bson.Document;
 import org.junit.jupiter.api.Tag;
@@ -111,12 +110,8 @@ class RingBufferTTLBenchmark {
 	}
 
 	private static void createIndexes(MongoCollection<Document> collection) {
-		collection.createIndexes(Arrays.asList(
-				new IndexModel(Indexes.ascending(MongoDBRingBuffer.SIGN_KEY, "key", "_id")),
-				new IndexModel(Indexes.ascending(MongoDBRingBuffer.SIGN_KEY, "value.timestamp", "_id")),
-				new IndexModel(Indexes.ascending(MongoDBRingBuffer.SIGN_KEY, "_id", "value.timestamp")),
-				new IndexModel(Indexes.ascending(MongoDBRingBuffer.SIGN_KEY, "_id"))
-		));
+		// Same definitions as production MongoDBRingBuffer.createIndex()
+		collection.createIndexes(MongoDBRingBuffer.indexModels(new IndexOptions()));
 	}
 
 	private static long load(MongoCollection<Document> collection, String sign, long records, long expiredTs) {

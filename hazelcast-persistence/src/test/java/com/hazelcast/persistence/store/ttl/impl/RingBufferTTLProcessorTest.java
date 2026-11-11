@@ -185,6 +185,7 @@ class RingBufferTTLProcessorTest {
 		TTLMetrics metrics = run(10, TimeUnit.MINUTES.toMillis(10));
 
 		assertNotNull(metrics.getError());
+		assertTrue(metrics.isHasMore(), "a failed round keeps the backlog interval");
 		assertTrue(metrics.getError().getMessage().contains("sequence: 0"));
 	}
 
@@ -251,6 +252,7 @@ class RingBufferTTLProcessorTest {
 		TTLMetrics metrics = run(400, TimeUnit.MINUTES.toMillis(10));
 
 		assertNotNull(metrics.getError());
+		assertTrue(metrics.isHasMore(), "a failed round keeps the backlog interval");
 		assertEquals(2, metrics.getBatchRetries());
 		assertEquals(List.of(400L, 200L, 100L), calls.stream().map(c -> c[1]).toList());
 		assertEquals(2, store.remaining().size());
@@ -265,6 +267,7 @@ class RingBufferTTLProcessorTest {
 		TTLMetrics metrics = run(5000, 0L);
 
 		assertNotNull(metrics.getError());
+		assertTrue(metrics.isHasMore(), "a failed round keeps the backlog interval");
 		assertEquals(0, metrics.getBatchRetries());
 		assertEquals(1, calls.size());
 	}
@@ -285,5 +288,33 @@ class RingBufferTTLProcessorTest {
 			if (null == old) System.clearProperty(RingBufferTTLProcessor.BATCH_SIZE_KEY);
 			else System.setProperty(RingBufferTTLProcessor.BATCH_SIZE_KEY, old);
 		}
+	}
+
+	@Test
+	@SuppressWarnings({"unchecked", "rawtypes"})
+	void largestSequenceFailure_reportedAsErrorWithBacklog() {
+		store = new FakeRingBufferStore() {
+			@Override
+			public long getLargestSequence() {
+				throw new IllegalStateException("Ring buffer document key is not an integer");
+			}
+		};
+
+		TTLMetrics metrics = run(10, TimeUnit.MINUTES.toMillis(10));
+
+		assertNotNull(metrics.getError());
+		assertTrue(metrics.isHasMore());
+		assertEquals(0L, metrics.getDeleteCount());
+	}
+
+	@Test
+	void doubleOrStringTs_neverExpires_sameRuleAsIMap() {
+		store.put(0, value((double) expiredTs)).put(1, value(String.valueOf(expiredTs))).put(2, value(expiredTs)).put(3, value(freshTs));
+
+		TTLMetrics metrics = run(10, TimeUnit.MINUTES.toMillis(10));
+
+		assertNull(metrics.getError());
+		assertEquals(1L, metrics.getDeleteCount());
+		assertEquals(List.of(0L, 1L, 3L), List.copyOf(store.remaining().keySet()));
 	}
 }

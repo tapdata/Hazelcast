@@ -101,6 +101,8 @@ public class RingBufferTTLProcessor extends BaseTTLProcessor {
 			}
 		} catch (Exception e) {
 			ttlMetrics.setError(e);
+			// The expired data is still there: retry with the backlog interval instead of the normal interval
+			ttlMetrics.setHasMore(true);
 		} finally {
 			ttlMetrics.setCostMs(System.currentTimeMillis() - startMs);
 		}

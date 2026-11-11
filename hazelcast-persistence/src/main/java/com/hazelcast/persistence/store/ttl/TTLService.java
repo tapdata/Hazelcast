@@ -30,7 +30,6 @@ import java.util.function.Supplier;
  * @create 2023-09-21 15:59
  **/
 public class TTLService implements MemoryFetcher {
-	private static final Map<String, TTLConfig> configs = new ConcurrentHashMap<>();
 	public static final int DEFAULT_TTL_PROCESS_THREAD_NUMBER = 4;
 	private final static Map<String, TTLProcessor> TTL_PROCESSOR_MAP = new HashMap<>();
 	public static final long TTL_INTERVAL_MS = TimeUnit.MINUTES.toMillis(60L);
@@ -48,6 +47,10 @@ public class TTLService implements MemoryFetcher {
 	 * Consecutive rounds in which an object still had backlog after the round
 	 */
 	private final Map<String, AtomicInteger> backlogRounds = new ConcurrentHashMap<>();
+	/**
+	 * Registered objects. Instance scoped: production uses one service per JVM ({@code PersistenceStorage}), tests use their own.
+	 */
+	private final Map<String, TTLConfig> configs = new ConcurrentHashMap<>();
 	private volatile Callable<RoundResult> roundTask = this::doTTL;
 	private volatile ScheduledExecutorService scheduler;
 
@@ -115,20 +118,25 @@ public class TTLService implements MemoryFetcher {
 
 	public void start() {
 		if (isRunning.compareAndSet(false, true)) {
-			scheduler = new ScheduledThreadPoolExecutor(1, r -> {
+			ScheduledExecutorService owner = new ScheduledThreadPoolExecutor(1, r -> {
 				Thread thread = new Thread(r);
 				thread.setName(String.join("-", TTLService.class.getName(), "ttl", "scheduler", String.valueOf(System.currentTimeMillis())));
 				return thread;
 			});
-			scheduler.schedule(this::tick, 0L, TimeUnit.MILLISECONDS);
+			scheduler = owner;
+			owner.schedule(() -> tick(owner), 0L, TimeUnit.MILLISECONDS);
 			info("External persistent storage TTL timing service started successfully. Interval: {} ms, backlog interval: {} ms", intervalMs, backlogIntervalMs);
 		}
 	}
 
 	/**
-	 * One scheduling tick: run a round, then always schedule the next one, so the schedule never stops silently.
+	 * One scheduling tick: run a round, then always schedule the next one on the same executor, so the schedule never stops silently.
+	 * The tick only reschedules while {@code owner} is still the current scheduler: after {@link #stop()} (and a later
+	 * {@link #start()}) an in-flight tick of the old executor ends its chain instead of adding a second one to the new executor.
+	 * <p>
+	 * Fatal JVM errors are logged at ERROR and rethrown; the next round is still scheduled.
 	 */
-	void tick() {
+	void tick(ScheduledExecutorService owner) {
 		long nextDelay = intervalMs;
 		try {
 			RoundResult roundResult = roundTask.call();
@@ -141,13 +149,21 @@ public class TTLService implements MemoryFetcher {
 							roundResult.objects, roundResult.deleted, roundResult.costMs, nextDelay);
 				}
 			}
-		} catch (Throwable t) {
-			warn("Do ttl round failed, will retry next round, next in: " + nextDelay + " ms", t);
+		} catch (Exception e) {
+			Throwable fatal = fatalCause(e);
+			if (null != fatal) {
+				error("Do ttl round aborted by fatal error, will retry next round, next in: " + nextDelay + " ms", fatal);
+			} else {
+				warn("Do ttl round failed, will retry next round, next in: " + nextDelay + " ms", e);
+			}
+		} catch (Error e) {
+			error("Do ttl round aborted by fatal error, will retry next round, next in: " + nextDelay + " ms", e);
+			throw e;
 		} finally {
-			ScheduledExecutorService current = scheduler;
-			if (null != current) {
+			if (null != owner && owner == scheduler && !owner.isShutdown()) {
+				final long delay = nextDelay;
 				try {
-					current.schedule(this::tick, nextDelay, TimeUnit.MILLISECONDS);
+					owner.schedule(() -> tick(owner), delay, TimeUnit.MILLISECONDS);
 				} catch (RejectedExecutionException e) {
 					warn("Schedule next ttl round failed", e);
 				}
@@ -244,8 +260,16 @@ public class TTLService implements MemoryFetcher {
 		isRunning.set(false);
 	}
 
-	static void clearConfigs() {
-		configs.clear();
+	/**
+	 * Errors of a runner thread arrive wrapped by {@link CompletableFuture#join()}
+	 */
+	static Throwable fatalCause(Throwable t) {
+		for (Throwable c = t; null != c; c = c.getCause() == c ? null : c.getCause()) {
+			if (c instanceof Error) {
+				return c;
+			}
+		}
+		return null;
 	}
 
 	private void info(String message, Object... params) {
@@ -263,6 +287,12 @@ public class TTLService implements MemoryFetcher {
 	private void warn(String message, Throwable t) {
 		if (null != logger) {
 			logger.warn("{}, error: {}\n{}", message, t.getMessage(), CommonUtils.stackString(t));
+		}
+	}
+
+	private void error(String message, Throwable t) {
+		if (null != logger) {
+			logger.error("{}, error: {}\n{}", message, t.toString(), CommonUtils.stackString(t));
 		}
 	}
 
@@ -321,8 +351,12 @@ public class TTLService implements MemoryFetcher {
 					} finally {
 						persistenceStorageStore.doDestroy();
 					}
-				} catch (Throwable e) {
+				} catch (Exception e) {
 					logWarn(name, e);
+				} catch (Error e) {
+					// Fatal (OOM, linkage...): do not keep creating stores for the remaining objects, abort this round
+					error("Do ttl aborted by fatal error, name: " + name + ", remaining objects are skipped in this round", e);
+					throw e;
 				}
 			}
 		}

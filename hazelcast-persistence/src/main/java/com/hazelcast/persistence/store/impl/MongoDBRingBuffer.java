@@ -169,13 +169,19 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 			createIndexOptions.commitQuorum(CreateIndexCommitQuorum.MAJORITY);
 		}
 		MongoCollection<Document> mongoCollection = mongoDBResource.getMongoCollection();
-		List<IndexModel> indexModels = Arrays.asList(
+		mongoCollection.createIndexes(indexModels(indexOptions), createIndexOptions);
+	}
+
+	/**
+	 * Index definitions of a ring buffer collection, shared with tests/benchmarks so they use the production schema
+	 */
+	static List<IndexModel> indexModels(IndexOptions indexOptions) {
+		return Arrays.asList(
 				new IndexModel(Indexes.ascending(SIGN_KEY, "key", "_id"), indexOptions),
 				new IndexModel(Indexes.ascending(SIGN_KEY, "value.timestamp", "_id"), indexOptions),
 				new IndexModel(Indexes.ascending(SIGN_KEY, "_id", "value.timestamp"), indexOptions),
 				new IndexModel(Indexes.ascending(SIGN_KEY, "_id"), indexOptions)
 		);
-		mongoCollection.createIndexes(indexModels, createIndexOptions);
 	}
 
 
@@ -295,8 +301,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		if (doc == null) {
 			return -1;
 		}
-		Long key = toLong(doc.get("key"));
-		return null == key ? -1 : key;
+		return requireKey(doc);
 	}
 
 	@Override
@@ -318,7 +323,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		if (document == null) {
 			return largestSequence.get() + 1L;
 		}
-		return document.getLong("key");
+		return requireKey(document);
 	}
 
 	public long _getSmallestSequence() {
@@ -330,8 +335,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		if (doc == null) {
 			return 0;
 		}
-		Long key = toLong(doc.get("key"));
-		return null == key ? 0 : key;
+		return requireKey(doc);
 	}
 
 	@Override
@@ -433,6 +437,19 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		return value;
 	}
 
+	/**
+	 * Sequence key of a ring buffer document; Int32/Int64 compatible. A non numeric key is corrupted data:
+	 * fail loudly instead of returning a default that would silently disable TTL or reset sequences.
+	 */
+	static long requireKey(Document doc) {
+		Object key = doc.get("key");
+		if (key instanceof Long || key instanceof Integer) {
+			return ((Number) key).longValue();
+		}
+		throw new IllegalStateException("Ring buffer document key is not an integer, _id: " + doc.get("_id")
+				+ ", key type: " + (null == key ? "null" : key.getClass().getSimpleName()));
+	}
+
 	@Override
 	public long getSmallestSequenceWithoutSign() {
 		if (mongoDBResource == null) {
@@ -443,8 +460,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		if (doc == null) {
 			return 0;
 		}
-		Long key = toLong(doc.get("key"));
-		return null == key ? 0 : key;
+		return requireKey(doc);
 	}
 
 	/**
@@ -482,7 +498,8 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		if (null != scan.lastExpiredKey) {
 			Document deleteQuery = sign()
 					.append("key", new Document("$gte", from).append("$lte", scan.lastExpiredKey))
-					.append("value._ts", new Document("$lte", expireBeforeSec))
+					// Same _ts rule as the scan (TTLTimestamps): only Int32/Int64 can expire
+					.append("value._ts", new Document("$lte", expireBeforeSec).append("$type", Arrays.asList("int", "long")))
 					.append("value.type", new Document("$ne", SIGN_TYPE));
 			try {
 				deleted = collection.deleteMany(deleteQuery).getDeletedCount();

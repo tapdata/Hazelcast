@@ -118,4 +118,23 @@ class MongoDBRingBufferExpireTest {
 		assertTrue(invalid.finished);
 		assertNull(invalid.lastExpiredKey);
 	}
+
+	@Test
+	void doubleTs_isNotATimestamp_skippedNotDeleted() {
+		List<Document> docs = List.of(doc(1L, data((double) EXPIRED)), doc(2L, data(EXPIRED)), doc(3L, data(FRESH)));
+		MongoDBRingBuffer.ExpireScan scan = MongoDBRingBuffer.scanExpireBatch(docs, 1L, CUTOFF, 10);
+		assertTrue(scan.finished);
+		assertEquals(2L, scan.lastExpiredKey);
+		assertEquals(3L, scan.nextSequence);
+	}
+
+	@Test
+	void requireKey_int32AndInt64_otherwiseFails() {
+		assertEquals(7L, MongoDBRingBuffer.requireKey(new Document("key", 7)));
+		assertEquals(8L, MongoDBRingBuffer.requireKey(new Document("key", 8L)));
+		IllegalStateException e = assertThrows(IllegalStateException.class,
+				() -> MongoDBRingBuffer.requireKey(new Document("_id", "x").append("key", "9")));
+		assertTrue(e.getMessage().contains("String"), e.getMessage());
+		assertThrows(IllegalStateException.class, () -> MongoDBRingBuffer.requireKey(new Document("_id", "y")));
+	}
 }

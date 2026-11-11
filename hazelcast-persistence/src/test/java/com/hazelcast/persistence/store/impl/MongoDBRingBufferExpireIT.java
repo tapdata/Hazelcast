@@ -247,4 +247,40 @@ class MongoDBRingBufferExpireIT {
 
 		assertEquals(1L, ringBuffer.getSmallestSequenceWithoutSign());
 	}
+
+	@Test
+	void findSequenceByTimestamp_int32Key() {
+		for (int i = 0; i < 3; i++) {
+			insert(i, data(expiredTs).append("timestamp", (long) i * 1000));
+		}
+		MongoDBRingBuffer ringBuffer = openStore();
+
+		assertEquals(1L, ringBuffer.findSequenceByTimestamp(1000L));
+		assertEquals(3L, ringBuffer.findSequenceByTimestamp(99_000L));
+	}
+
+	@Test
+	void nonNumericKey_failsLoudly() {
+		insert(0L, data(expiredTs));
+		MongoDBRingBuffer ringBuffer = openStore();
+		insert("bad-key", data(expiredTs));
+
+		IllegalStateException e = assertThrows(IllegalStateException.class, ringBuffer::_getLargestSequence);
+		assertTrue(e.getMessage().contains("not an integer"), e.getMessage());
+	}
+
+	@Test
+	void doubleTsInsideDeleteRange_notDeleted() {
+		insert(0L, data(expiredTs));
+		insert(1L, data((double) expiredTs));
+		insert(2L, data(expiredTs));
+		insert(3L, data(freshTs));
+		MongoDBRingBuffer ringBuffer = openStore();
+		long cutoff = System.currentTimeMillis() / 1000 - TTL_SECONDS;
+
+		RingBufferExpireResult result = ringBuffer.deleteExpired(0L, 3L, cutoff, 100);
+
+		assertEquals(2L, result.getDeletedCount());
+		assertEquals(new TreeSet<>(List.of(1L, 3L)), remainingKeys());
+	}
 }

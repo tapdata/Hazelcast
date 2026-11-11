@@ -9,7 +9,6 @@ import com.hazelcast.persistence.resource.ExternalResource;
 import com.hazelcast.persistence.store.PersistenceStorageStore;
 import org.apache.logging.log4j.Logger;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Proxy;
@@ -25,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class TTLServiceTest {
 	private static final long LONG_INTERVAL = TimeUnit.MINUTES.toMillis(30);
 	private final List<String> warnings = new CopyOnWriteArrayList<>();
+	private final List<String> errors = new CopyOnWriteArrayList<>();
 	private final Map<String, AtomicInteger> created = new ConcurrentHashMap<>();
 	private final Map<String, FakeRingBufferStore> stores = new ConcurrentHashMap<>();
 	private final Set<String> nullStores = ConcurrentHashMap.newKeySet();
@@ -34,12 +34,12 @@ class TTLServiceTest {
 
 	private Logger logger() {
 		return (Logger) Proxy.newProxyInstance(Logger.class.getClassLoader(), new Class[]{Logger.class}, (proxy, method, args) -> {
-			if ("warn".equals(method.getName()) && null != args && args.length > 0) {
+			if (("warn".equals(method.getName()) || "error".equals(method.getName())) && null != args && args.length > 0) {
 				StringBuilder sb = new StringBuilder(String.valueOf(args[0]));
 				for (int i = 1; i < args.length; i++) {
 					sb.append(" | ").append(args[i] instanceof Object[] arr ? Arrays.toString(arr) : args[i]);
 				}
-				warnings.add(sb.toString());
+				(("error".equals(method.getName())) ? errors : warnings).add(sb.toString());
 			}
 			Class<?> type = method.getReturnType();
 			if (type == boolean.class) return false;
@@ -94,17 +94,11 @@ class TTLServiceTest {
 		return condition.getAsBoolean();
 	}
 
-	@BeforeEach
-	void setUp() {
-		TTLService.clearConfigs();
-	}
-
 	@AfterEach
 	void tearDown() {
 		if (null != service) {
 			service.stop();
 		}
-		TTLService.clearConfigs();
 	}
 
 	@Test
@@ -153,9 +147,9 @@ class TTLServiceTest {
 	}
 
 	@Test
-	void processorThrowsError_objectWarned_otherObjectsProcessed_nextRoundRuns() throws InterruptedException {
+	void processorThrowsException_objectWarned_otherObjectsProcessed_nextRoundRuns() throws InterruptedException {
 		service = newService(recordingProcessor(n -> {
-			if ("bad".equals(n)) throw new Error("processor boom");
+			if ("bad".equals(n)) throw new IllegalStateException("processor boom");
 			return metrics(n, false);
 		}), 30, 30, 1);
 		service.registerTTL(mongo("bad"), 60, null);
@@ -173,21 +167,97 @@ class TTLServiceTest {
 		assertTrue(processed.getOrDefault("good-1", 0) >= 2);
 		assertTrue(warnings.stream().anyMatch(w -> w.contains("Do ttl failed") && w.contains("bad") && w.contains("processor boom")), warnings.toString());
 		assertTrue(stores.get("bad").destroyCount.get() >= 1, "store destroyed even when processor throws");
+		assertTrue(errors.isEmpty(), errors.toString());
 	}
 
 	@Test
-	void roundThrows_warnedAndRescheduled() throws InterruptedException {
+	void processorThrowsError_loggedAsError_roundAborted_nextRoundRuns() throws InterruptedException {
+		service = newService(recordingProcessor(n -> {
+			throw new OutOfMemoryError("processor oom");
+		}), 30, 30, 1);
+		service.registerTTL(mongo("a"), 60, null);
+		service.registerTTL(mongo("b"), 60, null);
+		AtomicInteger rounds = new AtomicInteger();
+		service.setRoundTask(() -> {
+			rounds.incrementAndGet();
+			return service.doTTL();
+		});
+
+		service.start();
+
+		assertTrue(await(() -> rounds.get() >= 2, 3000), "next round still scheduled, rounds: " + rounds.get());
+		// one partition: the fatal error stops the round, the second object is not created/processed in the same round
+		assertTrue(created.values().stream().mapToInt(AtomicInteger::get).sum() <= rounds.get(),
+				"at most one store created per round: created=" + created + ", rounds=" + rounds.get());
+		assertTrue(errors.stream().anyMatch(e -> e.contains("Do ttl aborted by fatal error") && e.contains("processor oom")), errors.toString());
+		assertTrue(warnings.stream().noneMatch(w -> w.contains("Do ttl failed") && w.contains("processor oom")), warnings.toString());
+		stores.values().forEach(store -> assertTrue(store.destroyCount.get() >= 1, "store destroyed on error"));
+	}
+
+	@Test
+	void roundThrowsException_warnedAndRescheduled() throws InterruptedException {
 		service = newService(recordingProcessor(n -> metrics(n, false)), 30, 30, 0);
 		AtomicInteger rounds = new AtomicInteger();
 		service.setRoundTask(() -> {
 			rounds.incrementAndGet();
-			throw new Error("round boom");
+			throw new IllegalStateException("round boom");
 		});
 
 		service.start();
 
 		assertTrue(await(() -> rounds.get() >= 3, 3000), "rounds: " + rounds.get());
 		assertTrue(warnings.stream().anyMatch(w -> w.contains("Do ttl round failed") && w.contains("round boom")), warnings.toString());
+	}
+
+	@Test
+	void roundThrowsError_loggedAsErrorAndRescheduled() throws InterruptedException {
+		service = newService(recordingProcessor(n -> metrics(n, false)), 30, 30, 0);
+		AtomicInteger rounds = new AtomicInteger();
+		service.setRoundTask(() -> {
+			rounds.incrementAndGet();
+			throw new NoClassDefFoundError("round boom");
+		});
+
+		service.start();
+
+		assertTrue(await(() -> rounds.get() >= 3, 3000), "rounds: " + rounds.get());
+		assertTrue(errors.stream().anyMatch(e -> e.contains("Do ttl round aborted by fatal error") && e.contains("round boom")), errors.toString());
+	}
+
+	@Test
+	void staleTick_afterStopAndStart_doesNotAddSecondChain() throws InterruptedException {
+		service = newService(recordingProcessor(n -> metrics(n, false)), LONG_INTERVAL, LONG_INTERVAL, 0);
+		AtomicInteger rounds = new AtomicInteger();
+		service.setRoundTask(() -> {
+			rounds.incrementAndGet();
+			return new TTLService.RoundResult(0, 0L, false, 0L);
+		});
+		service.start();
+		assertTrue(await(() -> rounds.get() >= 1, 3000));
+		service.stop();
+		service.start();
+		assertTrue(await(() -> rounds.get() >= 2, 3000));
+		java.util.concurrent.ScheduledThreadPoolExecutor stale = new java.util.concurrent.ScheduledThreadPoolExecutor(1);
+		try {
+			// an in-flight tick of the previous executor finishing after stop/start
+			service.tick(stale);
+			assertEquals(3, rounds.get());
+			assertTrue(stale.getQueue().isEmpty(), "stale executor must not be rescheduled");
+			Thread.sleep(200);
+			assertEquals(3, rounds.get(), "no extra chain on the current executor");
+		} finally {
+			stale.shutdownNow();
+		}
+	}
+
+	@Test
+	void configs_areInstanceScoped() {
+		service = newService(recordingProcessor(n -> metrics(n, false)), LONG_INTERVAL, LONG_INTERVAL, 0);
+		service.registerTTL(mongo("mine"), 60, null);
+		TTLService other = newService(recordingProcessor(n -> metrics(n, false)), LONG_INTERVAL, LONG_INTERVAL, 0);
+
+		assertEquals(0, other.doTTL().objects);
+		assertEquals(1, service.doTTL().objects);
 	}
 
 	@Test

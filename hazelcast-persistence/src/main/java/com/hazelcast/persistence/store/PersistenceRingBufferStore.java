@@ -3,6 +3,7 @@ package com.hazelcast.persistence.store;
 import com.hazelcast.persistence.config.PersistenceStorageAbstractConfig;
 import com.hazelcast.persistence.resource.ExternalResource;
 import com.hazelcast.persistence.store.ttl.RingBufferExpireResult;
+import com.hazelcast.persistence.store.ttl.TTLTimestamps;
 import com.hazelcast.ringbuffer.RingbufferStore;
 import org.bson.Document;
 
@@ -96,25 +97,15 @@ public abstract class PersistenceRingBufferStore<T extends PersistenceStorageAbs
 	}
 
 	/**
-	 * Read {@code _ts} (seconds), same lookup as the previous TTL implementation: the document itself,
-	 * or its {@code value} sub document when present. Compatible with Int32/Int64/other numbers.
+	 * Read {@code _ts} (seconds) with the same rule as IMap TTL, see {@link TTLTimestamps#read(Map)}.
 	 *
-	 * @return null when absent or not a number
+	 * @return null when absent or not an Int32/Int64
 	 */
 	public static Long readTs(Map<?, ?> document) {
-		Map<?, ?> value = unwrapValue(document);
-		return null == value ? null : toLong(value.get("_ts"));
+		return TTLTimestamps.read(document);
 	}
 
 	public static Long toLong(Object obj) {
 		return obj instanceof Number number ? number.longValue() : null;
-	}
-
-	private static Map<?, ?> unwrapValue(Map<?, ?> document) {
-		if (null == document) {
-			return null;
-		}
-		Object value = document.get(VALUE_FIELD);
-		return value instanceof Map<?, ?> map ? map : document;
 	}
 }
