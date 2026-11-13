@@ -8,6 +8,7 @@ import com.hazelcast.persistence.config.PersistenceStorageAbstractConfig;
 import com.hazelcast.persistence.resource.impl.MongoDBResource;
 import com.hazelcast.persistence.store.PersistenceRingBufferStore;
 import com.hazelcast.persistence.store.RingBufferFindParam;
+import com.hazelcast.persistence.store.ttl.RingBufferExpireResult;
 import com.mongodb.CreateIndexCommitQuorum;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
@@ -168,13 +169,19 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 			createIndexOptions.commitQuorum(CreateIndexCommitQuorum.MAJORITY);
 		}
 		MongoCollection<Document> mongoCollection = mongoDBResource.getMongoCollection();
-		List<IndexModel> indexModels = Arrays.asList(
+		mongoCollection.createIndexes(indexModels(indexOptions), createIndexOptions);
+	}
+
+	/**
+	 * Index definitions of a ring buffer collection, shared with tests/benchmarks so they use the production schema
+	 */
+	static List<IndexModel> indexModels(IndexOptions indexOptions) {
+		return Arrays.asList(
 				new IndexModel(Indexes.ascending(SIGN_KEY, "key", "_id"), indexOptions),
 				new IndexModel(Indexes.ascending(SIGN_KEY, "value.timestamp", "_id"), indexOptions),
 				new IndexModel(Indexes.ascending(SIGN_KEY, "_id", "value.timestamp"), indexOptions),
 				new IndexModel(Indexes.ascending(SIGN_KEY, "_id"), indexOptions)
 		);
-		mongoCollection.createIndexes(indexModels, createIndexOptions);
 	}
 
 
@@ -294,7 +301,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		if (doc == null) {
 			return -1;
 		}
-		return doc.getLong("key");
+		return requireKey(doc);
 	}
 
 	@Override
@@ -316,7 +323,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		if (document == null) {
 			return largestSequence.get() + 1L;
 		}
-		return document.getLong("key");
+		return requireKey(document);
 	}
 
 	public long _getSmallestSequence() {
@@ -328,7 +335,7 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		if (doc == null) {
 			return 0;
 		}
-		return doc.getLong("key");
+		return requireKey(doc);
 	}
 
 	@Override
@@ -430,13 +437,133 @@ public class MongoDBRingBuffer extends PersistenceRingBufferStore<PersistenceMon
 		return value;
 	}
 
+	/**
+	 * Sequence key of a ring buffer document; Int32/Int64 compatible. A non numeric key is corrupted data:
+	 * fail loudly instead of returning a default that would silently disable TTL or reset sequences.
+	 */
+	static long requireKey(Document doc) {
+		Object key = doc.get("key");
+		if (key instanceof Long || key instanceof Integer) {
+			return ((Number) key).longValue();
+		}
+		throw new IllegalStateException("Ring buffer document key is not an integer, _id: " + doc.get("_id")
+				+ ", key type: " + (null == key ? "null" : key.getClass().getSimpleName()));
+	}
+
 	@Override
 	public long getSmallestSequenceWithoutSign() {
-		Document query = sign().append("value.type", new Document("$ne", "SIGN"));
+		if (mongoDBResource == null) {
+			return 0;
+		}
+		Document query = sign().append("value.type", new Document("$ne", SIGN_TYPE));
 		Document doc = this.mongoDBResource.getMongoCollection().find(query).sort(ascending("_id")).first();
 		if (doc == null) {
 			return 0;
 		}
-		return doc.getLong("key");
+		return requireKey(doc);
+	}
+
+	/**
+	 * Batch version of TTL deletion: one projected range scan plus at most one range delete, no {@link #flushSequence()}.
+	 * The delete filter repeats the {@code _ts} and SIGN conditions, so SIGN records, records without {@code _ts}
+	 * and unexpired records inside the range are never deleted even if {@code _ts} is not monotonic.
+	 */
+	@Override
+	public RingBufferExpireResult deleteExpired(long fromSequence, long maxSequenceExclusive, long expireBeforeSec, int batchSize) {
+		if (batchSize <= 0) {
+			throw new IllegalArgumentException("Batch size must be positive: " + batchSize);
+		}
+		long from = Math.max(0L, fromSequence);
+		if (!checkEnable() || mongoDBResource == null || from >= maxSequenceExclusive) {
+			return new RingBufferExpireResult(0L, from, true);
+		}
+		MongoCollection<Document> collection = this.mongoDBResource.getMongoCollection();
+		Document query = sign().append("key", new Document("$gte", from).append("$lt", maxSequenceExclusive));
+		List<Document> docs = new ArrayList<>(batchSize);
+		try (
+				MongoCursor<Document> iterator = collection.find(query)
+						.sort(Sorts.ascending("key"))
+						.limit(batchSize)
+						.projection(Projections.include("key", "value._ts", "value.type"))
+						.iterator()
+		) {
+			while (iterator.hasNext()) {
+				docs.add(iterator.next());
+			}
+		} catch (Exception e) {
+			throw new RuntimeException("Scan expired data from mongodb failed, query: " + query.toJson(), e);
+		}
+		ExpireScan scan = scanExpireBatch(docs, from, expireBeforeSec, batchSize);
+		long deleted = 0L;
+		if (null != scan.lastExpiredKey) {
+			Document deleteQuery = sign()
+					.append("key", new Document("$gte", from).append("$lte", scan.lastExpiredKey))
+					// Same _ts rule as the scan (TTLTimestamps): only Int32/Int64 can expire
+					.append("value._ts", new Document("$lte", expireBeforeSec).append("$type", Arrays.asList("int", "long")))
+					.append("value.type", new Document("$ne", SIGN_TYPE));
+			try {
+				deleted = collection.deleteMany(deleteQuery).getDeletedCount();
+			} catch (Exception e) {
+				throw new RuntimeException("Delete expired data from mongodb failed, query: " + deleteQuery.toJson(), e);
+			}
+		}
+		return new RingBufferExpireResult(deleted, scan.nextSequence, scan.finished);
+	}
+
+	/**
+	 * Walk one scanned batch (sorted by key ascending) and decide the delete range.
+	 * <ul>
+	 *     <li>SIGN or no numeric {@code _ts}: skipped, continue</li>
+	 *     <li>{@code _ts > expireBeforeSec}: finished, next sequence is that key</li>
+	 *     <li>otherwise: candidate, {@code lastExpiredKey = key}</li>
+	 * </ul>
+	 * When no unexpired record is met: fewer than {@code batchSize} documents means the range is exhausted (finished),
+	 * otherwise the next batch starts after the last scanned key.
+	 */
+	static ExpireScan scanExpireBatch(Iterable<Document> docs, long fromSequence, long expireBeforeSec, int batchSize) {
+		ExpireScan scan = new ExpireScan();
+		scan.nextSequence = fromSequence;
+		Long lastKey = null;
+		int read = 0;
+		if (null != docs) {
+			for (Document doc : docs) {
+				read++;
+				if (null == doc) {
+					continue;
+				}
+				Long key = toLong(doc.get("key"));
+				if (null == key) {
+					continue;
+				}
+				lastKey = key;
+				Object valueObj = doc.get(VALUE_KEY);
+				if (!(valueObj instanceof Map<?, ?> value) || isSign(value)) {
+					continue;
+				}
+				Long ts = readTs(value);
+				if (null == ts) {
+					continue;
+				}
+				if (ts > expireBeforeSec) {
+					scan.finished = true;
+					scan.nextSequence = key;
+					return scan;
+				}
+				scan.lastExpiredKey = key;
+			}
+		}
+		if (null == lastKey) {
+			scan.finished = true;
+		} else {
+			scan.nextSequence = lastKey + 1;
+			scan.finished = read < batchSize;
+		}
+		return scan;
+	}
+
+	static final class ExpireScan {
+		Long lastExpiredKey;
+		long nextSequence;
+		boolean finished;
 	}
 }
